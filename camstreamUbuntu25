@@ -1,0 +1,19 @@
+sudo apt update
+sudo apt install -y ffmpeg
+sudo snap install mediamtx
+sudo snap start mediamtx
+sudo snap services mediamtx
+
+
+ss -ltnp | grep -E "8554|8889" || true
+
+
+
+
+  
+rpicam-vid -t 0 -n --width 1280 --height 720 --framerate 30 --codec h264 --inline -o - \
+| ffmpeg -re -f h264 -i - -c copy -f rtsp rtsp://127.0.0.1:8554/cam
+
+
+
+http://192.168.30.39:8889/cam
