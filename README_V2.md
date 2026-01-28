@@ -1,4 +1,5 @@
-# Robot Web Modular — Nouveau Raspberry Pi (zéro fichier) ✅
+# Robot Web Modular — Nouveau Raspberry Pi 
+
 
 Ce repo te permet, sur **un Raspberry Pi neuf**, de démarrer un serveur **FastAPI** avec une **page web** pour piloter des moteurs **MKS SERVO57D** via **RS485 / Modbus RTU**.
 
