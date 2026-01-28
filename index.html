@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robot Control</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Raleway:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --odan-blue:#005B9C; --odan-blue-dark:#00385F;
+      --border: rgba(0, 56, 95, 0.18); --shadow: 0 18px 45px rgba(0,0,0,0.08);
+      --radius: 18px;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      background:
+        radial-gradient(1200px 600px at 10% 0%, rgba(0,91,156,0.10), transparent 60%),
+        radial-gradient(900px 500px at 95% 5%, rgba(255,165,0,0.12), transparent 60%),
+        #fff;
+      color:#424242;
+      font-family:"Raleway", system-ui, sans-serif;
+    }
+    .topbar{
+      position:sticky; top:0; z-index:10;
+      backdrop-filter: blur(10px);
+      background: rgba(255,255,255,0.72);
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar-inner{
+      max-width:1100px; margin:0 auto; padding:14px 18px;
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+    }
+    .brand{ display:flex; align-items:center; gap:12px; min-width:0; }
+    .brand img{ height:36px; width:auto; display:block; }
+    .title{
+      font-family:"Montserrat", system-ui, sans-serif;
+      font-weight:700; color:var(--odan-blue-dark);
+      letter-spacing:.3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .wrap{ max-width:1100px; margin:0 auto; padding:22px 18px 40px; }
+    .grid{ display:grid; grid-template-columns: 1.15fr 0.85fr; gap:18px; align-items:start; }
+    .card{
+      background: rgba(255,255,255,0.9);
+      border:1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding:18px;
+    }
+    h2{
+      margin:0 0 12px 0;
+      font-family:"Montserrat", system-ui, sans-serif;
+      font-weight:700; color: var(--odan-blue-dark);
+      font-size:18px;
+    }
+
+    .btn{
+      border:0; border-radius:12px; padding:10px 14px;
+      font-family:"Montserrat", system-ui, sans-serif; font-weight:700;
+      cursor:pointer; user-select:none;
+      background: linear-gradient(180deg, #ffffff, #f3f6fb);
+      color: var(--odan-blue-dark);
+      border: 1px solid var(--border);
+    }
+    .btn-danger{
+      background: linear-gradient(180deg, #ffefef, #ffd6d6);
+      border: 1px solid rgba(180, 0, 0, 0.25);
+      color: #7a0000;
+    }
+    .btn-row{ display:flex; gap:10px; flex-wrap:wrap; }
+
+    /* Joystick */
+    .joy-row{ display:flex; gap:18px; flex-wrap:wrap; align-items:center; }
+    #pad{
+      width:320px; height:320px; border-radius:22px;
+      position:relative; touch-action:none; overflow:hidden;
+      background:
+        radial-gradient(180px 180px at 50% 50%, rgba(0,91,156,0.10), rgba(0,56,95,0.02)),
+        linear-gradient(180deg, #fff, #f7fbff);
+      border:1px solid var(--border);
+    }
+    #knob{
+      width:84px; height:84px; border-radius:999px;
+      position:absolute; left:50%; top:50%;
+      transform: translate(-50%,-50%);
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.55), transparent 35%),
+                  linear-gradient(180deg, var(--odan-blue), var(--odan-blue-dark));
+      box-shadow: 0 18px 35px rgba(0,0,0,0.18);
+      border: 1px solid rgba(255,255,255,0.25);
+    }
+    .readouts{ min-width:260px; display:flex; flex-direction:column; gap:10px; }
+    .kv{
+      display:flex; justify-content:space-between; gap:14px;
+      border:1px solid var(--border); background:#fff;
+      border-radius:14px; padding:10px 12px; font-size:14px;
+    }
+    .kv b{ font-family:"Montserrat", system-ui, sans-serif; font-weight:700; color:var(--odan-blue-dark); }
+    .kv code{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: rgba(0,91,156,0.07);
+      padding:2px 8px; border-radius:10px;
+      border:1px solid rgba(0,91,156,0.12);
+    }
+
+    /* Sliders */
+    .slider{ margin-top:14px; padding-top:14px; border-top: 1px dashed rgba(0,56,95,0.20); }
+    .slider:first-of-type{ border-top:none; padding-top:0; margin-top:0; }
+    .slider label{
+      display:block; margin-bottom:8px;
+      font-family:"Montserrat", system-ui, sans-serif; font-weight:700;
+      color: var(--odan-blue-dark);
+    }
+    input[type="range"]{ width:100%; accent-color: var(--odan-blue); }
+    .slider-meta{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px; margin-top:10px; opacity:.85; font-size:13px;
+    }
+
+    /* Camera */
+    .cam{ width:100%; border-radius:16px; border:1px solid var(--border); overflow:hidden; background:#000; }
+    .cam img{ width:100%; display:block; }
+
+    @media (max-width: 940px){
+      .grid{ grid-template-columns:1fr; }
+      #pad{ width:min(360px, 100%); height:min(360px, 72vw); }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <img src="/static/logo.png" alt="Logo" />
+        <div class="title">Robot Control</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="grid">
+      <div class="card">
+        <h2>Joystick</h2>
+
+        <div class="joy-row">
+          <div id="pad"><div id="knob"></div></div>
+
+          <div class="readouts">
+            <div class="kv"><b>Left RPM</b> <code id="lRpm">—</code></div>
+            <div class="kv"><b>Right RPM</b> <code id="rRpm">—</code></div>
+            <div class="kv"><b>Status</b> <code id="status">ready</code></div>
+
+            <div class="btn-row">
+              <button class="btn btn-danger" id="stopBtn" type="button">STOP</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Position</h2>
+
+        <div class="slider">
+          <label for="m3">Motor 3 — Lift</label>
+          <input id="m3" type="range" min="0" max="100" step="1" value="0">
+          <div class="slider-meta">
+            <span>Target: <b><span id="m3v">0</span>%</b></span>
+            <div style="display:flex; gap:10px;">
+              <button class="btn" id="m3Zero" type="button">Zero</button>
+              <button class="btn" id="m3Go" type="button">Go</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="slider">
+          <label for="m4">Motor 4 — Brush</label>
+          <input id="m4" type="range" min="0" max="100" step="1" value="0">
+          <div class="slider-meta">
+            <span>Target: <b><span id="m4v">0</span>%</b></span>
+            <div style="display:flex; gap:10px;">
+              <button class="btn" id="m4Zero" type="button">Zero</button>
+              <button class="btn" id="m4Go" type="button">Go</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="slider">
+          <label for="m8">Motor 8 — Silo</label>
+          <input id="m8" type="range" min="0" max="100" step="1" value="0">
+          <div class="slider-meta">
+            <span>Target: <b><span id="m8v">0</span>%</b></span>
+            <div style="display:flex; gap:10px;">
+              <button class="btn" id="m8Zero" type="button">Zero</button>
+              <button class="btn" id="m8Go" type="button">Go</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div style="height:18px;"></div>
+
+    <div class="card">
+      <h2>Camera Live</h2>
+      <div class="cam"><img id="camImg" alt="camera stream"></div>
+    </div>
+  </div>
+
+  <script>
+    function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+    async function postJSON(url, obj){
+      const r = await fetch(url, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: obj ? JSON.stringify(obj) : null
+      });
+      let data = {};
+      try{ data = await r.json(); } catch(e){}
+      if(!r.ok) throw new Error(data.error || r.statusText);
+      return data;
+    }
+
+    // Camera URL = same host, port 8080
+    const camImg = document.getElementById("camImg");
+    camImg.src = `${location.protocol}//${location.hostname}:8080/stream`;
+
+    const pad = document.getElementById("pad");
+    const knob = document.getElementById("knob");
+
+    const lRpm = document.getElementById("lRpm");
+    const rRpm = document.getElementById("rRpm");
+    const status = document.getElementById("status");
+    const stopBtn = document.getElementById("stopBtn");
+
+    const m3 = document.getElementById("m3");
+    const m4 = document.getElementById("m4");
+    const m8 = document.getElementById("m8");
+
+    const m3v = document.getElementById("m3v");
+    const m4v = document.getElementById("m4v");
+    const m8v = document.getElementById("m8v");
+
+    const m3Zero = document.getElementById("m3Zero");
+    const m4Zero = document.getElementById("m4Zero");
+    const m8Zero = document.getElementById("m8Zero");
+
+    const m3Go = document.getElementById("m3Go");
+    const m4Go = document.getElementById("m4Go");
+    const m8Go = document.getElementById("m8Go");
+
+    let x = 0, y = 0;
+    let dragging = false;
+    let lastSend = 0;
+    let sendTimer = null;
+
+    // extra client safety: while stop pressed, don’t send drive at all
+    let driveEnabled = true;
+
+    function startSendLoop(){
+      if (sendTimer) return;
+      sendTimer = setInterval(() => { sendDrive(0); }, 100);
+    }
+
+    function stopSendLoop(){
+      if (!sendTimer) return;
+      clearInterval(sendTimer);
+      sendTimer = null;
+    }
+
+    function setKnob(nx, ny){
+      const rect = pad.getBoundingClientRect();
+      const cx = rect.width / 2;
+      const cy = rect.height / 2;
+      const maxR = rect.width * 0.35;
+      const px = cx + nx * maxR;
+      const py = cy + ny * maxR;
+      knob.style.left = `${px}px`;
+      knob.style.top  = `${py}px`;
+      knob.style.transform = "translate(-50%, -50%)";
+    }
+
+    async function sendDrive(throttleMs = 70){
+      if (!driveEnabled) return;
+
+      const now = performance.now();
+      if (throttleMs > 0 && (now - lastSend < throttleMs)) return;
+      lastSend = now;
+
+      try{
+        const res = await postJSON("/api/drive", {x, y});
+
+        if (res.stopping) {
+          status.textContent = "stopping (fast)";
+          lRpm.textContent = (res.left_rpm ?? "—").toString();
+          rRpm.textContent = (res.right_rpm ?? "—").toString();
+          return;
+        }
+
+        lRpm.textContent = (res.left_rpm ?? "—").toString();
+        rRpm.textContent = (res.right_rpm ?? "—").toString();
+        status.textContent = "ok";
+      }catch(e){
+        status.textContent = "ERR";
+      }
+    }
+
+    function centerJoystick(send=true){
+      x = 0; y = 0;
+      setKnob(0, 0);
+      if (send) sendDrive(0);
+    }
+
+    function updateFromPointer(e){
+      const rect = pad.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top  + rect.height / 2;
+      const dx = e.clientX - cx;
+      const dy = e.clientY - cy;
+      const maxR = rect.width * 0.35;
+
+      let nx = clamp(dx / maxR, -1, 1);
+      let ny = clamp(-dy / maxR, -1, 1);
+
+      x = nx; y = ny;
+      setKnob(x, -y);
+    }
+
+    pad.addEventListener("pointerdown", (e) => {
+      if (!driveEnabled) return;
+      dragging = true;
+      pad.setPointerCapture(e.pointerId);
+      updateFromPointer(e);
+      startSendLoop();
+      sendDrive(0);
+    });
+
+    pad.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      updateFromPointer(e);
+      sendDrive();
+    });
+
+    function releaseJoystick(){
+      dragging = false;
+      stopSendLoop();
+      centerJoystick(true);
+    }
+
+    pad.addEventListener("pointerup", releaseJoystick);
+    pad.addEventListener("pointercancel", releaseJoystick);
+
+    // STOP button: FAST stop (500 rpm/s)
+    stopBtn.addEventListener("click", async () => {
+      dragging = false;
+      stopSendLoop();
+      x = 0; y = 0;
+      setKnob(0,0);
+
+      driveEnabled = false; // block any drive sends during stop
+
+      try{
+        await postJSON("/api/stop_fast");
+        status.textContent = "stopping (fast)";
+      }catch(e){
+        status.textContent = "ERR";
+      }
+
+      // re-enable drive after a short time (server is latched anyway)
+      setTimeout(() => { driveEnabled = true; }, 400);
+    });
+
+    // Blur safety: soft stop
+    window.addEventListener("blur", async () => {
+      dragging = false;
+      stopSendLoop();
+      centerJoystick(false);
+      try { await postJSON("/api/stop"); } catch(e){}
+    });
+
+    function refreshSliderLabels(){
+      m3v.textContent = m3.value;
+      m4v.textContent = m4.value;
+      m8v.textContent = m8.value;
+    }
+    m3.addEventListener("input", refreshSliderLabels);
+    m4.addEventListener("input", refreshSliderLabels);
+    m8.addEventListener("input", refreshSliderLabels);
+
+    m3Go.addEventListener("click", async () => {
+      try{ await postJSON("/api/motor/3/pos", {pct: Number(m3.value)}); status.textContent = "M3 ok"; }
+      catch(e){ status.textContent = "ERR"; }
+    });
+
+    m4Go.addEventListener("click", async () => {
+      try{ await postJSON("/api/motor/4/pos", {pct: Number(m4.value)}); status.textContent = "M4 ok"; }
+      catch(e){ status.textContent = "ERR"; }
+    });
+
+    m8Go.addEventListener("click", async () => {
+      try{ await postJSON("/api/motor/8/pos", {pct: Number(m8.value)}); status.textContent = "M8 ok"; }
+      catch(e){ status.textContent = "ERR"; }
+    });
+
+    m3Zero.addEventListener("click", async () => {
+      try{ await postJSON("/api/motor/3/zero"); m3.value = 0; refreshSliderLabels(); status.textContent = "M3 zero"; }
+      catch(e){ status.textContent = "ERR"; }
+    });
+
+    m4Zero.addEventListener("click", async () => {
+      try{ await postJSON("/api/motor/4/zero"); m4.value = 0; refreshSliderLabels(); status.textContent = "M4 zero"; }
+      catch(e){ status.textContent = "ERR"; }
+    });
+
+    m8Zero.addEventListener("click", async () => {
+      try{ await postJSON("/api/motor/8/zero"); m8.value = 0; refreshSliderLabels(); status.textContent = "M8 zero"; }
+      catch(e){ status.textContent = "ERR"; }
+    });
+
+    centerJoystick(false);
+    refreshSliderLabels();
+  </script>
+</body>
+</html>

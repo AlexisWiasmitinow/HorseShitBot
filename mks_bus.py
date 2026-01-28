@@ -1,5 +1,6 @@
 import inspect
 import threading
+import time
 from dataclasses import dataclass
 
 from pymodbus.client import ModbusSerialClient
@@ -18,8 +19,7 @@ REG_SPEED     = 0x00F6            # [dir<<8|acc, speed_rpm]
 REG_POS_ABS   = 0x00F5            # [acc, speed, axis_hi, axis_lo]
 REG_AXIS_ZERO = 0x0092
 
-# Work modes (reg 0x0082) per RS485 manual:
-# 0=CR_OPEN, 1=CR_CLOSE, 2=CR_vFOC, 3=SR_OPEN, 4=SR_CLOSE, 5=SR_vFOC
+# Work modes:
 MODE_SR_OPEN = 3
 MODE_SR_VFOC = 5
 
@@ -43,7 +43,6 @@ def _with_unit(method, unit_id: int):
 
 
 def _split_i32_to_u16s(val: int):
-    # signed i32 represented in two u16 words
     val &= 0xFFFFFFFF
     return [(val >> 16) & 0xFFFF, val & 0xFFFF]
 
@@ -56,8 +55,9 @@ def clamp(v, lo, hi):
 class BusCfg:
     port: str
     baud: int = 38400
-    timeout: float = 0.25
-    retries: int = 1
+    timeout: float = 0.35
+    retries: int = 3
+    inter_delay: float = 0.002   # small gap between RTU frames (helps reliability)
 
 
 class MksBus:
@@ -75,7 +75,7 @@ class MksBus:
                 parity="N",
                 stopbits=1,
                 timeout=cfg.timeout,
-                retries=cfg.retries,
+                retries=0,  # we do our own retries for both v2/v3
             )
         else:
             # pymodbus v2
@@ -99,34 +99,66 @@ class MksBus:
         except Exception:
             pass
 
+    def _ensure_connected(self):
+        # pymodbus differs, so just try connect if needed
+        try:
+            # v3 has .connected
+            if hasattr(self.client, "connected") and not self.client.connected:
+                self.client.connect()
+        except Exception:
+            pass
+
+    def _retry(self, call, err_ctx: str):
+        last_exc = None
+        attempts = max(1, int(self.cfg.retries) + 1)
+
+        for i in range(attempts):
+            try:
+                self._ensure_connected()
+                with self.lock:
+                    rr = call()
+                if hasattr(rr, "isError") and rr.isError():
+                    raise RuntimeError(f"{err_ctx}: {rr}")
+
+                if self.cfg.inter_delay and self.cfg.inter_delay > 0:
+                    time.sleep(self.cfg.inter_delay)
+                return rr
+
+            except Exception as e:
+                last_exc = e
+                # small backoff + try to reconnect
+                try:
+                    self.client.close()
+                except Exception:
+                    pass
+                try:
+                    self.client.connect()
+                except Exception:
+                    pass
+                time.sleep(0.02 * (i + 1))
+
+        raise RuntimeError(f"{err_ctx}: {last_exc}")
+
     def write_reg(self, unit_id: int, addr: int, value: int):
-        with self.lock:
-            rr = self.client.write_register(
+        def _call():
+            return self.client.write_register(
                 address=addr,
                 value=int(value) & 0xFFFF,
                 **_with_unit(self.client.write_register, unit_id),
             )
-        if rr.isError():
-            raise RuntimeError(f"write_reg failed unit={unit_id} addr=0x{addr:04X}: {rr}")
+        return self._retry(_call, f"write_reg failed unit={unit_id} addr=0x{addr:04X}")
 
     def write_regs(self, unit_id: int, addr: int, values: list[int]):
-        with self.lock:
-            rr = self.client.write_registers(
+        def _call():
+            return self.client.write_registers(
                 address=addr,
                 values=[int(v) & 0xFFFF for v in values],
                 **_with_unit(self.client.write_registers, unit_id),
             )
-        if rr.isError():
-            raise RuntimeError(f"write_regs failed unit={unit_id} addr=0x{addr:04X}: {rr}")
+        return self._retry(_call, f"write_regs failed unit={unit_id} addr=0x{addr:04X}")
 
     # --------- High-level helpers ---------
     def init_servo(self, unit_id: int, mode: int = MODE_SR_VFOC, enable: bool = True):
-        """
-        Set work mode (reg 0x0082) then enable (reg 0x00F3).
-        mode examples:
-          MODE_SR_VFOC (5) = serial FOC closed-loop style
-          MODE_SR_OPEN (3) = serial open-loop (no encoder)
-        """
         self.write_reg(unit_id, REG_WORKMODE, int(mode))
         if enable:
             self.write_reg(unit_id, REG_ENABLE, 1)
@@ -139,7 +171,7 @@ class MksBus:
         Speed mode: REG_SPEED (0x00F6) write 2 regs:
           reg0 = (dir<<8) | acc
           reg1 = speed_rpm (0..3000)
-        Convention here: rpm>=0 => dir=0, rpm<0 => dir=1
+        Convention: rpm>=0 => dir=0, rpm<0 => dir=1
         """
         rpm_signed = float(rpm_signed)
         acc = int(clamp(acc, 0, 255))
