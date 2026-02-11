@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robot Control</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Raleway:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root{--odan-blue:#005B9C;--odan-blue-dark:#00385F;--border:rgba(0,56,95,.18);--shadow:0 18px 45px rgba(0,0,0,.08);--radius:18px;}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(1200px 600px at 10% 0%, rgba(0,91,156,.10), transparent 60%),radial-gradient(900px 500px at 95% 5%, rgba(255,165,0,.12), transparent 60%),#fff;color:#424242;font-family:"Raleway",system-ui,sans-serif;}
+    .topbar{position:sticky;top:0;z-index:10;backdrop-filter:blur(10px);background:rgba(255,255,255,.72);border-bottom:1px solid var(--border);}
+    .topbar-inner{max-width:1100px;margin:0 auto;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+    .brand{display:flex;align-items:center;gap:12px;min-width:0;}
+    .brand img{height:36px;width:auto;display:block;}
+    .title{font-family:"Montserrat",system-ui,sans-serif;font-weight:700;color:var(--odan-blue-dark);letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .wrap{max-width:1100px;margin:0 auto;padding:22px 18px 40px;}
+    .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:18px;align-items:start;}
+    .card{background:rgba(255,255,255,.9);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;}
+    h2{margin:0 0 12px 0;font-family:"Montserrat",system-ui,sans-serif;font-weight:700;color:var(--odan-blue-dark);font-size:18px;}
+    .btn{border:0;border-radius:12px;padding:10px 14px;font-family:"Montserrat",system-ui,sans-serif;font-weight:700;cursor:pointer;user-select:none;background:linear-gradient(180deg,#fff,#f3f6fb);color:var(--odan-blue-dark);border:1px solid var(--border);}
+    .btn-danger{background:linear-gradient(180deg,#ffefef,#ffd6d6);border:1px solid rgba(180,0,0,.25);color:#7a0000;}
+    .btn-warn{background:linear-gradient(180deg,#fff7e8,#ffe1b3);border:1px solid rgba(180,110,0,.25);color:#6a3b00;}
+    .btn-row{display:flex;gap:10px;flex-wrap:wrap;}
+    .joy-row{display:flex;gap:18px;flex-wrap:wrap;align-items:center;}
+    #pad{width:320px;height:320px;border-radius:22px;position:relative;touch-action:none;overflow:hidden;background:radial-gradient(180px 180px at 50% 50%, rgba(0,91,156,.10), rgba(0,56,95,.02)),linear-gradient(180deg,#fff,#f7fbff);border:1px solid var(--border);}
+    #knob{width:84px;height:84px;border-radius:999px;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:radial-gradient(circle at 30% 30%, rgba(255,255,255,.55), transparent 35%),linear-gradient(180deg,var(--odan-blue),var(--odan-blue-dark));box-shadow:0 18px 35px rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.25);}
+    .readouts{min-width:260px;display:flex;flex-direction:column;gap:10px;}
+    .kv{display:flex;justify-content:space-between;gap:14px;border:1px solid var(--border);background:#fff;border-radius:14px;padding:10px 12px;font-size:14px;}
+    .kv b{font-family:"Montserrat",system-ui,sans-serif;font-weight:700;color:var(--odan-blue-dark);}
+    .kv code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:rgba(0,91,156,.07);padding:2px 8px;border-radius:10px;border:1px solid rgba(0,91,156,.12);}
+    .slider{margin-top:14px;padding-top:14px;border-top:1px dashed rgba(0,56,95,.20);}
+    .slider:first-of-type{border-top:none;padding-top:0;margin-top:0;}
+    .slider label{display:block;margin-bottom:8px;font-family:"Montserrat",system-ui,sans-serif;font-weight:700;color:var(--odan-blue-dark);}
+    input[type="range"]{width:100%;accent-color:var(--odan-blue);}
+    .slider-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;opacity:.88;font-size:13px;}
+    .hint{opacity:.70;font-size:12px;margin-top:6px;}
+    .cam{width:100%;border-radius:16px;border:1px solid var(--border);overflow:hidden;background:#000;}
+    .cam img{width:100%;display:block;}
+    @media (max-width:940px){.grid{grid-template-columns:1fr;}#pad{width:min(360px,100%);height:min(360px,72vw);}}
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <img src="/static/logo.png" alt="Logo" onerror="this.style.display='none'"/>
+        <div class="title">Robot Control</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="grid">
+      <div class="card">
+        <h2>Wheels (joystick)</h2>
+
+        <div class="joy-row">
+          <div id="pad"><div id="knob"></div></div>
+
+          <div class="readouts">
+            <div class="kv"><b>Left RPM</b> <code id="lRpm">—</code></div>
+            <div class="kv"><b>Right RPM</b> <code id="rRpm">—</code></div>
+            <div class="kv"><b>Status</b> <code id="status">ready</code></div>
+
+            <div class="btn-row">
+              <button class="btn btn-danger" id="stopBtn" type="button">STOP</button>
+              <button class="btn btn-warn" id="clrBtn" type="button">CLEAR ERROR</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Aux motors (spring sliders)</h2>
+
+        <div class="slider">
+          <label for="lift">Lift (motors 3 + 5)</label>
+          <input id="lift" type="range" min="-100" max="100" step="1" value="0">
+          <div class="slider-meta"><span>Cmd: <b><span id="liftv">0</span>%</b> — <span id="liftd">STOP</span></span></div>
+        </div>
+
+        <div class="slider">
+          <label for="brush">Brush (motor 4)</label>
+          <input id="brush" type="range" min="-100" max="100" step="1" value="0">
+          <div class="slider-meta"><span>Cmd: <b><span id="brushv">0</span>%</b> — <span id="brushd">STOP</span></span></div>
+        </div>
+
+        <div class="slider">
+          <label for="sideDoor">Side door (motor 6)</label>
+          <input id="sideDoor" type="range" min="-100" max="100" step="1" value="0">
+          <div class="slider-meta"><span>Cmd: <b><span id="sidev">0</span>%</b> — <span id="sided">STOP</span></span></div>
+          <div class="hint">Left = CCW • Right = CW • Release => back to center (stop)</div>
+        </div>
+
+        <div class="btn-row" style="margin-top:14px;">
+          <button class="btn" id="auxStopBtn" type="button">STOP AUX</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:18px;"></div>
+
+    <div class="card">
+      <h2>Camera Live (optional)</h2>
+      <div class="cam"><img id="camImg" alt="camera stream"></div>
+      <div class="hint" id="camHint"></div>
+    </div>
+  </div>
+
+  <script>
+    function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+    async function postJSON(url, obj){
+      const r = await fetch(url, {method:"POST",headers:{"Content-Type":"application/json"},body:obj?JSON.stringify(obj):null});
+      let data={}; try{data=await r.json();}catch(e){}
+      if(!r.ok) throw new Error(data.error||r.statusText);
+      return data;
+    }
+    function dirText(pct){ const v=Number(pct); if(v>0) return "CW"; if(v<0) return "CCW"; return "STOP"; }
+
+    const camImg=document.getElementById("camImg");
+    const camHint=document.getElementById("camHint");
+    fetch("/api/config").then(r=>r.json()).then(cfg=>{
+      if(cfg.camera_stream_url){ camImg.src=cfg.camera_stream_url; camHint.textContent=cfg.camera_stream_url; }
+      else{ camHint.textContent="No CAMERA_STREAM_URL set (see .env.example)."; }
+    }).catch(()=>{ camHint.textContent="Camera config not available."; });
+
+    const pad=document.getElementById("pad");
+    const knob=document.getElementById("knob");
+    const lRpm=document.getElementById("lRpm");
+    const rRpm=document.getElementById("rRpm");
+    const status=document.getElementById("status");
+    const stopBtn=document.getElementById("stopBtn");
+    const clrBtn=document.getElementById("clrBtn");
+
+    let x=0,y=0,dragging=false,lastSend=0,sendTimer=null,controlsEnabled=true;
+
+    function startSendLoop(){ if(sendTimer) return; sendTimer=setInterval(()=>{sendDrive(0);},100); }
+    function stopSendLoop(){ if(!sendTimer) return; clearInterval(sendTimer); sendTimer=null; }
+
+    function setKnob(nx, ny){
+      const rect=pad.getBoundingClientRect();
+      const cx=rect.width/2, cy=rect.height/2, maxR=rect.width*0.35;
+      const px=cx+nx*maxR, py=cy+ny*maxR;
+      knob.style.left=`${px}px`; knob.style.top=`${py}px`; knob.style.transform="translate(-50%, -50%)";
+    }
+
+    async function sendDrive(throttleMs=70){
+      if(!controlsEnabled) return;
+      const now=performance.now();
+      if(throttleMs>0 && (now-lastSend<throttleMs)) return;
+      lastSend=now;
+      try{
+        const res=await postJSON("/api/drive",{x,y});
+        lRpm.textContent=(res.left_rpm??"—").toString();
+        rRpm.textContent=(res.right_rpm??"—").toString();
+        status.textContent=res.stopping?"stopping (fast)":"ok";
+      }catch(e){ status.textContent="ERR"; }
+    }
+
+    function centerJoystick(send=true){ x=0;y=0; setKnob(0,0); if(send) sendDrive(0); }
+
+    function updateFromPointer(e){
+      const rect=pad.getBoundingClientRect();
+      const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+      const dx=e.clientX-cx, dy=e.clientY-cy;
+      const maxR=rect.width*0.35;
+      x=clamp(dx/maxR,-1,1);
+      y=clamp(-dy/maxR,-1,1);
+      setKnob(x,-y);
+    }
+
+    pad.addEventListener("pointerdown",(e)=>{
+      if(!controlsEnabled) return;
+      dragging=true; pad.setPointerCapture(e.pointerId);
+      updateFromPointer(e); startSendLoop(); sendDrive(0);
+    });
+    pad.addEventListener("pointermove",(e)=>{ if(!dragging) return; updateFromPointer(e); sendDrive(); });
+
+    function releaseJoystick(){ dragging=false; stopSendLoop(); centerJoystick(true); }
+    pad.addEventListener("pointerup",releaseJoystick);
+    pad.addEventListener("pointercancel",releaseJoystick);
+
+    function setupSpringSlider(sliderEl, valEl, dirEl, apiUrl){
+      function refresh(){ valEl.textContent=sliderEl.value; dirEl.textContent=dirText(sliderEl.value); }
+      let throttleT=0;
+      async function send(){
+        if(!controlsEnabled) return;
+        const now=performance.now();
+        if(now-throttleT<60) return;
+        throttleT=now;
+        try{ await postJSON(apiUrl,{pct:Number(sliderEl.value)}); }catch(e){ status.textContent="ERR"; }
+      }
+      function springToZero(){
+        sliderEl.value=0; refresh();
+        postJSON(apiUrl,{pct:0}).catch(()=>{status.textContent="ERR";});
+      }
+      sliderEl.addEventListener("input",()=>{refresh();send();});
+      sliderEl.addEventListener("change",()=>{springToZero();});
+      sliderEl.addEventListener("pointerup",()=>{springToZero();});
+      sliderEl.addEventListener("pointercancel",()=>{springToZero();});
+      refresh(); return {springToZero};
+    }
+
+    const lift=document.getElementById("lift");
+    const brush=document.getElementById("brush");
+    const sideDoor=document.getElementById("sideDoor");
+
+    const liftv=document.getElementById("liftv");
+    const brushv=document.getElementById("brushv");
+    const sidev=document.getElementById("sidev");
+
+    const liftd=document.getElementById("liftd");
+    const brushd=document.getElementById("brushd");
+    const sided=document.getElementById("sided");
+
+    const auxStopBtn=document.getElementById("auxStopBtn");
+
+    const liftCtl=setupSpringSlider(lift,liftv,liftd,"/api/lift/speed");
+    const brushCtl=setupSpringSlider(brush,brushv,brushd,"/api/brush/speed");
+    const sideCtl=setupSpringSlider(sideDoor,sidev,sided,"/api/side_door/speed");
+
+    async function stopAux(){
+      liftCtl.springToZero(); brushCtl.springToZero(); sideCtl.springToZero();
+      try{ await postJSON("/api/aux/stop"); }catch(e){}
+    }
+    auxStopBtn.addEventListener("click",()=>stopAux());
+
+    stopBtn.addEventListener("click", async ()=>{
+      dragging=false; stopSendLoop(); x=0;y=0; setKnob(0,0);
+      controlsEnabled=false;
+      try{ await postJSON("/api/stop_fast"); status.textContent="stopping (fast)"; }catch(e){ status.textContent="ERR"; }
+      stopAux();
+      setTimeout(()=>{controlsEnabled=true;},450);
+    });
+
+    clrBtn.addEventListener("click", async ()=>{
+      dragging=false; stopSendLoop(); x=0;y=0; setKnob(0,0);
+      controlsEnabled=false;
+      try{ status.textContent="clearing..."; const res=await postJSON("/api/clear_errors"); status.textContent=res.ok?"cleared":"ERR"; }
+      catch(e){ status.textContent="ERR"; }
+      stopAux();
+      setTimeout(()=>{controlsEnabled=true;},900);
+    });
+
+    window.addEventListener("blur", async ()=>{
+      dragging=false; stopSendLoop(); centerJoystick(false); stopAux();
+      try{ await postJSON("/api/stop"); }catch(e){}
+    });
+
+    centerJoystick(false);
+  </script>
+</body>
+</html>

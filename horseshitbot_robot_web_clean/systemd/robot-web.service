@@ -1,0 +1,15 @@
+[Unit]
+Description=Horseshitbot Robot Web
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/horseshitbot_robot_web_clean
+EnvironmentFile=/home/pi/horseshitbot_robot_web_clean/.env
+ExecStart=/home/pi/horseshitbot_robot_web_clean/.venv/bin/uvicorn robot_web.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
