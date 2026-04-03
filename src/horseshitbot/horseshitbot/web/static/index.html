@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HorseShitBot Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>HorseShitBot</h1>
+    <span id="ws-status">Disconnected</span>
+  </header>
+
+  <div class="grid">
+    <!-- Wheels -->
+    <div class="card" id="card-wheels">
+      <h2>Wheels</h2>
+      <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
+      <div class="kv"><span class="label">Left RPM</span><span class="value" id="w-left">0</span></div>
+      <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
+      <div class="kv"><span class="label">Right RPM</span><span class="value" id="w-right">0</span></div>
+      <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
+      <div class="btn-row">
+        <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
+        <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
+        <button onclick="switchBackend()">Switch Backend</button>
+      </div>
+    </div>
+
+    <!-- Lift -->
+    <div class="card" id="card-lift">
+      <h2>Lift</h2>
+      <div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
+      <div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
+      <div class="kv"><span class="label">Referenced</span><span class="value" id="lift-ref">No</span></div>
+      <div class="btn-row">
+        <button onclick="cmd('lift_node','open')">Open</button>
+        <button onclick="cmd('lift_node','close')">Close</button>
+        <button onclick="cmd('lift_node','stop')">Stop</button>
+        <button onclick="cmd('lift_node','reference')">Reference</button>
+      </div>
+    </div>
+
+    <!-- Brush -->
+    <div class="card" id="card-brush">
+      <h2>Brush</h2>
+      <div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
+      <div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
+      <div class="kv"><span class="label">Referenced</span><span class="value" id="brush-ref">No</span></div>
+      <div class="btn-row">
+        <button onclick="cmd('brush_node','open')">Open</button>
+        <button onclick="cmd('brush_node','close')">Close</button>
+        <button onclick="cmd('brush_node','stop')">Stop</button>
+        <button onclick="cmd('brush_node','reference')">Reference</button>
+      </div>
+    </div>
+
+    <!-- Bin Door -->
+    <div class="card" id="card-bin-door">
+      <h2>Bin Door</h2>
+      <div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
+      <div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
+      <div class="kv"><span class="label">Referenced</span><span class="value" id="bin_door-ref">No</span></div>
+      <div class="btn-row">
+        <button onclick="cmd('bin_door_node','open')">Open</button>
+        <button onclick="cmd('bin_door_node','close')">Close</button>
+        <button onclick="cmd('bin_door_node','stop')">Stop</button>
+        <button onclick="cmd('bin_door_node','reference')">Reference</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

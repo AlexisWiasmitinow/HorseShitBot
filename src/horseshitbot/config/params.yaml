@@ -1,0 +1,95 @@
+mks_bus_node:
+  ros__parameters:
+    port: "/dev/ttyUSB0"
+    baud: 38400
+    timeout: 0.35
+    retries: 3
+
+wheel_driver_node:
+  ros__parameters:
+    wheel_backend: "mks"        # "mks" or "odrive"
+    id_left: 1
+    id_right: 2
+    invert_left_dir: false
+    invert_right_dir: true
+    max_wheel_rpm: 500.0
+    wheel_acc_reg: 3
+    update_hz: 50.0
+    accel_rpm_s: 120.0
+    decel_rpm_s: 80.0
+    stop_decel_rpm_s: 500.0
+    watchdog_sec: 0.8
+    # ODrive-specific
+    odrive_port: "/dev/ttyACM0"
+    odrive_baud: 115200
+    odrive_vel_limit: 100.0
+    odrive_current_lim: 20.0
+    odrive_vel_ramp_rate: 20.0
+
+lift_node:
+  ros__parameters:
+    motor_id_a: 3
+    motor_id_b: 5
+    dual_motor: true
+    invert_dir: false
+    open_speed_rpm: 300.0       # "up" speed
+    close_speed_rpm: 200.0      # "down" speed
+    open_accel: 3
+    close_accel: 3
+    ref_speed_rpm: 100.0
+    ref_direction: "close"      # reference by going down
+    stall_confirm_ms: 200
+    watchdog_sec: 0.8
+
+brush_node:
+  ros__parameters:
+    motor_id: 4
+    dual_motor: false
+    invert_dir: false
+    open_speed_rpm: 400.0       # "deploy" speed
+    close_speed_rpm: 400.0      # "retract" speed
+    open_accel: 3
+    close_accel: 3
+    ref_speed_rpm: 100.0
+    ref_direction: "close"
+    stall_confirm_ms: 200
+    watchdog_sec: 0.8
+
+bin_door_node:
+  ros__parameters:
+    motor_id: 6
+    dual_motor: false
+    invert_dir: false
+    open_speed_rpm: 350.0
+    close_speed_rpm: 250.0
+    open_accel: 3
+    close_accel: 3
+    ref_speed_rpm: 80.0
+    ref_direction: "close"
+    stall_confirm_ms: 300
+    watchdog_sec: 0.8
+
+gamepad_teleop_node:
+  ros__parameters:
+    device_path: ""             # auto-detect
+    deadzone: 0.08
+    publish_rate: 20.0
+    max_linear_speed: 1.0
+    max_angular_speed: 1.0
+    invert_y: true
+
+web_dashboard_node:
+  ros__parameters:
+    host: "0.0.0.0"
+    port: 8080
+
+status_screen_node:
+  ros__parameters:
+    spi_port: 0
+    spi_cs: 0                   # CE0
+    dc_pin: 24
+    rst_pin: 25
+    led_pin: 18
+    rotation: 0
+    refresh_hz: 5.0
+    backlight_brightness: 1.0
