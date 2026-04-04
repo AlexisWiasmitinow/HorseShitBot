@@ -75,11 +75,13 @@ class StatusScreenNode(Node):
 
         self._wheel = {}
         self._actuators = {"lift": {}, "brush": {}, "bin_door": {}}
+        self._bag_recorder: dict = {}
 
         self.create_subscription(String, "/wheel_status", self._cb_wheel, 10)
         self.create_subscription(ActuatorStateMsg, "/lift/state", lambda m: self._cb_act("lift", m), 10)
         self.create_subscription(ActuatorStateMsg, "/brush/state", lambda m: self._cb_act("brush", m), 10)
         self.create_subscription(ActuatorStateMsg, "/bin_door/state", lambda m: self._cb_act("bin_door", m), 10)
+        self.create_subscription(String, "/bag_recorder_node/status", self._cb_bag_recorder, 10)
 
         period = 1.0 / max(0.5, hz)
         self.create_timer(period, self._render)
@@ -101,6 +103,12 @@ class StatusScreenNode(Node):
             "speed_rpm": msg.speed_rpm,
             "error_message": msg.error_message,
         }
+
+    def _cb_bag_recorder(self, msg: String):
+        try:
+            self._bag_recorder = json.loads(msg.data)
+        except Exception:
+            pass
 
     def _render(self):
         if self._disp is None:
@@ -161,7 +169,18 @@ class StatusScreenNode(Node):
         # Footer
         y = H - 50
         draw.rectangle([0, y, W, H], fill=COL_FOOTER)
-        draw.text((8, y + 6), "GAMEPAD: --", fill=COL_MUTED, font=font_sm)
+
+        is_recording = self._bag_recorder.get("recording", False)
+        if is_recording:
+            dur = self._bag_recorder.get("duration_sec", 0)
+            m, s = divmod(int(dur), 60)
+            frames = self._bag_recorder.get("frame_count", 0)
+            draw.ellipse([8, y + 7, 18, y + 17], fill=COL_ACCENT)
+            draw.text((22, y + 6), f"REC {m}:{s:02d}  {frames}f", fill=COL_ACCENT, font=font_sm)
+        else:
+            draw.ellipse([8, y + 7, 18, y + 17], fill=COL_MUTED)
+            draw.text((22, y + 6), "REC: idle", fill=COL_MUTED, font=font_sm)
+
         draw.text((8, y + 22), "ERRORS: None", fill=COL_OK, font=font_sm)
 
         self._disp.draw_frame(img)

@@ -18,6 +18,7 @@ from std_msgs.msg import String
 
 from horseshitbot.msg import ActuatorState as ActuatorStateMsg
 from horseshitbot.srv import MksSetSpeed, ActuatorCommand, SwitchBackend
+from std_srvs.srv import Trigger
 
 try:
     import uvicorn
@@ -49,6 +50,7 @@ class _RosBridge:
             "lift": {},
             "brush": {},
             "bin_door": {},
+            "bag_recorder": {},
         }
         self._ws_clients: list[WebSocket] = []
 
@@ -56,6 +58,7 @@ class _RosBridge:
         ros_node.create_subscription(ActuatorStateMsg, "/lift/state", lambda m: self._cb_actuator("lift", m), 10)
         ros_node.create_subscription(ActuatorStateMsg, "/brush/state", lambda m: self._cb_actuator("brush", m), 10)
         ros_node.create_subscription(ActuatorStateMsg, "/bin_door/state", lambda m: self._cb_actuator("bin_door", m), 10)
+        ros_node.create_subscription(String, "/bag_recorder_node/status", self._cb_bag_recorder, 10)
 
     def _cb_wheel(self, msg: String):
         try:
@@ -75,6 +78,14 @@ class _RosBridge:
         }
         with self._lock:
             self._state[name] = data
+
+    def _cb_bag_recorder(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            data = {"raw": msg.data}
+        with self._lock:
+            self._state["bag_recorder"] = data
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -96,6 +107,10 @@ class WebDashboardNode(Node):
             return
 
         self._bridge = _RosBridge(self)
+
+        self._rec_start_cli = self.create_client(Trigger, "/bag_recorder_node/start_recording")
+        self._rec_stop_cli = self.create_client(Trigger, "/bag_recorder_node/stop_recording")
+
         self._app = self._build_app()
 
         self._server_thread = threading.Thread(target=self._run_server, daemon=True)
@@ -137,7 +152,6 @@ class WebDashboardNode(Node):
 
         @app.post("/api/command/{node_name}/{action}")
         async def command(node_name: str, action: str):
-            # Fire-and-forget service calls
             service_map = {
                 "stop": f"/{node_name}/stop",
                 "stop_fast": f"/{node_name}/stop_fast",
@@ -149,6 +163,20 @@ class WebDashboardNode(Node):
             if not srv_name:
                 return {"success": False, "message": f"unknown action: {action}"}
             return {"success": True, "message": f"called {srv_name}"}
+
+        @app.post("/api/recording/start")
+        async def start_recording():
+            if not ros_node._rec_start_cli.service_is_ready():
+                return {"success": False, "message": "bag_recorder_node not available"}
+            future = ros_node._rec_start_cli.call_async(Trigger.Request())
+            return {"success": True, "message": "start_recording called"}
+
+        @app.post("/api/recording/stop")
+        async def stop_recording():
+            if not ros_node._rec_stop_cli.service_is_ready():
+                return {"success": False, "message": "bag_recorder_node not available"}
+            future = ros_node._rec_stop_cli.call_async(Trigger.Request())
+            return {"success": True, "message": "stop_recording called"}
 
         @app.websocket("/ws")
         async def websocket_endpoint(ws: WebSocket):

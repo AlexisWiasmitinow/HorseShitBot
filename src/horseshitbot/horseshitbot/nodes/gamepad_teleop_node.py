@@ -99,12 +99,15 @@ class GamepadTeleopNode(Node):
         self._stop_fast_cli = self.create_client(Trigger, "/wheel_driver_node/stop_fast")
         self._stop_cli = self.create_client(Trigger, "/wheel_driver_node/stop")
         self._switch_cli = self.create_client(SwitchBackend, "/wheel_driver_node/switch_backend")
+        self._rec_start_cli = self.create_client(Trigger, "/bag_recorder_node/start_recording")
+        self._rec_stop_cli = self.create_client(Trigger, "/bag_recorder_node/stop_recording")
 
         # Internal state
         self._device: InputDevice | None = None
         self._axis_x = 0.0
         self._axis_y = 0.0
         self._connected = False
+        self._is_recording = False
         self._lock = threading.Lock()
 
         # Axis info cache (min/max/mid for normalization)
@@ -217,6 +220,8 @@ class GamepadTeleopNode(Node):
                 msg = String()
                 msg.data = "reference"
                 pub.publish(msg)
+        elif code == ecodes.BTN_SELECT:
+            self._toggle_recording()
 
     def _handle_button_release(self, code):
         if code == ecodes.BTN_TR:
@@ -256,6 +261,16 @@ class GamepadTeleopNode(Node):
         req = SwitchBackend.Request()
         req.backend = "toggle"
         self._switch_cli.call_async(req)
+
+    def _toggle_recording(self):
+        if self._is_recording:
+            self._call_trigger(self._rec_stop_cli)
+        else:
+            self._call_trigger(self._rec_start_cli)
+        self._is_recording = not self._is_recording
+        self.get_logger().info(
+            f"Recording {'started' if self._is_recording else 'stopped'} (gamepad)"
+        )
 
 
 def main(args=None):

@@ -95,3 +95,21 @@ button.danger:hover { background: var(--err); }
   transition: width 0.15s;
   background: var(--ok);
 }
+
+.rec-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.rec-dot.recording {
+  background: var(--err);
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}

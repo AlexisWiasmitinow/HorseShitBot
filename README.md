@@ -18,6 +18,8 @@ Bluetooth gamepad teleop, a web dashboard, and an on-robot ILI9341 SPI status sc
 | `gamepad_teleop_node` | Data Frog BT controller via evdev, publishes `/cmd_vel` + actuator commands |
 | `web_dashboard_node` | FastAPI web UI for settings, control, and live diagnostics |
 | `status_screen_node` | Renders live status on the on-robot ILI9341 2.8" TFT (SPI) |
+| `bag_recorder_node` | Programmatic rosbag2 recording of camera topics for ML training |
+| `realsense2_camera` | Official Intel RealSense wrapper (colour + depth, D415) |
 
 ### Hardware
 
@@ -26,6 +28,7 @@ Bluetooth gamepad teleop, a web dashboard, and an on-robot ILI9341 SPI status sc
 - **Lift/Brush/Bin Door:** MKS SERVO57D steppers on the same Modbus bus
 - **Gamepad:** Data Frog Bluetooth controller (evdev)
 - **Status Screen:** 2.8" ILI9341 SPI TFT, 240x320 (JC2432S028 V1.2)
+- **Camera:** Intel RealSense D415 (USB 3.0, colour + depth)
 
 ## Prerequisites
 
@@ -81,6 +84,46 @@ python3 test_scripts/ili9341_spi_test.py --fps          # benchmark refresh rate
 python3 test_scripts/ili9341_spi_test.py --no-hw        # run without hardware
 ```
 
+## RealSense D415 Camera & Data Recording
+
+### Install the RealSense ROS 2 wrapper
+
+```bash
+sudo apt install ros-${ROS_DISTRO}-realsense2-camera
+```
+
+The launch file automatically starts the camera node with 640x480@30fps colour + depth
+(aligned depth enabled, point cloud disabled).
+
+### Recording rosbag data
+
+Recording captures colour frames, aligned depth frames, and both camera-info topics into
+timestamped `.mcap` bag files under `~/rosbags/`.
+
+**Start / stop recording:**
+
+| Method | How |
+|--------|-----|
+| Gamepad | Press **Select** to toggle recording on/off |
+| Web dashboard | Click **Start Recording** / **Stop Recording** in the Camera card |
+| CLI | `ros2 service call /bag_recorder_node/start_recording std_srvs/srv/Trigger` |
+
+### Replay a bag
+
+```bash
+ros2 bag play ~/rosbags/horseshitbot_2026-04-03_14-30-00
+```
+
+### Extract frames from a bag
+
+```bash
+# List topics
+ros2 bag info ~/rosbags/horseshitbot_2026-04-03_14-30-00
+
+# Play back and subscribe with your own script, or use ros2 bag export tools
+ros2 bag play ~/rosbags/<bag_name> --topics /camera/color/image_raw
+```
+
 ## Gamepad Button Mapping
 
 | Input | Action |
@@ -94,6 +137,7 @@ python3 test_scripts/ili9341_spi_test.py --no-hw        # run without hardware
 | X | Stop all actuators |
 | Y | Switch wheel backend (MKS / ODrive) |
 | Start | Reference all actuators |
+| Select | Toggle rosbag recording |
 
 ## Legacy FastAPI App
 

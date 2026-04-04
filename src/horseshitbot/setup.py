@@ -41,6 +41,7 @@ setup(
             "gamepad_teleop_node = horseshitbot.nodes.gamepad_teleop_node:main",
             "web_dashboard_node = horseshitbot.nodes.web_dashboard_node:main",
             "status_screen_node = horseshitbot.nodes.status_screen_node:main",
+            "bag_recorder_node = horseshitbot.nodes.bag_recorder_node:main",
         ],
     },
 )

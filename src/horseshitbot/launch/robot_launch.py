@@ -10,17 +10,25 @@ Brings up all nodes with parameters from config/params.yaml:
   - gamepad_teleop_node (Data Frog BT controller)
   - web_dashboard_node  (FastAPI web UI)
   - status_screen_node  (ILI9341 SPI TFT status display)
+  - realsense2_camera   (Intel RealSense D415 colour + depth)
+  - bag_recorder_node   (rosbag2 recording for ML data collection)
 """
 
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
     pkg_dir = get_package_share_directory("horseshitbot")
     params_file = os.path.join(pkg_dir, "config", "params.yaml")
+
+    rs_launch_dir = os.path.join(
+        get_package_share_directory("realsense2_camera"), "launch"
+    )
 
     return LaunchDescription([
         Node(
@@ -76,6 +84,32 @@ def generate_launch_description():
             package="horseshitbot",
             executable="status_screen_node",
             name="status_screen_node",
+            parameters=[params_file],
+            output="screen",
+        ),
+
+        # Intel RealSense D415 via the official wrapper
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(rs_launch_dir, "rs_launch.py")
+            ),
+            launch_arguments={
+                "camera_name": "camera",
+                "device_type": "d415",
+                "enable_color": "true",
+                "enable_depth": "true",
+                "enable_pointcloud": "false",
+                "align_depth.enable": "true",
+                "rgb_camera.color_profile": "640x480x30",
+                "depth_module.depth_profile": "640x480x30",
+            }.items(),
+        ),
+
+        # Rosbag recorder for ML data collection
+        Node(
+            package="horseshitbot",
+            executable="bag_recorder_node",
+            name="bag_recorder_node",
             parameters=[params_file],
             output="screen",
         ),

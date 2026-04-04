@@ -93,3 +93,14 @@ status_screen_node:
     rotation: 0
     refresh_hz: 5.0
     backlight_brightness: 1.0
+
+bag_recorder_node:
+  ros__parameters:
+    output_dir: "~/rosbags"
+    bag_prefix: "horseshitbot"
+    topics:
+      - "/camera/color/image_raw"
+      - "/camera/aligned_depth_to_color/image_raw"
+      - "/camera/color/camera_info"
+      - "/camera/aligned_depth_to_color/camera_info"
+    storage_id: "mcap"

@@ -52,6 +52,32 @@ function updateUI(data) {
     setText(`${name}-dir`, a.direction || "--");
     setText(`${name}-ref`, a.is_referenced ? "Yes" : "No");
   }
+
+  // Bag recorder
+  const rec = data.bag_recorder || {};
+  const dot = document.getElementById("rec-dot");
+  const label = document.getElementById("rec-label");
+  if (dot && label) {
+    if (rec.recording) {
+      dot.classList.add("recording");
+      label.textContent = "RECORDING";
+      label.style.color = "#e94560";
+    } else {
+      dot.classList.remove("recording");
+      label.textContent = "Idle";
+      label.style.color = "";
+    }
+  }
+  if (rec.recording) {
+    const dur = rec.duration_sec || 0;
+    const m = Math.floor(dur / 60);
+    const s = Math.floor(dur % 60);
+    setText("rec-duration", `${m}:${s.toString().padStart(2, "0")}`);
+  } else {
+    setText("rec-duration", "--");
+  }
+  setText("rec-frames", rec.frame_count != null ? rec.frame_count : "--");
+  setText("rec-path", rec.bag_path || "--");
 }
 
 function setText(id, text) {
@@ -80,6 +106,22 @@ async function switchBackend() {
     await fetch("/api/command/wheel_driver_node/switch_backend", { method: "POST" });
   } catch (e) {
     console.error("Switch failed:", e);
+  }
+}
+
+async function startRecording() {
+  try {
+    await fetch("/api/recording/start", { method: "POST" });
+  } catch (e) {
+    console.error("Start recording failed:", e);
+  }
+}
+
+async function stopRecording() {
+  try {
+    await fetch("/api/recording/stop", { method: "POST" });
+  } catch (e) {
+    console.error("Stop recording failed:", e);
   }
 }
 
