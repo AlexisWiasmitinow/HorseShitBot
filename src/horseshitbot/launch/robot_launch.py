@@ -100,8 +100,8 @@ def generate_launch_description():
                 "enable_depth": "true",
                 "enable_pointcloud": "false",
                 "align_depth.enable": "true",
-                "rgb_camera.color_profile": "424x240x6",
-                "depth_module.depth_profile": "424x240x6",
+                "rgb_camera.color_profile": "640x480x15",
+                "depth_module.depth_profile": "640x480x15",
             }.items(),
         ),
 
