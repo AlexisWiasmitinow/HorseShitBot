@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+
+build/
+install/
+log/
+
+.venv/
+*.egg-info/
+
+*.bag
+*.mcap
+rosbags/
