@@ -12,7 +12,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from horseshitbot.msg import ActuatorState as ActuatorStateMsg
+from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
 from ..drivers.ili9341_display import ILI9341Display
 
 from PIL import Image, ImageDraw

@@ -58,7 +58,12 @@ class ODriveWheelBackend(WheelBackend):
     def connect(self) -> None:
         if not self._odrv.connect():
             raise RuntimeError(f"Cannot connect to ODrive on {self._odrv.port}")
-        self._odrv.apply_defaults()
+
+        both_ready = all(self._odrv.is_ready_for_closed_loop(ax) for ax in (0, 1))
+
+        if not both_ready:
+            _log.info("Motors not yet calibrated, applying defaults and calibrating...")
+            self._odrv.apply_defaults()
 
         for ax in (0, 1):
             self._odrv.write_property(
@@ -75,6 +80,7 @@ class ODriveWheelBackend(WheelBackend):
             _log.info("Starting motor on axis %d ...", ax)
             if not self._odrv.start_motor(ax):
                 raise RuntimeError(f"ODrive axis{ax} startup failed")
+            self._odrv.set_velocity_mode(ax)
             _log.info("Axis %d ready.", ax)
 
         self._connected = True
@@ -118,3 +124,17 @@ class ODriveWheelBackend(WheelBackend):
                 self._odrv.set_idle(ax)
             except Exception:
                 pass
+
+    def resume(self) -> bool:
+        """Re-enter closed loop after e-stop."""
+        try:
+            for ax in (0, 1):
+                self._odrv.clear_errors(ax)
+                if not self._odrv.set_closed_loop(ax):
+                    _log.error("Failed to resume axis %d", ax)
+                    return False
+                self._odrv.set_velocity_mode(ax)
+            return True
+        except Exception as e:
+            _log.error("Resume failed: %s", e)
+            return False

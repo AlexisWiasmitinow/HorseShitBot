@@ -113,3 +113,22 @@ button.danger:hover { background: var(--err); }
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+
+.estop-banner {
+  background: var(--err);
+  color: #fff;
+  text-align: center;
+  padding: 12px;
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: 1px;
+  animation: estop-flash 0.8s ease-in-out infinite;
+}
+@keyframes estop-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.card.estopped {
+  border: 2px solid var(--err);
+  box-shadow: 0 0 12px rgba(233, 69, 96, 0.4);
+}

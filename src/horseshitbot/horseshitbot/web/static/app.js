@@ -40,6 +40,15 @@ function updateUI(data) {
   setBar("bar-left", Math.abs(w.left_rpm || 0), MAX_RPM);
   setBar("bar-right", Math.abs(w.right_rpm || 0), MAX_RPM);
 
+  const estopBanner = document.getElementById("estop-banner");
+  if (estopBanner) {
+    estopBanner.style.display = w.estopped ? "block" : "none";
+  }
+  const card = document.getElementById("card-wheels");
+  if (card) {
+    card.classList.toggle("estopped", !!w.estopped);
+  }
+
   // Actuators
   for (const name of ["lift", "brush", "bin_door"]) {
     const a = data[name] || {};

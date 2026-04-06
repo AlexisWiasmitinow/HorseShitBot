@@ -117,6 +117,13 @@ class ODriveSerial:
     def write_property(self, property_path: str, value) -> str | None:
         return self.send_command(f"w {property_path} {value}")
 
+    def write_property_fast(self, property_path: str, value) -> None:
+        """Fire-and-forget write — no response wait. Use for real-time control."""
+        try:
+            self.ser.write(f"w {property_path} {value}\n".encode("ascii"))
+        except Exception:
+            pass
+
     def apply_defaults(self):
         for axis in range(2):
             for key, val in MOTOR_DEFAULTS.items():
@@ -162,8 +169,28 @@ class ODriveSerial:
 
         return state_val == "8" and err_val == "0"
 
-    def start_motor(self, axis: int = 0) -> bool:
-        """Full startup: reset pre-cal, clear errors, motor cal, encoder cal, closed loop."""
+    def _parse_digit(self, raw) -> str:
+        return "".join(c for c in str(raw) if c.isdigit())
+
+    def is_ready_for_closed_loop(self, axis: int = 0) -> bool:
+        """Check if motor is calibrated and encoder is ready (no recalibration needed)."""
+        cal = self._parse_digit(self.read_property(f"axis{axis}.motor.is_calibrated"))
+        enc = self._parse_digit(self.read_property(f"axis{axis}.encoder.is_ready"))
+        err = self._parse_digit(self.read_property(f"axis{axis}.error"))
+        return cal == "1" and enc == "1" and err == "0"
+
+    def start_motor(self, axis: int = 0, force_calibration: bool = False) -> bool:
+        """Start motor into closed loop. Skips calibration if already calibrated."""
+        self.clear_errors(axis)
+
+        # Already calibrated and error-free? Just enter closed loop.
+        if not force_calibration and self.is_ready_for_closed_loop(axis):
+            self.write_property(f"axis{axis}.requested_state", "8")
+            time.sleep(0.5)
+            state = self.read_property(f"axis{axis}.current_state")
+            return state == "8"
+
+        # Full calibration needed
         self.write_property(f"axis{axis}.motor.config.pre_calibrated", "0")
         self.write_property(f"axis{axis}.encoder.config.pre_calibrated", "0")
         time.sleep(0.2)
@@ -182,9 +209,7 @@ class ODriveSerial:
 
         motor_error = self.read_property(f"axis{axis}.motor.error")
         calibrated = self.read_property(f"axis{axis}.motor.is_calibrated")
-        me_val = "".join(c for c in str(motor_error) if c.isdigit())
-        cal_val = "".join(c for c in str(calibrated) if c.isdigit())
-        if me_val != "0" or cal_val != "1":
+        if self._parse_digit(motor_error) != "0" or self._parse_digit(calibrated) != "1":
             return False
 
         # Check hall sensors if in hall mode
@@ -194,7 +219,7 @@ class ODriveSerial:
                 self.clear_errors(axis)
                 raw = self.read_property(f"axis{axis}.encoder.hall_state")
                 try:
-                    hall_state = int("".join(c for c in str(raw) if c.isdigit()))
+                    hall_state = int(self._parse_digit(raw))
                 except ValueError:
                     hall_state = -1
                 if hall_state in (1, 2, 3, 4, 5, 6):
@@ -216,9 +241,7 @@ class ODriveSerial:
 
         encoder_error = self.read_property(f"axis{axis}.encoder.error")
         encoder_ready = self.read_property(f"axis{axis}.encoder.is_ready")
-        ee_val = "".join(c for c in str(encoder_error) if c.isdigit())
-        er_val = "".join(c for c in str(encoder_ready) if c.isdigit())
-        if ee_val != "0" or er_val != "1":
+        if self._parse_digit(encoder_error) != "0" or self._parse_digit(encoder_ready) != "1":
             return False
 
         # Enter closed loop
@@ -228,10 +251,15 @@ class ODriveSerial:
         return state == "8"
 
     def set_velocity(self, axis: int, velocity: float):
+        """Set velocity using fast fire-and-forget write."""
+        self.write_property_fast(f"axis{axis}.controller.input_vel", f"{velocity:.4f}")
+
+    def set_velocity_mode(self, axis: int, passthrough: bool = True):
+        """Set axis to velocity control. passthrough=True disables ODrive's own ramp."""
         self.write_property(f"axis{axis}.controller.config.control_mode", "2")
-        self.write_property(f"axis{axis}.controller.config.input_mode", "2")
+        mode = "1" if passthrough else "2"
+        self.write_property(f"axis{axis}.controller.config.input_mode", mode)
         time.sleep(0.05)
-        self.write_property(f"axis{axis}.controller.input_vel", str(velocity))
 
     def get_velocity(self, axis: int) -> float:
         raw = self.read_property_fast(f"axis{axis}.encoder.vel_estimate")

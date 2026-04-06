@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import rclpy
 from rclpy.node import Node
-from horseshitbot.srv import MksSetSpeed
+from horseshitbot_interfaces.srv import MksSetSpeed
 from std_srvs.srv import Trigger
 
 from ..drivers.mks_bus import BusCfg, MksBus, MODE_SR_VFOC

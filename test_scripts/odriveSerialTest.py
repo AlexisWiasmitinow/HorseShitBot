@@ -15,7 +15,7 @@ import re
 # =====================================================
 # DEFAULT CONFIGURATION
 # =====================================================
-DEFAULT_PORT = "COM18"
+DEFAULT_PORT = "/dev/ttyACM0"
 DEFAULT_BAUDRATE = 115200
 DEFAULT_TIMEOUT = 2.0
 
@@ -60,13 +60,13 @@ _current_axis = 0
 
 class ODriveSerial:
     """ODrive ASCII protocol communication handler"""
-    
+
     def __init__(self, port, baudrate=115200, timeout=2.0):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
         self.ser = None
-    
+
     def connect(self):
         """Connect to ODrive via serial port"""
         try:
@@ -77,60 +77,60 @@ class ODriveSerial:
                 timeout=self.timeout,
                 parity=serial.PARITY_NONE,
                 stopbits=serial.STOPBITS_ONE,
-                bytesize=serial.EIGHTBITS
+                bytesize=serial.EIGHTBITS,
             )
             time.sleep(0.5)  # Wait for connection to stabilize
-            
+
             # Clear any pending data
             self.ser.reset_input_buffer()
             self.ser.reset_output_buffer()
-            
+
             print("✓ Connected successfully!")
             return True
-            
+
         except Exception as e:
             print(f"✗ Failed to connect: {e}")
             return False
-    
+
     def disconnect(self):
         """Disconnect from ODrive"""
         if self.ser and self.ser.is_open:
             self.ser.close()
             print("✓ Disconnected")
-    
+
     def send_command(self, command):
         """Send a command and read response"""
         try:
             # Clear buffers
             self.ser.reset_input_buffer()
-            
+
             # Send command
-            cmd = command.strip() + '\n'
-            self.ser.write(cmd.encode('ascii'))
-            
+            cmd = command.strip() + "\n"
+            self.ser.write(cmd.encode("ascii"))
+
             # Read response - wait for data to arrive
             response = ""
             time.sleep(0.15)
-            
+
             # Read all available data
             while self.ser.in_waiting > 0:
-                line = self.ser.readline().decode('ascii', errors='ignore').strip()
+                line = self.ser.readline().decode("ascii", errors="ignore").strip()
                 if line:
                     response += line + "\n"
                 time.sleep(0.05)  # Small delay between reads
-            
+
             return response.strip()
-            
+
         except Exception as e:
             print(f"✗ Command error: {e}")
             return None
-    
+
     def read_property_fast(self, property_path):
         """Read a property with minimal latency"""
         try:
             self.ser.reset_input_buffer()
-            self.ser.write(f"r {property_path}\n".encode('ascii'))
-            line = self.ser.readline().decode('ascii', errors='ignore').strip()
+            self.ser.write(f"r {property_path}\n".encode("ascii"))
+            line = self.ser.readline().decode("ascii", errors="ignore").strip()
             return line
         except Exception as e:
             return None
@@ -140,13 +140,13 @@ class ODriveSerial:
         response = self.send_command(f"r {property_path}")
         if response:
             # Parse the response - take the last non-empty line
-            lines = [l.strip() for l in response.split('\n') if l.strip()]
+            lines = [l.strip() for l in response.split("\n") if l.strip()]
             value = lines[-1] if lines else response
             # Strip any non-printable characters or serial artifacts
-            value = ''.join(c for c in value if c.isprintable())
+            value = "".join(c for c in value if c.isprintable())
             return value
         return response
-    
+
     def write_property(self, property_path, value):
         """Write a property value"""
         command = f"w {property_path} {value}"
@@ -181,7 +181,7 @@ def get_info(odrv):
     print(f"\n{'='*50}")
     print("ODRIVE INFORMATION")
     print(f"{'='*50}")
-    
+
     # Read basic info
     vbus = odrv.read_property("vbus_voltage")
     print(f"VBus Voltage: {vbus}V")
@@ -192,11 +192,11 @@ def get_axis_info(odrv, axis_num=0):
     print(f"\n{'='*50}")
     print(f"AXIS {axis_num} INFORMATION")
     print(f"{'='*50}")
-    
+
     # Read axis state
     state = odrv.read_property(f"axis{axis_num}.current_state")
     error = odrv.read_property(f"axis{axis_num}.error")
-    
+
     state_names = {
         "0": "UNDEFINED",
         "1": "IDLE",
@@ -206,29 +206,29 @@ def get_axis_info(odrv, axis_num=0):
         "6": "ENCODER_OFFSET_CALIBRATION",
         "8": "CLOSED_LOOP_CONTROL",
     }
-    
+
     print(f"State: {state_names.get(state, 'UNKNOWN')} ({state})")
     print(f"Error: {error}")
-    
+
     # Read position and velocity
     pos = odrv.read_property(f"axis{axis_num}.encoder.pos_estimate")
     vel = odrv.read_property(f"axis{axis_num}.encoder.vel_estimate")
-    
+
     print(f"\nPosition: {pos} turns")
     print(f"Velocity: {vel} turns/sec")
-    
+
     # Motor info
     calibrated = odrv.read_property(f"axis{axis_num}.motor.is_calibrated")
     motor_error = odrv.read_property(f"axis{axis_num}.motor.error")
-    
+
     print(f"\nMotor:")
     print(f"  Is Calibrated: {calibrated}")
     print(f"  Error: {motor_error}")
-    
+
     # Encoder info
     encoder_ready = odrv.read_property(f"axis{axis_num}.encoder.is_ready")
     encoder_error = odrv.read_property(f"axis{axis_num}.encoder.error")
-    
+
     print(f"\nEncoder:")
     print(f"  Is Ready: {encoder_ready}")
     print(f"  Error: {encoder_error}")
@@ -252,9 +252,9 @@ def calibrate(odrv, axis_num=0):
     print("  3. Encoder offset calibration only")
     print("  4. Hall sensor setup (motor cal + skip encoder cal)")
     print("  [Enter] Cancel")
-    
+
     choice = input("\nSelect calibration type: ").strip()
-    
+
     if choice == "1":
         return run_calibration(odrv, axis_num, state=3, name="Full Calibration")
     elif choice == "2":
@@ -299,31 +299,35 @@ def run_calibration(odrv, axis_num, state, name):
     odrv.write_property(f"axis{axis_num}.controller.error", "0")
     time.sleep(0.2)
     print("✓ Errors cleared")
-    
+
     # Start calibration
     print(f"\nStarting {name} (requested_state = {state})...")
     odrv.write_property(f"axis{axis_num}.requested_state", str(state))
-    
+
     # Wait for calibration to begin
     time.sleep(1)
-    
+
     # Monitor progress
     print("⟳ Calibration in progress...")
     for i in range(30):
         time.sleep(1)
         current = odrv.read_property(f"axis{axis_num}.current_state")
-        
+
         state_names = {
-            "0": "UNDEFINED", "1": "IDLE", "3": "FULL_CALIBRATION",
-            "4": "MOTOR_CALIBRATION", "6": "ENCODER_OFFSET_CAL",
-            "7": "ENCODER_OFFSET_CAL", "8": "CLOSED_LOOP",
+            "0": "UNDEFINED",
+            "1": "IDLE",
+            "3": "FULL_CALIBRATION",
+            "4": "MOTOR_CALIBRATION",
+            "6": "ENCODER_OFFSET_CAL",
+            "7": "ENCODER_OFFSET_CAL",
+            "8": "CLOSED_LOOP",
         }
         state_name = state_names.get(current, f"UNKNOWN({current})")
         print(f"  State: {state_name} ({current})")
-        
+
         if current == "1":  # IDLE - done
             break
-    
+
     # Check results
     time.sleep(0.5)
     error = odrv.read_property(f"axis{axis_num}.error")
@@ -331,7 +335,7 @@ def run_calibration(odrv, axis_num, state, name):
     encoder_error = odrv.read_property(f"axis{axis_num}.encoder.error")
     calibrated = odrv.read_property(f"axis{axis_num}.motor.is_calibrated")
     encoder_ready = odrv.read_property(f"axis{axis_num}.encoder.is_ready")
-    
+
     phase_r = odrv.read_property(f"axis{axis_num}.motor.config.phase_resistance")
     phase_l = odrv.read_property(f"axis{axis_num}.motor.config.phase_inductance")
 
@@ -343,10 +347,10 @@ def run_calibration(odrv, axis_num, state, name):
     print(f"  Encoder Ready: {encoder_ready}")
     print(f"  Phase Resistance: {phase_r} ohm")
     print(f"  Phase Inductance: {phase_l} H")
-    
-    error_val = ''.join(c for c in str(error) if c.isdigit())
-    motor_err_val = ''.join(c for c in str(motor_error) if c.isdigit())
-    encoder_err_val = ''.join(c for c in str(encoder_error) if c.isdigit())
+
+    error_val = "".join(c for c in str(error) if c.isdigit())
+    motor_err_val = "".join(c for c in str(motor_error) if c.isdigit())
+    encoder_err_val = "".join(c for c in str(encoder_error) if c.isdigit())
 
     if error_val == "0" and motor_err_val == "0" and encoder_err_val == "0":
         print(f"\n✓ {name} successful!")
@@ -366,25 +370,25 @@ def hall_sensor_setup(odrv, axis_num):
     print(f"\n{'='*50}")
     print(f"HALL SENSOR SETUP - AXIS {axis_num}")
     print(f"{'='*50}")
-    
+
     # Step 1: Configure encoder for Hall mode
     print("\nStep 1: Configuring encoder for Hall sensors...")
     odrv.write_property(f"axis{axis_num}.encoder.config.mode", "1")
-    
+
     pole_pairs = input("Enter motor pole pairs (e.g., 7, 14, 20): ").strip()
     if not pole_pairs:
         print("✗ Pole pairs required!")
         return False
-    
+
     cpr = 6 * int(pole_pairs)
     odrv.write_property(f"axis{axis_num}.encoder.config.cpr", str(cpr))
     print(f"  ✓ Encoder mode: Hall (1)")
     print(f"  ✓ CPR: {cpr} (6 x {pole_pairs} pole pairs)")
-    
+
     # Also set motor pole pairs
     odrv.write_property(f"axis{axis_num}.motor.config.pole_pairs", pole_pairs)
     print(f"  ✓ Motor pole pairs: {pole_pairs}")
-    
+
     # Step 2: Clear errors
     print("\nStep 2: Clearing errors...")
     odrv.write_property(f"axis{axis_num}.error", "0")
@@ -393,14 +397,14 @@ def hall_sensor_setup(odrv, axis_num):
     odrv.write_property(f"axis{axis_num}.controller.error", "0")
     time.sleep(0.2)
     print("  ✓ Errors cleared")
-    
+
     # Step 3: Run motor calibration only (state 4)
     print("\nStep 3: Running motor calibration...")
     print("⚠ Motor will beep/spin briefly!")
-    
+
     odrv.write_property(f"axis{axis_num}.requested_state", "4")
     time.sleep(1)
-    
+
     print("⟳ Motor calibration in progress...")
     for i in range(15):
         time.sleep(1)
@@ -408,52 +412,52 @@ def hall_sensor_setup(odrv, axis_num):
         print(f"  State: {state}")
         if state == "1":
             break
-    
+
     time.sleep(0.5)
     motor_error = odrv.read_property(f"axis{axis_num}.motor.error")
     calibrated = odrv.read_property(f"axis{axis_num}.motor.is_calibrated")
-    
-    me_val = ''.join(c for c in str(motor_error) if c.isdigit())
-    cal_val = ''.join(c for c in str(calibrated) if c.isdigit())
+
+    me_val = "".join(c for c in str(motor_error) if c.isdigit())
+    cal_val = "".join(c for c in str(calibrated) if c.isdigit())
     if me_val != "0" or cal_val != "1":
         print(f"\n✗ Motor calibration failed")
         print(f"  Motor Error: {motor_error}")
         print(f"  Motor Calibrated: {calibrated}")
         return False
-    
+
     print("  ✓ Motor calibration complete!")
-    
+
     # Step 4: Mark motor and encoder as pre-calibrated
     print("\nStep 4: Marking as pre-calibrated (skip encoder offset cal)...")
     odrv.write_property(f"axis{axis_num}.motor.config.pre_calibrated", "1")
     odrv.write_property(f"axis{axis_num}.encoder.config.pre_calibrated", "1")
     print("  ✓ Motor pre-calibrated: True")
     print("  ✓ Encoder pre-calibrated: True")
-    
+
     # Step 5: Save configuration
     print("\nStep 5: Saving configuration...")
     odrv.send_command("ss")
     time.sleep(1)
     print("  ✓ Configuration saved!")
-    
+
     # Step 6: Try closed loop
     print(f"\n{'='*50}")
     print("Setup complete! Attempting closed loop control...")
-    
+
     # Clear any leftover errors
     odrv.write_property(f"axis{axis_num}.error", "0")
     odrv.write_property(f"axis{axis_num}.motor.error", "0")
     odrv.write_property(f"axis{axis_num}.encoder.error", "0")
     time.sleep(0.2)
-    
+
     odrv.write_property(f"axis{axis_num}.requested_state", "8")
     time.sleep(1)
-    
+
     state = odrv.read_property(f"axis{axis_num}.current_state")
     if state == "8":
         print("✓ Closed loop control enabled! Motor is ready.")
         print("  Use option 10 (manual velocity) to test.")
-        
+
         # Set back to idle for safety
         odrv.write_property(f"axis{axis_num}.requested_state", "1")
         time.sleep(0.2)
@@ -462,7 +466,7 @@ def hall_sensor_setup(odrv, axis_num):
         error = odrv.read_property(f"axis{axis_num}.error")
         print(f"⚠ Could not enter closed loop (state: {state}, error: {error})")
         print("  You may need to reboot the ODrive and try again.")
-    
+
     return True
 
 
@@ -482,9 +486,9 @@ def set_closed_loop(odrv, axis_num=0):
     # Check calibration
     calibrated = odrv.read_property(f"axis{axis_num}.motor.is_calibrated")
     encoder_ready = odrv.read_property(f"axis{axis_num}.encoder.is_ready")
-    
-    cal_val = ''.join(c for c in str(calibrated) if c.isdigit())
-    enc_val = ''.join(c for c in str(encoder_ready) if c.isdigit())
+
+    cal_val = "".join(c for c in str(calibrated) if c.isdigit())
+    enc_val = "".join(c for c in str(encoder_ready) if c.isdigit())
 
     if cal_val != "1":
         print("✗ Motor not calibrated! Run calibration first.")
@@ -493,15 +497,15 @@ def set_closed_loop(odrv, axis_num=0):
     if enc_val != "1":
         print("✗ Encoder not ready! Run calibration first.")
         return False
-    
+
     # Enable closed loop
     odrv.write_property(f"axis{axis_num}.requested_state", "8")
     time.sleep(0.5)
-    
+
     state = odrv.read_property(f"axis{axis_num}.current_state")
-    state_val = ''.join(c for c in str(state) if c.isdigit())
+    state_val = "".join(c for c in str(state) if c.isdigit())
     err = odrv.read_property(f"axis{axis_num}.error")
-    err_val = ''.join(c for c in str(err) if c.isdigit())
+    err_val = "".join(c for c in str(err) if c.isdigit())
 
     if state_val == "8" and err_val == "0":
         print("✓ Closed loop control enabled")
@@ -531,14 +535,14 @@ def start_motor(odrv, axis_num=0):
     print(f"\n{'='*50}")
     print(f"STARTING MOTOR - AXIS {axis_num}")
     print(f"{'='*50}")
-    
+
     # Step 1: Reset pre_calibrated flags so calibrations actually run
     print("\nStep 1: Resetting pre-calibrated flags...")
     odrv.write_property(f"axis{axis_num}.motor.config.pre_calibrated", "0")
     odrv.write_property(f"axis{axis_num}.encoder.config.pre_calibrated", "0")
     time.sleep(0.2)
     print("  ✓ Flags reset")
-    
+
     # Step 2: Clear all errors
     print("\nStep 2: Clearing all errors...")
     odrv.write_property(f"axis{axis_num}.error", "0")
@@ -547,13 +551,13 @@ def start_motor(odrv, axis_num=0):
     odrv.write_property(f"axis{axis_num}.controller.error", "0")
     time.sleep(0.2)
     print("  ✓ Errors cleared")
-    
+
     # Step 3: Run motor calibration (beep + resistance/inductance measurement)
     print("\nStep 3: Running motor calibration...")
     print("  ⚠ Motor will beep/spin briefly!")
     odrv.write_property(f"axis{axis_num}.requested_state", "4")
     time.sleep(1)
-    
+
     print("  ⟳ Calibrating...")
     for i in range(15):
         time.sleep(1)
@@ -561,24 +565,24 @@ def start_motor(odrv, axis_num=0):
         if state == "1":
             break
         print(f"    State: {state}")
-    
+
     time.sleep(0.5)
     motor_error = odrv.read_property(f"axis{axis_num}.motor.error")
     calibrated = odrv.read_property(f"axis{axis_num}.motor.is_calibrated")
-    
-    me_val = ''.join(c for c in str(motor_error) if c.isdigit())
-    cal_val = ''.join(c for c in str(calibrated) if c.isdigit())
+
+    me_val = "".join(c for c in str(motor_error) if c.isdigit())
+    cal_val = "".join(c for c in str(calibrated) if c.isdigit())
     if me_val != "0" or cal_val != "1":
         print(f"  ✗ Motor calibration failed (error: {motor_error}, calibrated: {calibrated})")
         return False
-    
+
     phase_r = odrv.read_property(f"axis{axis_num}.motor.config.phase_resistance")
     phase_l = odrv.read_property(f"axis{axis_num}.motor.config.phase_inductance")
     print(f"  ✓ Motor calibrated (R={phase_r}Ω, L={phase_l}H)")
-    
+
     # Step 4: Check encoder type and prepare
     enc_mode = odrv.read_property(f"axis{axis_num}.encoder.config.mode")
-    is_hall = (enc_mode == "1")
+    is_hall = enc_mode == "1"
 
     if is_hall:
         print("\nStep 4: Checking Hall sensors...")
@@ -590,7 +594,7 @@ def start_motor(odrv, axis_num=0):
 
             raw = odrv.read_property(f"axis{axis_num}.encoder.hall_state")
             try:
-                hall_state = int(''.join(c for c in str(raw) if c.isdigit()))
+                hall_state = int("".join(c for c in str(raw) if c.isdigit()))
             except ValueError:
                 hall_state = -1
 
@@ -612,14 +616,14 @@ def start_motor(odrv, axis_num=0):
     # Step 5: Run encoder offset calibration
     print("\nStep 5: Running encoder offset calibration...")
     print("  ⚠ Motor will spin slowly!")
-    
+
     odrv.write_property(f"axis{axis_num}.error", "0")
     odrv.write_property(f"axis{axis_num}.encoder.error", "0")
     time.sleep(0.2)
-    
+
     odrv.write_property(f"axis{axis_num}.requested_state", "7")
     time.sleep(1)
-    
+
     print("  ⟳ Calibrating encoder offset...")
     for i in range(20):
         time.sleep(1)
@@ -627,13 +631,13 @@ def start_motor(odrv, axis_num=0):
         if state == "1":
             break
         print(f"    State: {state}")
-    
+
     time.sleep(0.5)
     encoder_error = odrv.read_property(f"axis{axis_num}.encoder.error")
     encoder_ready = odrv.read_property(f"axis{axis_num}.encoder.is_ready")
-    
-    ee_val = ''.join(c for c in str(encoder_error) if c.isdigit())
-    er_val = ''.join(c for c in str(encoder_ready) if c.isdigit())
+
+    ee_val = "".join(c for c in str(encoder_error) if c.isdigit())
+    er_val = "".join(c for c in str(encoder_ready) if c.isdigit())
     if ee_val != "0" or er_val != "1":
         print(f"  ✗ Encoder offset calibration failed")
         print(f"    Encoder Error: {encoder_error}")
@@ -641,15 +645,15 @@ def start_motor(odrv, axis_num=0):
         axis_error = odrv.read_property(f"axis{axis_num}.error")
         print(f"    Axis Error: {axis_error}")
         return False
-    
+
     offset = odrv.read_property(f"axis{axis_num}.encoder.config.offset")
     print(f"  ✓ Encoder offset calibrated (offset: {offset})")
-    
+
     # Step 6: Enter closed loop
     print("\nStep 6: Entering closed loop control...")
     odrv.write_property(f"axis{axis_num}.requested_state", "8")
     time.sleep(1)
-    
+
     state = odrv.read_property(f"axis{axis_num}.current_state")
     if state == "8":
         print("\n✓ Motor started successfully! Closed loop control active.")
@@ -705,7 +709,7 @@ def read_encoder_inputs(odrv, axis_num=0):
             pos = odrv.read_property_fast(f"axis{axis_num}.encoder.pos_estimate")
 
             try:
-                state = int(''.join(c for c in str(raw) if c.isdigit()))
+                state = int("".join(c for c in str(raw) if c.isdigit()))
             except ValueError:
                 state = -1
 
@@ -777,6 +781,7 @@ def measure_cpr(odrv, axis_num=0):
     print("(Live count shown below, press Enter when done)\n")
 
     import threading
+
     stop_flag = threading.Event()
 
     def show_live():
@@ -815,14 +820,14 @@ def configure_encoder(odrv, axis_num=0):
     print(f"\n{'='*50}")
     print(f"ENCODER CONFIGURATION - AXIS {axis_num}")
     print(f"{'='*50}")
-    
+
     # Show current settings
     print("\nCurrent Encoder Configuration:")
     mode = odrv.read_property(f"axis{axis_num}.encoder.config.mode")
     cpr = odrv.read_property(f"axis{axis_num}.encoder.config.cpr")
     bandwidth = odrv.read_property(f"axis{axis_num}.encoder.config.bandwidth")
     is_ready = odrv.read_property(f"axis{axis_num}.encoder.is_ready")
-    
+
     mode_names = {
         "0": "INCREMENTAL (Quadrature)",
         "1": "HALL (Hall Effect Sensors)",
@@ -831,12 +836,12 @@ def configure_encoder(odrv, axis_num=0):
         "257": "SPI_ABS_CUI",
         "258": "SPI_ABS_AEAT",
     }
-    
+
     print(f"  Mode: {mode_names.get(mode, 'UNKNOWN')} ({mode})")
     print(f"  CPR (Counts Per Revolution): {cpr}")
     print(f"  Bandwidth: {bandwidth}")
     print(f"  Is Ready: {is_ready}")
-    
+
     # Ask if user wants to change settings
     print(f"\n{'─'*50}")
     print("Encoder Mode Options:")
@@ -845,14 +850,14 @@ def configure_encoder(odrv, axis_num=0):
     print("  2. Sin/Cos encoder")
     print("  [Enter] to skip")
     print(f"{'─'*50}")
-    
+
     choice = input("\nSelect encoder mode (or Enter to skip): ").strip()
-    
+
     if choice in ["0", "1", "2"]:
         # Set encoder mode
         odrv.write_property(f"axis{axis_num}.encoder.config.mode", choice)
         print(f"✓ Encoder mode set to {mode_names.get(choice, choice)}")
-        
+
         # Set CPR based on mode
         if choice == "0":  # Incremental
             print("\nCommon encoder line counts:")
@@ -872,7 +877,7 @@ def configure_encoder(odrv, axis_num=0):
                 cpr_value = lines * 4
                 odrv.write_property(f"axis{axis_num}.encoder.config.cpr", str(cpr_value))
                 print(f"✓ CPR set to {cpr_value} ({lines} lines × 4 quadrature)")
-        
+
         elif choice == "1":  # Hall
             print("\nHall sensor CPR = 6 * pole_pairs")
             pole_pairs = input("Enter motor pole pairs (e.g., 7): ").strip()
@@ -880,25 +885,25 @@ def configure_encoder(odrv, axis_num=0):
                 cpr_value = 6 * int(pole_pairs)
                 odrv.write_property(f"axis{axis_num}.encoder.config.cpr", str(cpr_value))
                 print(f"✓ CPR set to {cpr_value} (6 × {pole_pairs})")
-        
+
         elif choice == "2":  # Sin/Cos
             cpr_input = input("Enter CPR value for Sin/Cos encoder: ").strip()
             if cpr_input:
                 odrv.write_property(f"axis{axis_num}.encoder.config.cpr", cpr_input)
                 print(f"✓ CPR set to {cpr_input}")
-        
+
         # Ask about bandwidth
         bw_input = input("\nEnter bandwidth (default 1000, or Enter to skip): ").strip()
         if bw_input:
             odrv.write_property(f"axis{axis_num}.encoder.config.bandwidth", bw_input)
             print(f"✓ Bandwidth set to {bw_input}")
-        
+
         # Save configuration
         print("\nSaving configuration...")
         odrv.send_command("ss")
         time.sleep(0.5)
         print("✓ Configuration saved!")
-        
+
         # Show updated settings
         print("\nUpdated Encoder Configuration:")
         mode = odrv.read_property(f"axis{axis_num}.encoder.config.mode")
@@ -1060,31 +1065,31 @@ def test_velocity_control(odrv, axis_num=0):
     print(f"\n{'='*50}")
     print(f"VELOCITY CONTROL TEST - AXIS {axis_num}")
     print(f"{'='*50}")
-    
+
     if not set_closed_loop(odrv, axis_num):
         return False
-    
+
     # Test forward
     print("\nTest 1: Forward rotation (2 turns/sec)")
     set_velocity(odrv, axis_num, 2.0)
     time.sleep(3)
     vel = odrv.read_property(f"axis{axis_num}.encoder.vel_estimate")
     print(f"  Measured velocity: {vel} turns/sec")
-    
+
     # Test reverse
     print("\nTest 2: Reverse rotation (-2 turns/sec)")
     set_velocity(odrv, axis_num, -2.0)
     time.sleep(3)
     vel = odrv.read_property(f"axis{axis_num}.encoder.vel_estimate")
     print(f"  Measured velocity: {vel} turns/sec")
-    
+
     # Stop
     print("\nTest 3: Stop")
     set_velocity(odrv, axis_num, 0)
     time.sleep(1)
     vel = odrv.read_property(f"axis{axis_num}.encoder.vel_estimate")
     print(f"  Measured velocity: {vel} turns/sec")
-    
+
     print("\n✓ Velocity control test complete")
     return True
 
@@ -1094,14 +1099,14 @@ def test_position_control(odrv, axis_num=0):
     print(f"\n{'='*50}")
     print(f"POSITION CONTROL TEST - AXIS {axis_num}")
     print(f"{'='*50}")
-    
+
     if not set_closed_loop(odrv, axis_num):
         return False
-    
+
     # Get starting position
     start_pos = float(odrv.read_property(f"axis{axis_num}.encoder.pos_estimate"))
     print(f"\nStarting position: {start_pos:.3f} turns")
-    
+
     # Test 1: Move forward
     print("\nTest 1: Move forward 2 turns")
     target = start_pos + 2.0
@@ -1109,7 +1114,7 @@ def test_position_control(odrv, axis_num=0):
     time.sleep(3)
     pos = odrv.read_property(f"axis{axis_num}.encoder.pos_estimate")
     print(f"  Current position: {pos} turns")
-    
+
     # Test 2: Move back
     print("\nTest 2: Move back 2 turns")
     target = start_pos
@@ -1117,7 +1122,7 @@ def test_position_control(odrv, axis_num=0):
     time.sleep(3)
     pos = odrv.read_property(f"axis{axis_num}.encoder.pos_estimate")
     print(f"  Current position: {pos} turns")
-    
+
     print("\n✓ Position control test complete")
     return True
 
@@ -1132,7 +1137,7 @@ def dump_diagnostics(odrv, axis_num=0):
     print(f"\n{'='*50}")
     print(f"FULL DIAGNOSTIC DUMP - AXIS {axis_num}")
     print(f"{'='*50}")
-    
+
     properties = [
         # Firmware
         ("FW Version Major", "fw_version_major"),
@@ -1182,14 +1187,14 @@ def dump_diagnostics(odrv, axis_num=0):
         ("Trap Accel Limit", f"axis{axis_num}.trap_traj.config.accel_limit"),
         ("Trap Decel Limit", f"axis{axis_num}.trap_traj.config.decel_limit"),
     ]
-    
+
     print(f"\n{'Property':<30} {'Value':>15}   Path")
     print(f"{'─'*30} {'─'*15}   {'─'*40}")
-    
+
     for label, prop in properties:
         value = odrv.read_property(prop)
         print(f"{label:<30} {str(value):>15}   {prop}")
-    
+
     print(f"\n{'='*50}")
     print("Copy and paste this output for troubleshooting.")
     print(f"{'='*50}")
@@ -1237,51 +1242,51 @@ def interactive_mode(odrv, axis_num):
         while True:
             print_menu()
             choice = input("\nEnter choice: ").strip().lower()
-            
+
             if choice == "1":
                 get_info(odrv)
-            
+
             elif choice == "2":
                 get_axis_info(odrv, axis_num)
-            
+
             elif choice == "3":
                 configure_encoder(odrv, axis_num)
-            
+
             elif choice == "4":
                 setup_incremental_encoder(odrv, axis_num)
-            
+
             elif choice == "5":
                 setup_spi_encoder(odrv, axis_num)
-            
+
             elif choice == "6":
                 test_encoder_live(odrv, axis_num)
-            
+
             elif choice == "7":
                 measure_cpr(odrv, axis_num)
-            
+
             elif choice == "8":
                 read_encoder_inputs(odrv, axis_num)
-            
+
             elif choice == "9":
                 calibrate(odrv, axis_num)
-            
+
             elif choice == "10":
                 start_motor(odrv, axis_num)
-            
+
             elif choice == "11":
                 set_closed_loop(odrv, axis_num)
-            
+
             elif choice == "12":
                 set_idle(odrv, axis_num)
-            
+
             elif choice == "13":
                 test_velocity_control(odrv, axis_num)
                 set_idle(odrv, axis_num)
-            
+
             elif choice == "14":
                 test_position_control(odrv, axis_num)
                 set_idle(odrv, axis_num)
-            
+
             elif choice == "15":
                 cur_limit = odrv.read_property(f"axis{axis_num}.controller.config.vel_limit")
                 cur_ramp = odrv.read_property(f"axis{axis_num}.controller.config.vel_ramp_rate")
@@ -1311,7 +1316,7 @@ def interactive_mode(odrv, axis_num):
                     print("Type 'q' to stop.\n")
                     while True:
                         vel_input = input("  Speed (turns/sec): ").strip()
-                        if vel_input.lower() == 'q':
+                        if vel_input.lower() == "q":
                             break
                         try:
                             vel = float(vel_input)
@@ -1319,9 +1324,9 @@ def interactive_mode(odrv, axis_num):
                             time.sleep(3)
 
                             err = odrv.read_property(f"axis{axis_num}.error")
-                            err_val = ''.join(c for c in str(err) if c.isdigit())
+                            err_val = "".join(c for c in str(err) if c.isdigit())
                             motor_err = odrv.read_property(f"axis{axis_num}.motor.error")
-                            motor_err_val = ''.join(c for c in str(motor_err) if c.isdigit())
+                            motor_err_val = "".join(c for c in str(motor_err) if c.isdigit())
                             enc_err = odrv.read_property(f"axis{axis_num}.encoder.error")
                             cur_vel_raw = odrv.read_property(f"axis{axis_num}.encoder.vel_estimate")
                             iq = odrv.read_property(f"axis{axis_num}.motor.current_control.Iq_measured")
@@ -1349,7 +1354,7 @@ def interactive_mode(odrv, axis_num):
                             print("  Invalid number, try again")
                     set_velocity(odrv, axis_num, 0)
                     set_idle(odrv, axis_num)
-            
+
             elif choice == "16":
                 if set_closed_loop(odrv, axis_num):
                     origin = float(odrv.read_property(f"axis{axis_num}.encoder.pos_estimate"))
@@ -1376,9 +1381,9 @@ def interactive_mode(odrv, axis_num):
                     while True:
                         try:
                             cmd = input("  Move (turns): ").strip().lower()
-                            if cmd == 'q':
+                            if cmd == "q":
                                 break
-                            if cmd == 'z':
+                            if cmd == "z":
                                 origin = float(odrv.read_property(f"axis{axis_num}.encoder.pos_estimate"))
                                 current_target = origin
                                 print(f"  Origin re-zeroed at {origin:.3f}")
@@ -1386,23 +1391,28 @@ def interactive_mode(odrv, axis_num):
                             delta = float(cmd)
                             current_target += delta
                             set_position(odrv, axis_num, current_target)
-                            wait = max(1.0, abs(delta) / float(odrv.read_property(f"axis{axis_num}.trap_traj.config.vel_limit")) + 1.0)
+                            wait = max(
+                                1.0,
+                                abs(delta) / float(odrv.read_property(f"axis{axis_num}.trap_traj.config.vel_limit")) + 1.0,
+                            )
                             time.sleep(wait)
                             pos = float(odrv.read_property(f"axis{axis_num}.encoder.pos_estimate"))
                             rel = pos - origin
                             err = odrv.read_property(f"axis{axis_num}.error")
-                            err_val = ''.join(c for c in str(err) if c.isdigit())
-                            print(f"  Position: {pos:.3f} (relative: {rel:+.3f})  target: {current_target:.3f}  error: {err}")
+                            err_val = "".join(c for c in str(err) if c.isdigit())
+                            print(
+                                f"  Position: {pos:.3f} (relative: {rel:+.3f})  target: {current_target:.3f}  error: {err}"
+                            )
                             if err_val != "0":
                                 print("  ✗ Axis error detected, stopping")
                                 break
                         except ValueError:
                             print("  Invalid input, enter a number, 'z', or 'q'")
                     set_idle(odrv, axis_num)
-            
+
             elif choice == "17":
                 dump_diagnostics(odrv, axis_num)
-            
+
             elif choice == "18":
                 print("Raw command mode (Ctrl+C to exit)")
                 try:
@@ -1415,7 +1425,7 @@ def interactive_mode(odrv, axis_num):
                             print(response)
                 except KeyboardInterrupt:
                     print("\nExited raw command mode.")
-            
+
             elif choice == "a":
                 _current_axis = 1 - _current_axis
                 axis_num = _current_axis
@@ -1426,10 +1436,10 @@ def interactive_mode(odrv, axis_num):
                 set_idle(odrv, 0)
                 set_idle(odrv, 1)
                 break
-            
+
             else:
                 print("✗ Invalid choice")
-    
+
     except KeyboardInterrupt:
         print("\n\n⚠ Interrupted by user")
         set_idle(odrv, axis_num)
@@ -1451,44 +1461,44 @@ def main():
     parser.add_argument("--test-velocity", action="store_true", help="Run velocity control test")
     parser.add_argument("--test-position", action="store_true", help="Run position control test")
     args = parser.parse_args()
-    
+
     # Create ODrive serial connection
     odrv = ODriveSerial(args.port, args.baud)
-    
+
     if not odrv.connect():
         print("\n✗ Failed to connect to ODrive")
         print("  Check port name, wiring, and that ODrive is powered on.")
         return 1
-    
+
     try:
         # Handle command-line options
         if args.info:
             get_axis_info(odrv, args.axis)
             return 0
-        
+
         if args.calibrate:
             if not calibrate(odrv, args.axis):
                 return 1
-        
+
         if args.test_velocity:
             test_velocity_control(odrv, args.axis)
             set_idle(odrv, args.axis)
-        
+
         if args.test_position:
             test_position_control(odrv, args.axis)
             set_idle(odrv, args.axis)
-        
+
         # If no specific command, start interactive mode
         if not (args.info or args.calibrate or args.test_velocity or args.test_position):
             interactive_mode(odrv, args.axis)
-    
+
     except KeyboardInterrupt:
         print("\n\n⚠ Interrupted by user")
         set_idle(odrv, args.axis)
-    
+
     finally:
         odrv.disconnect()
-    
+
     return 0
 
 

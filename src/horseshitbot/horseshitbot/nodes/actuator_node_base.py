@@ -14,8 +14,8 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
-from horseshitbot.srv import MksSetSpeed, ActuatorCommand
-from horseshitbot.msg import ActuatorState as ActuatorStateMsg
+from horseshitbot_interfaces.srv import MksSetSpeed, ActuatorCommand
+from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
 
 from ..drivers.actuator import Actuator, ActuatorConfig, ActuatorState
 

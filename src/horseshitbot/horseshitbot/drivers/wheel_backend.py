@@ -30,3 +30,7 @@ class WheelBackend(ABC):
     @abstractmethod
     def emergency_stop(self) -> None:
         """Immediate stop — cut power / set zero as fast as possible."""
+
+    def resume(self) -> bool:
+        """Re-enable motors after emergency stop. Returns True if successful."""
+        return True

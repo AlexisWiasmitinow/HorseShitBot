@@ -7,7 +7,7 @@ mks_bus_node:
 
 wheel_driver_node:
   ros__parameters:
-    wheel_backend: "mks"        # "mks" or "odrive"
+    wheel_backend: "odrive"     # "mks" or "odrive"
     id_left: 1
     id_right: 2
     invert_left_dir: false
@@ -16,11 +16,11 @@ wheel_driver_node:
     wheel_acc_reg: 3
     update_hz: 50.0
     accel_rpm_s: 120.0
-    decel_rpm_s: 80.0
+    decel_rpm_s: 120.0
     stop_decel_rpm_s: 500.0
     watchdog_sec: 0.8
     # ODrive-specific
-    odrive_port: "/dev/ttyACM0"
+    odrive_port: "/dev/ttyACM1"
     odrive_baud: 115200
     odrive_vel_limit: 100.0
     odrive_current_lim: 20.0

@@ -16,8 +16,8 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from horseshitbot.msg import ActuatorState as ActuatorStateMsg
-from horseshitbot.srv import MksSetSpeed, ActuatorCommand, SwitchBackend
+from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
+from horseshitbot_interfaces.srv import MksSetSpeed, ActuatorCommand, SwitchBackend
 from std_srvs.srv import Trigger
 
 try:

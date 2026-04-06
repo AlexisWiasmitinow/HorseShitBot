@@ -15,7 +15,7 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
-from horseshitbot.srv import MksSetSpeed, SwitchBackend
+from horseshitbot_interfaces.srv import MksSetSpeed, SwitchBackend
 
 from ..drivers.wheel_backend import WheelBackend
 from ..drivers.mks_wheel_backend import MksWheelBackend
@@ -80,6 +80,7 @@ class WheelDriverNode(Node):
         self._actual_right = 0.0
         self._last_cmd_ts = 0.0
         self._stop_fast = False
+        self._estopped = False
 
         # MKS bus service client (used when backend == mks)
         self._mks_cli = self.create_client(MksSetSpeed, "/mks/set_speed")
@@ -154,6 +155,8 @@ class WheelDriverNode(Node):
                     vel_limit=self._p_float("odrive_vel_limit"),
                     current_lim=self._p_float("odrive_current_lim"),
                     vel_ramp_rate=self._p_float("odrive_vel_ramp_rate"),
+                    invert_left=self._p_bool("invert_left_dir"),
+                    invert_right=self._p_bool("invert_right_dir"),
                 )
             else:
                 name = "mks"
@@ -187,7 +190,7 @@ class WheelDriverNode(Node):
         dr = _clamp((linear + angular) * self._max_rpm, -self._max_rpm, self._max_rpm)
 
         with self._lock:
-            if not self._stop_fast:
+            if not self._stop_fast and not self._estopped:
                 self._desired_left = dl
                 self._desired_right = dr
                 self._last_cmd_ts = time.monotonic()
@@ -204,8 +207,22 @@ class WheelDriverNode(Node):
             self._desired_right = 0.0
             self._last_cmd_ts = time.monotonic()
             self._stop_fast = False
+            was_estopped = self._estopped
+
+        if was_estopped and self._backend:
+            ok = self._backend.resume()
+            if ok:
+                with self._lock:
+                    self._estopped = False
+                self.get_logger().info("E-stop cleared, motors re-enabled")
+            else:
+                self.get_logger().error("Failed to resume motors after e-stop")
+                response.success = False
+                response.message = "resume failed"
+                return response
+
         response.success = True
-        response.message = "stopped"
+        response.message = "stopped" if not was_estopped else "e-stop cleared"
         return response
 
     def _srv_stop_fast(self, request, response):
@@ -214,8 +231,10 @@ class WheelDriverNode(Node):
             self._desired_right = 0.0
             self._last_cmd_ts = time.monotonic()
             self._stop_fast = True
+            self._estopped = True
         if self._backend:
             self._backend.emergency_stop()
+        self.get_logger().warn("E-STOP activated. Press B to resume.")
         response.success = True
         response.message = "emergency stop"
         return response
@@ -250,13 +269,15 @@ class WheelDriverNode(Node):
             with self._lock:
                 self._stop_fast = False
 
-        # Publish status
         import json
+        with self._lock:
+            estopped = self._estopped
         status = json.dumps({
             "backend": self._backend_name,
             "left_rpm": round(self._actual_left, 1),
             "right_rpm": round(self._actual_right, 1),
             "stopping": stop_fast,
+            "estopped": estopped,
         })
         msg = String()
         msg.data = status

@@ -14,7 +14,7 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
-from horseshitbot.srv import SwitchBackend
+from horseshitbot_interfaces.srv import SwitchBackend
 
 try:
     import evdev
@@ -196,12 +196,10 @@ class GamepadTeleopNode(Node):
                 self._handle_button_release(event.code)
 
     def _handle_button_press(self, code):
-        if code == ecodes.BTN_A:
+        if code in (ecodes.BTN_A, ecodes.BTN_THUMBL, ecodes.BTN_THUMBR):
             self._call_trigger(self._stop_fast_cli)
-        elif code == ecodes.BTN_B:
+        elif code in (ecodes.BTN_B, ecodes.BTN_Y):
             self._call_trigger(self._stop_cli)
-        elif code == ecodes.BTN_Y:
-            self._switch_backend()
         elif code == ecodes.BTN_X:
             for pub in (self._lift_pub, self._brush_pub, self._bin_door_pub):
                 msg = String()
