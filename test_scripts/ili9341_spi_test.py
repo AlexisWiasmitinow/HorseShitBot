@@ -12,18 +12,24 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 import time
 
 from PIL import Image, ImageDraw, ImageFont
 
-# ── try to import the shared driver (works if run from repo root) ──
+# ── try to import the shared driver ──
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_DIR = os.path.dirname(_SCRIPT_DIR)
+sys.path.insert(0, os.path.join(_REPO_DIR, "src", "horseshitbot"))
+
+_DRIVER_OK = False
+_DRIVER_ERR = ""
 try:
-    sys.path.insert(0, "src/horseshitbot")
     from horseshitbot.drivers.ili9341_display import ILI9341Display
     _DRIVER_OK = True
-except ImportError:
-    _DRIVER_OK = False
+except ImportError as e:
+    _DRIVER_ERR = str(e)
 
 
 # ── fallback fonts ───────────────────────────────────────────────
@@ -124,6 +130,95 @@ def test_mock_status(disp):
     print("  done")
 
 
+def test_raw_spi(args):
+    """Bypass the Adafruit driver entirely and talk to the display with raw SPI."""
+    print("=== Raw SPI test (bypassing Adafruit driver) ===")
+    try:
+        import board
+        import digitalio
+        import busio
+    except ImportError as e:
+        print(f"  ERROR: {e}")
+        print("  Install: sudo pip install adafruit-blinka")
+        return
+
+    rst = digitalio.DigitalInOut(getattr(board, f"D{args.rst}"))
+    rst.direction = digitalio.Direction.OUTPUT
+    cs = digitalio.DigitalInOut(getattr(board, f"D{args.cs}"))
+    cs.direction = digitalio.Direction.OUTPUT
+    dc = digitalio.DigitalInOut(getattr(board, f"D{args.dc}"))
+    dc.direction = digitalio.Direction.OUTPUT
+
+    # Pulse reset
+    print("  Resetting display...")
+    rst.value = False
+    time.sleep(0.1)
+    rst.value = True
+    time.sleep(0.2)
+
+    spi = busio.SPI(board.SCK, MOSI=board.MOSI)
+    while not spi.try_lock():
+        pass
+    spi.configure(baudrate=4000000)
+
+    def send_cmd(cmd, data=None):
+        cs.value = False
+        dc.value = False
+        spi.write(bytes([cmd]))
+        if data:
+            dc.value = True
+            spi.write(bytes(data))
+        cs.value = True
+
+    # ILI9341 init sequence
+    print("  Sending init sequence...")
+    send_cmd(0x01)          # Software reset
+    time.sleep(0.15)
+    send_cmd(0x11)          # Sleep out
+    time.sleep(0.15)
+    send_cmd(0x3A, [0x55])  # Pixel format: 16-bit RGB565
+    send_cmd(0x36, [0x48])  # Memory access control
+    send_cmd(0x29)          # Display ON
+    time.sleep(0.1)
+
+    # Set column/row address to full screen
+    send_cmd(0x2A, [0x00, 0x00, 0x00, 0xEF])  # columns 0-239
+    send_cmd(0x2B, [0x00, 0x00, 0x01, 0x3F])  # rows 0-319
+    send_cmd(0x2C)  # Memory write
+
+    colours = [
+        ("Red",   0xF800),
+        ("Green", 0x07E0),
+        ("Blue",  0x001F),
+        ("White", 0xFFFF),
+    ]
+
+    for name, colour in colours:
+        hi = (colour >> 8) & 0xFF
+        lo = colour & 0xFF
+        print(f"  Filling {name}...", end=" ", flush=True)
+
+        send_cmd(0x2A, [0x00, 0x00, 0x00, 0xEF])
+        send_cmd(0x2B, [0x00, 0x00, 0x01, 0x3F])
+
+        cs.value = False
+        dc.value = False
+        spi.write(bytes([0x2C]))
+        dc.value = True
+        # 240x320 pixels, 2 bytes each = 153600 bytes, send in chunks
+        chunk = bytes([hi, lo] * 240)
+        for _ in range(320):
+            spi.write(chunk)
+        cs.value = True
+        print("ok")
+        time.sleep(1)
+
+    spi.unlock()
+    print("  Raw SPI test complete.")
+    print("  If you saw colours, the display works and the Adafruit driver has an issue.")
+    print("  If still blank, check wiring: MOSI, SCK, CS, DC, RESET.")
+
+
 def test_fps(disp, frames=50):
     print(f"=== FPS test ({frames} frames) ===")
     img = disp.new_image((0, 0, 0))
@@ -149,9 +244,19 @@ def main():
     parser.add_argument("--mock-only", action="store_true", help="Skip colour fills, show status mockup only")
     parser.add_argument("--fps", action="store_true", help="Run FPS benchmark")
     parser.add_argument("--no-hw", action="store_true", help="Run without hardware (renders to in-memory images)")
+    parser.add_argument("--raw-test", action="store_true", help="Bypass Adafruit driver, test with raw SPI commands")
     args = parser.parse_args()
 
-    if args.no_hw or not _DRIVER_OK:
+    if not args.no_hw and not _DRIVER_OK:
+        print(f"ERROR: Could not import ILI9341 display driver: {_DRIVER_ERR}")
+        print("")
+        print("Install the required libraries:")
+        print("  sudo pip install adafruit-circuitpython-rgb-display adafruit-blinka Pillow")
+        print("Also make sure SPI is enabled: sudo raspi-config → Interface Options → SPI")
+        print("\nTo run without hardware (in-memory only), use --no-hw")
+        sys.exit(1)
+
+    if args.no_hw:
         print("Running in no-hardware mode (images rendered in memory only)")
 
         class FakeDisplay:
@@ -171,6 +276,10 @@ def main():
             led_pin=args.led,
             rotation=args.rotation,
         )
+
+    if args.raw_test:
+        test_raw_spi(args)
+        return
 
     if not args.mock_only:
         test_colour_fills(disp)

@@ -53,7 +53,7 @@ class ILI9341Display:
         rst_pin: int = 25,
         led_pin: int = 18,
         rotation: int = 0,
-        baudrate: int = 24_000_000,
+        baudrate: int = 16_000_000,
     ):
         self._rotation = rotation
         self._led_pin = led_pin
@@ -72,7 +72,6 @@ class ILI9341Display:
                 dc=dc,
                 rst=rst,
                 baudrate=baudrate,
-                rotation=rotation,
             )
 
             if led_pin is not None:
@@ -80,20 +79,21 @@ class ILI9341Display:
                     self._led_gpio = digitalio.DigitalInOut(_board_pin(led_pin))
                     self._led_gpio.direction = digitalio.Direction.OUTPUT
                     self._led_gpio.value = True
-                except Exception:
+                except Exception as e:
+                    print(f"WARNING: Could not set LED backlight on GPIO {led_pin}: {e}")
                     self._led_gpio = None
 
     @property
     def width(self) -> int:
-        if self._disp:
-            return self._disp.width
-        return self.WIDTH if self._rotation in (0, 180) else self.HEIGHT
+        if self._rotation in (90, 270):
+            return self.HEIGHT
+        return self.WIDTH
 
     @property
     def height(self) -> int:
-        if self._disp:
-            return self._disp.height
-        return self.HEIGHT if self._rotation in (0, 180) else self.WIDTH
+        if self._rotation in (90, 270):
+            return self.WIDTH
+        return self.HEIGHT
 
     def clear(self, color: Tuple[int, int, int] = (0, 0, 0)):
         img = Image.new("RGB", (self.width, self.height), color)
@@ -101,7 +101,7 @@ class ILI9341Display:
 
     def draw_frame(self, image: Image.Image):
         if self._disp:
-            self._disp.image(image)
+            self._disp.image(image, rotation=self._rotation)
         return image
 
     def set_backlight(self, on: bool):
