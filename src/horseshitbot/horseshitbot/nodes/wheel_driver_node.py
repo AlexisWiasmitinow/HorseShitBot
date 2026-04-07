@@ -88,6 +88,7 @@ class WheelDriverNode(Node):
         # Active backend
         self._backend: WheelBackend | None = None
         self._backend_name = ""
+        self._backend_error = ""
 
         # Subscriptions and services
         self.create_subscription(Twist, "/cmd_vel", self._cb_cmd_vel, 10)
@@ -171,11 +172,13 @@ class WheelDriverNode(Node):
 
             self._backend.connect()
             self._backend_name = name
+            self._backend_error = ""
             self.get_logger().info(f"Backend activated: {name}")
             return True, f"switched to {name}"
         except Exception as e:
             self._backend = None
             self._backend_name = "none"
+            self._backend_error = str(e)
             msg = f"Failed to activate {name}: {e}"
             self.get_logger().error(msg)
             return False, msg
@@ -202,6 +205,7 @@ class WheelDriverNode(Node):
         return response
 
     def _srv_stop(self, request, response):
+        self.get_logger().info(f"Stop service called (estopped={self._estopped})")
         with self._lock:
             self._desired_left = 0.0
             self._desired_right = 0.0
@@ -209,17 +213,21 @@ class WheelDriverNode(Node):
             self._stop_fast = False
             was_estopped = self._estopped
 
-        if was_estopped and self._backend:
-            ok = self._backend.resume()
-            if ok:
-                with self._lock:
-                    self._estopped = False
-                self.get_logger().info("E-stop cleared, motors re-enabled")
+        if was_estopped:
+            if self._backend:
+                ok = self._backend.resume()
+                if ok:
+                    self.get_logger().info("E-stop cleared, motors re-enabled")
+                else:
+                    self.get_logger().error("Failed to resume motors after e-stop")
+                    response.success = False
+                    response.message = "resume failed"
+                    return response
             else:
-                self.get_logger().error("Failed to resume motors after e-stop")
-                response.success = False
-                response.message = "resume failed"
-                return response
+                self.get_logger().warn("No backend connected — clearing e-stop flag only")
+
+            with self._lock:
+                self._estopped = False
 
         response.success = True
         response.message = "stopped" if not was_estopped else "e-stop cleared"
@@ -278,6 +286,7 @@ class WheelDriverNode(Node):
             "right_rpm": round(self._actual_right, 1),
             "stopping": stop_fast,
             "estopped": estopped,
+            "error": self._backend_error,
         })
         msg = String()
         msg.data = status

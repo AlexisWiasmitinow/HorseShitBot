@@ -23,6 +23,7 @@
       <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
       <div class="kv"><span class="label">Right RPM</span><span class="value" id="w-right">0</span></div>
       <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
+      <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
       <div class="btn-row">
         <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
         <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
@@ -69,6 +70,18 @@
         <button onclick="cmd('bin_door_node','close')">Close</button>
         <button onclick="cmd('bin_door_node','stop')">Stop</button>
         <button onclick="cmd('bin_door_node','reference')">Reference</button>
+      </div>
+    </div>
+
+    <!-- Gamepad -->
+    <div class="card" id="card-gamepad">
+      <h2>Gamepad</h2>
+      <div class="kv">
+        <span class="label">Status</span>
+        <span class="value" id="gp-status">
+          <span class="gp-dot" id="gp-dot"></span>
+          <span id="gp-label">Disconnected</span>
+        </span>
       </div>
     </div>
 

@@ -48,6 +48,16 @@ function updateUI(data) {
   if (card) {
     card.classList.toggle("estopped", !!w.estopped);
   }
+  const wErr = document.getElementById("w-error");
+  if (wErr) {
+    if (w.error) {
+      wErr.textContent = w.error;
+      wErr.style.color = "var(--err)";
+    } else {
+      wErr.textContent = "None";
+      wErr.style.color = "";
+    }
+  }
 
   // Actuators
   for (const name of ["lift", "brush", "bin_door"]) {
@@ -60,6 +70,22 @@ function updateUI(data) {
     }
     setText(`${name}-dir`, a.direction || "--");
     setText(`${name}-ref`, a.is_referenced ? "Yes" : "No");
+  }
+
+  // Gamepad
+  const gp = data.gamepad || {};
+  const gpDot = document.getElementById("gp-dot");
+  const gpLabel = document.getElementById("gp-label");
+  if (gpDot && gpLabel) {
+    if (gp.connected) {
+      gpDot.classList.add("connected");
+      gpLabel.textContent = gp.name || "Gamepad";
+      gpLabel.style.color = "";
+    } else {
+      gpDot.classList.remove("connected");
+      gpLabel.textContent = "Disconnected";
+      gpLabel.style.color = "#8a8a9a";
+    }
   }
 
   // Bag recorder

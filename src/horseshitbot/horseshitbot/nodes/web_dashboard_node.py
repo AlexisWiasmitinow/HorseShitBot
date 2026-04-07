@@ -51,6 +51,7 @@ class _RosBridge:
             "brush": {},
             "bin_door": {},
             "bag_recorder": {},
+            "gamepad": {},
         }
         self._ws_clients: list[WebSocket] = []
 
@@ -59,6 +60,7 @@ class _RosBridge:
         ros_node.create_subscription(ActuatorStateMsg, "/brush/state", lambda m: self._cb_actuator("brush", m), 10)
         ros_node.create_subscription(ActuatorStateMsg, "/bin_door/state", lambda m: self._cb_actuator("bin_door", m), 10)
         ros_node.create_subscription(String, "/bag_recorder_node/status", self._cb_bag_recorder, 10)
+        ros_node.create_subscription(String, "/gamepad/status", self._cb_gamepad, 10)
 
     def _cb_wheel(self, msg: String):
         try:
@@ -86,6 +88,14 @@ class _RosBridge:
             data = {"raw": msg.data}
         with self._lock:
             self._state["bag_recorder"] = data
+
+    def _cb_gamepad(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            data = {"raw": msg.data}
+        with self._lock:
+            self._state["gamepad"] = data
 
     def snapshot(self) -> dict:
         with self._lock:

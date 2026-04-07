@@ -5,6 +5,7 @@ via evdev and publishes /cmd_vel + actuator commands.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 
@@ -91,6 +92,7 @@ class GamepadTeleopNode(Node):
 
         # Publishers
         self._cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel", 10)
+        self._gamepad_status_pub = self.create_publisher(String, "/gamepad/status", 10)
         self._lift_pub = self.create_publisher(String, "/lift/command", 10)
         self._brush_pub = self.create_publisher(String, "/brush/command", 10)
         self._bin_door_pub = self.create_publisher(String, "/bin_door/command", 10)
@@ -247,9 +249,18 @@ class GamepadTeleopNode(Node):
         msg.angular.z = x * self._max_ang
         self._cmd_vel_pub.publish(msg)
 
+        status = String()
+        status.data = json.dumps({
+            "connected": self._connected,
+            "name": self._device.name if self._device else "",
+        })
+        self._gamepad_status_pub.publish(status)
+
     def _call_trigger(self, client):
         if not client.service_is_ready():
+            self.get_logger().warn(f"Service {client.srv_name} not ready, skipping")
             return
+        self.get_logger().info(f"Calling service {client.srv_name}")
         req = Trigger.Request()
         client.call_async(req)
 

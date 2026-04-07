@@ -114,6 +114,19 @@ button.danger:hover { background: var(--err); }
   50% { opacity: 0.3; }
 }
 
+.gp-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--err);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.gp-dot.connected {
+  background: var(--ok);
+}
+
 .estop-banner {
   background: var(--err);
   color: #fff;

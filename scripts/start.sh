@@ -14,9 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Source ROS 2
-if [ -z "${AMENT_PREFIX_PATH:-}" ]; then
-  source /opt/ros/humble/setup.bash
-fi
+source /opt/ros/humble/setup.bash
 
 # Source the workspace overlay if built
 if [ -f "$REPO_DIR/install/setup.bash" ]; then

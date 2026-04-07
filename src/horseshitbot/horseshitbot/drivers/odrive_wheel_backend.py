@@ -8,6 +8,7 @@ ODrive board as a differential-drive pair.
 from __future__ import annotations
 
 import logging
+import time
 
 from .odrive_serial import ODriveSerial
 from .wheel_backend import WheelBackend
@@ -128,12 +129,24 @@ class ODriveWheelBackend(WheelBackend):
     def resume(self) -> bool:
         """Re-enter closed loop after e-stop."""
         try:
+            self._odrv.ser.reset_input_buffer()
+            time.sleep(0.2)
+
             for ax in (0, 1):
                 self._odrv.clear_errors(ax)
+
+                cal = self._odrv.read_property(f"axis{ax}.motor.is_calibrated")
+                enc = self._odrv.read_property(f"axis{ax}.encoder.is_ready")
+                _log.info("Axis %d: calibrated=%s encoder_ready=%s", ax, cal, enc)
+
                 if not self._odrv.set_closed_loop(ax):
-                    _log.error("Failed to resume axis %d", ax)
-                    return False
+                    _log.error("set_closed_loop failed on axis %d, trying start_motor", ax)
+                    if not self._odrv.start_motor(ax):
+                        _log.error("start_motor also failed on axis %d", ax)
+                        return False
+
                 self._odrv.set_velocity_mode(ax)
+                _log.info("Axis %d resumed", ax)
             return True
         except Exception as e:
             _log.error("Resume failed: %s", e)

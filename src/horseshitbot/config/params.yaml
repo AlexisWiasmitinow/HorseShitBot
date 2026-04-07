@@ -90,7 +90,7 @@ status_screen_node:
     dc_pin: 24
     rst_pin: 25
     led_pin: 18
-    rotation: 0
+    rotation: 90
     refresh_hz: 5.0
     backlight_brightness: 1.0
 
