@@ -27,12 +27,12 @@ Bluetooth gamepad teleop, a web dashboard, and an on-robot ILI9341 SPI status sc
 - **Wheels (ODrive):** ODrive dual BLDC via serial ASCII (`/dev/ttyACM0`, 115200 baud)
 - **Lift/Brush/Bin Door:** MKS SERVO57D steppers on the same Modbus bus
 - **Gamepad:** Data Frog Bluetooth controller (evdev)
-- **Status Screen:** 2.8" ILI9341 SPI TFT, 240x320 (JC2432S028 V1.2)
+- **Status Screen:** 2.8" ILI9341 SPI TFT, 240x320 (JC2432S028 V1.2) — Raspberry Pi uses SPI0 + BCM GPIO defaults; Jetson Nano uses SPI1 on pins 19/21/23/24 with DC/RST/LED on physical pins 22/18/12 (see `test_scripts/README.md`)
 - **Camera:** Intel RealSense D415 (USB 3.0, colour + depth)
 
 ## Prerequisites
 
-- Raspberry Pi (or similar) with ROS 2 Humble/Iron/Jazzy installed
+- Raspberry Pi, Jetson Nano, or similar with ROS 2 Humble/Iron/Jazzy installed
 - Python 3.10+
 - System packages: `python3-colcon-common-extensions`
 

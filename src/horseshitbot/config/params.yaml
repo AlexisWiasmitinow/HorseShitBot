@@ -86,10 +86,13 @@ web_dashboard_node:
 status_screen_node:
   ros__parameters:
     spi_port: 0
-    spi_cs: 0                   # CE0
-    dc_pin: 24
-    rst_pin: 25
-    led_pin: 18
+    # spi_device: kernel chip-select index → /dev/spidevPORT.DEVICE  (0 or 1)
+    spi_device: 0
+    # ILI9341 control lines — Jetson: physical 40-pin numbers (driver converts to BCM internally).
+    # Raspberry Pi (BCM): dc_pin 24, rst_pin 25, led_pin 18
+    dc_pin: 22
+    rst_pin: 18
+    led_pin: 12
     rotation: 90
     refresh_hz: 5.0
     backlight_brightness: 1.0

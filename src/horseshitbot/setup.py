@@ -20,6 +20,7 @@ setup(
         "pymodbus",
         "pyserial",
         "Pillow",
+        "luma.lcd",
     ],
     zip_safe=True,
     maintainer="horseshitbot",

@@ -13,7 +13,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
-from ..drivers.ili9341_display import ILI9341Display
+from ..drivers.ili9341_display import ILI9341Display, default_display_pins
 
 from PIL import Image, ImageDraw
 
@@ -46,30 +46,34 @@ class StatusScreenNode(Node):
     def __init__(self):
         super().__init__("status_screen_node")
 
+        _dp = default_display_pins()
         self.declare_parameter("spi_port", 0)
-        self.declare_parameter("spi_cs", 0)
-        self.declare_parameter("dc_pin", 24)
-        self.declare_parameter("rst_pin", 25)
-        self.declare_parameter("led_pin", 18)
+        self.declare_parameter("spi_device", 0)
+        self.declare_parameter("dc_pin", _dp["dc"])
+        self.declare_parameter("rst_pin", _dp["rst"])
+        self.declare_parameter("led_pin", _dp["led"])
         self.declare_parameter("rotation", 0)
         self.declare_parameter("refresh_hz", 5.0)
         self.declare_parameter("backlight_brightness", 1.0)
 
-        cs = self.get_parameter("spi_cs").get_parameter_value().integer_value
+        spi_port = self.get_parameter("spi_port").get_parameter_value().integer_value
+        spi_dev = self.get_parameter("spi_device").get_parameter_value().integer_value
         dc = self.get_parameter("dc_pin").get_parameter_value().integer_value
         rst = self.get_parameter("rst_pin").get_parameter_value().integer_value
         led = self.get_parameter("led_pin").get_parameter_value().integer_value
         rot = self.get_parameter("rotation").get_parameter_value().integer_value
         hz = self.get_parameter("refresh_hz").get_parameter_value().double_value
 
-        # Map spi_cs 0 → GPIO 8 (CE0), 1 → GPIO 7 (CE1)
-        cs_gpio = 8 if cs == 0 else 7
-
         try:
             self._disp = ILI9341Display(
-                cs_pin=cs_gpio, dc_pin=dc, rst_pin=rst, led_pin=led, rotation=rot
+                spi_port=spi_port,
+                spi_device=spi_dev,
+                dc_pin=dc,
+                rst_pin=rst,
+                led_pin=led,
+                rotation=rot,
             )
-            self.get_logger().info("ILI9341 display initialised")
+            self.get_logger().info("ILI9341 display initialised (luma.lcd)")
         except Exception as e:
             self.get_logger().error(f"Display init failed: {e}")
             self._disp = None
@@ -232,5 +236,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        if node._disp is not None:
+            node._disp.set_backlight(False)
         node.destroy_node()
         rclpy.shutdown()

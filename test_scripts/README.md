@@ -13,17 +13,36 @@ Tests the ILI9341 TFT display over SPI: colour fills, text rendering, and a mock
 **Dependencies:**
 
 ```bash
-pip install Pillow adafruit-circuitpython-rgb-display
+pip install Pillow adafruit-blinka adafruit-circuitpython-rgb-display
 ```
 
 **Usage:**
 
 ```bash
-# Full test with hardware connected (default pins: CS=8, DC=24, RST=25, LED=18)
+# Full test with hardware (defaults follow the SBC: Jetson physical pins vs Pi BCM)
 python3 ili9341_spi_test.py
 
-# Custom GPIO pins
-python3 ili9341_spi_test.py --dc 24 --rst 25 --cs 8 --led 18
+# Custom pins (same numbering rules as your platform — see pin tables below)
+python3 ili9341_spi_test.py --cs 24 --dc 22 --rst 18 --led 12
+
+# If D/C and RESET might be swapped on the harness, override both (Jetson defaults: 22 / 18)
+python3 ili9341_spi_test.py --raw-test --spi-bus 0 --dc 18 --rst 22
+
+# After init: green fill, then toggles INVOFF/INVON (0x20/0x21) — if the image never inverts, D/C may be wrong
+python3 ili9341_spi_test.py --raw-test --spi-bus 0 --raw-invert-cmd-test
+
+# Raw SPI (drives --led HIGH by default; use --raw-no-backlight to skip)
+python3 ili9341_spi_test.py --raw-test
+
+# Same, but many 2.8" boards use ST7789; slow SPI helps long jumpers
+python3 ili9341_spi_test.py --raw-test --chip st7789 --raw-baud 500000
+
+# Jumper MOSI to MISO on the header (TFT disconnected from those pins); verifies /dev/spidev
+python3 ili9341_spi_test.py --spi-loopback --spi-bus 1 --spi-device 0
+
+# Very slow SPI (50 kHz) or explicit Hz if wiring is long / noisy
+python3 ili9341_spi_test.py --raw-test --spi-bus 0 --raw-slow
+python3 ili9341_spi_test.py --raw-test --spi-bus 0 --raw-baud 10000
 
 # Skip colour fills, just show the mock status screen
 python3 ili9341_spi_test.py --mock-only
@@ -35,23 +54,123 @@ python3 ili9341_spi_test.py --fps
 python3 ili9341_spi_test.py --no-hw
 ```
 
-**Pinout (ILI9341 → Raspberry Pi, BCM numbering):**
+### `luma_lcd_test.py` — 2.8" ILI9341 / ST7789 SPI Display (luma.lcd)
 
-```
-ILI9341 Pin    Pi Pin (BCM)    Pi Physical Pin   Notes
-───────────    ────────────    ───────────────   ─────
-VCC            3.3V            Pin 1             3.3V only — not 5V
-GND            GND             Pin 6             Any ground pin
-CS             GPIO 8 (CE0)    Pin 24            SPI0 chip select
-RESET          GPIO 25         Pin 22
-DC / RS        GPIO 24         Pin 18            Data / Command
-SDI / MOSI     GPIO 10         Pin 19            SPI0 MOSI
-SCK            GPIO 11         Pin 23            SPI0 SCLK
-LED            GPIO 18         Pin 12            Backlight (PWM-capable)
-SDO / MISO     GPIO 9          Pin 21            SPI0 MISO (optional)
+Same tests as `ili9341_spi_test.py` (colour fills, text, mock status screen, FPS benchmark, SPI loopback) but uses the **luma.lcd** library instead of the Adafruit stack. luma.lcd talks to `spidev` directly (no Blinka layer) and uses `RPi.GPIO` / `Jetson.GPIO` for D/C, RST, and backlight.
+
+**Dependencies:**
+
+```bash
+pip install luma.lcd Pillow
+# Jetson: Jetson.GPIO is usually pre-installed
+# Pi:     RPi.GPIO is usually pre-installed
+# For --spi-loopback:  sudo apt install python3-spidev
 ```
 
-Default GPIO assignments match `params.yaml` and the driver constructor. Override with `--cs`, `--dc`, `--rst`, `--led` flags if your wiring differs.
+**Usage:**
+
+```bash
+# Full test with hardware (defaults follow the SBC: Jetson physical pins vs Pi BCM)
+python3 luma_lcd_test.py
+
+# Many 2.8" breakouts are actually ST7789, not ILI9341
+python3 luma_lcd_test.py --chip st7789
+
+# Custom pins (same numbering rules as your platform — see pin tables below)
+python3 luma_lcd_test.py --dc 22 --rst 18 --led 12
+
+# Explicit SPI port/device (try --spi-port 0 vs 1 on Jetson)
+python3 luma_lcd_test.py --spi-port 1 --spi-device 0
+
+# Skip colour fills, just show the mock status screen
+python3 luma_lcd_test.py --mock-only
+
+# Measure full-screen refresh rate
+python3 luma_lcd_test.py --fps
+
+# No hardware — luma dummy device, renders in memory only
+python3 luma_lcd_test.py --no-hw
+
+# SPI loopback (pure spidev, same as ili9341_spi_test.py --spi-loopback)
+python3 luma_lcd_test.py --spi-loopback --spi-bus 1 --spi-device 0
+```
+
+**luma.lcd vs Adafruit stack:**
+| | luma.lcd | Adafruit |
+|---|---|---|
+| SPI transport | `spidev` (kernel) directly | Blinka → `busio` → `spidev` |
+| GPIO for D/C, RST | `RPi.GPIO` / `Jetson.GPIO` | Blinka `digitalio` |
+| Init sequence | Built into `luma.lcd.device` | Built into `adafruit_rgb_display` |
+| Drawing API | `canvas(device)` context manager (auto-flush) | Manual `Image.new()` + `disp.image()` |
+| Backlight | `device.backlight(True/False)` | Manual GPIO |
+| Install | `pip install luma.lcd` | `pip install adafruit-blinka adafruit-circuitpython-rgb-display` |
+
+**What to look for:** Same as `ili9341_spi_test.py` — clean colour fills, readable text at three sizes, correct mock dashboard layout, ~10-15 FPS over SPI.
+
+---
+
+### `jetson_gpio_wiggle.py` — prove a header GPIO toggles
+
+If SPI loopback works and even **10 kHz** still misbehaves, confirm **D/C** and **RST** really reach the pins (multimeter should see ~0 V / ~3.3 V alternating).
+
+```bash
+python3 test_scripts/jetson_gpio_wiggle.py 22
+python3 test_scripts/jetson_gpio_wiggle.py 18
+```
+
+**Jetson Nano (40-pin header)** — enable **SPI1** in `sudo /opt/nvidia/jetson-io/jetson-io.py` (pins 19/21/23/24/26). For the defaults below, set **`spi3` (13,16,18,22,37)** and **`i2s2` (12,35,38,40)** groups to **GPIO** so pins 12, 18, and 22 are usable. Reboot after saving.
+
+```
+ILI9341 Pin    Jetson physical pin   Notes
+───────────    ───────────────────   ─────
+VCC            3.3V (e.g. pin 1)     3.3V only unless your module is 5V-tolerant
+GND            GND                   Any ground
+CS             24                    SPI1 CS0 (hardware CS)
+DC / RS        22                    GPIO (configure group as GPIO in jetson-io)
+RESET          18                    GPIO
+SDI / MOSI     19                    SPI1 MOSI
+SCK            23                    SPI1 SCLK
+LED            12                    Backlight GPIO (or tie to 3.3V)
+```
+
+**Jetson pinmux (why Pi “just works” but Nano can look dead)**  
+- **SPI1 MISO is physical pin 21**, not 22. D/C on **22** is not “the same net” as SPI1 MISO.  
+- Pin **22** is in the **`spi3` (13,16,18,22,37)** group in `jetson-io`. That pin must be muxed as **GPIO**, not as an SPI3 function, or D/C will not behave (backlight on, black glass, software still prints `ok`).  
+- If D/C is unreliable after checking mux, move **D/C** to another header pin that is **only** GPIO in your config (and update `--dc` / `params.yaml`).
+
+**Raspberry Pi (BCM GPIO + SPI0)**
+
+```
+ILI9341 Pin    BCM    Physical   Notes
+───────────    ───    ────────   ─────
+VCC            —      Pin 1      3.3V only — not 5V
+GND            —      Pin 6      Any ground
+CS             8      Pin 24     SPI0 CE0
+RESET          25     Pin 22
+DC / RS        24     Pin 18
+SDI / MOSI     10     Pin 19
+SCK            11     Pin 23
+LED            18     Pin 12     Backlight (PWM-capable)
+```
+
+Defaults match `params.yaml` / `ILI9341Display` for each platform. Override with `--cs`, `--dc`, `--rst`, `--led` if your wiring differs.
+
+**If `--raw-test` shows no colours**
+
+- **`--raw-test` turns the backlight on by default** (GPIO `--led` HIGH). Use **`--raw-no-backlight`** only if you tie LED to 3.3V or use a different backlight circuit.
+- Run `ls /dev/spidev*` — you should see at least one device after SPI is enabled.
+- On **Jetson**, which header SPI maps to **`/dev/spidev0.*` vs `1.*`** depends on the device tree — use **`--spi-loopback`** (MOSI jumpered to MISO) to see which bus matches your pins. Then use that **`--spi-bus`** with **`--raw-test`**.  
+  `sudo apt install python3-spidev`  
+  `python3 ili9341_spi_test.py --spi-loopback --spi-bus 0` and `--spi-bus 1`  
+  With `--spi-bus`, the script uses **kernel chip select** on that `spidev` device (normal `mode=0`). Tegra usually rejects `SPI_NO_CS`, so GPIO bit-bang CS is not the default; use **`--spi-device 1`** if your CS line is CS1 (e.g. pin 26). Only use **`--spi-gpio-cs`** on hosts where the `SPI_NO_CS` ioctl succeeds.
+- Lower **`--raw-baud`** (for example `500000`) if you use long jumpers, or **`--raw-slow`** (50 kHz), or **`--raw-baud 10000`**.  
+- **If even the lowest baud still fails**, speed is not the bottleneck. Check in order: **(1)** TFT **`VCC` on 3.3 V (pin 1)**, not 5 V. **(2)** **`CS`** = **GND only** *or* **pin 24 only**, never both, and no accidental short. **(3)** **D/C** really on **`--dc`** (default 22) — run `python3 test_scripts/jetson_gpio_wiggle.py 22` and probe the pin; it must toggle. **(4)** **`--chip st7789`**. **(5)** Try the same panel on a Pi to rule out a dead flex.
+- **Solid white** with backlight and SPI OK often means **GRAM or MADCTL/BGR** — try  
+  `./test_scripts/ili9341_spi_test.py --raw-test --spi-bus 0 --raw-madctl 0xE8` then `0x28`, `0x88`, `0xA8`.  
+- If the image is still blank, try **`--raw-dc-invert`**, confirm **`--dc` / `--rst`** and **MOSI/SCK** match **`--spi-loopback`** pins. Optionally **`--raw-init-minimal`** or **`--chip st7789`**.  
+  `./test_scripts/ili9341_spi_test.py --raw-test --spi-bus 0 --raw-dc-invert`  
+  `./test_scripts/ili9341_spi_test.py --raw-test --spi-bus N --raw-diagnose`  
+  and check the readback lines. **All `ff`** usually means floating MISO or the wrong **`/dev/spidev`**; **all `00`** often means SDO not wired back to the Jetson, MISO held low, or reads not routed on that breakout. **Non-trivial bytes** mean the panel is answering on MISO. Then try **`--spi-device` (0 vs 1)** and **`--spi-mode 3`** if needed.
 
 **What to look for:**
 - Red/green/blue/white/black fill screens cycle cleanly
@@ -219,6 +338,7 @@ chmod +x test_realsense_bag.sh
 
 - All scripts are **standalone** — no `colcon build` needed
 - Run with `--help` (Python scripts) to see all options
-- On a Pi, make sure SPI and I2C are enabled in `raspi-config` for the display test
+- Raspberry Pi: enable SPI (and I2C if needed) in `raspi-config` for the display test
+- Jetson Nano: use `jetson-io` to enable SPI1 and free GPIO lines for DC/RST/LED as above
 - For serial devices, check permissions: `sudo usermod -aG dialout $USER` (log out/in after)
 - For input devices: `sudo usermod -aG input $USER`
