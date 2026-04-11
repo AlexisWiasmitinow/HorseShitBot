@@ -12,10 +12,10 @@ Example:
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, GroupAction, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def _launch_setup(context):
@@ -89,23 +89,32 @@ def _launch_setup(context):
     ]
 
     if enable_camera:
+        from launch.actions import IncludeLaunchDescription
         rs_launch_dir = os.path.join(
             get_package_share_directory("realsense2_camera"), "launch"
         )
-        nodes.append(IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(rs_launch_dir, "rs_launch.py")
-            ),
-            launch_arguments={
-                "camera_name": "camera",
-                "device_type": "d415",
-                "pointcloud.enable": "false",
-                "enable_color": "true",
-                "enable_depth": "true",
-                "align_depth.enable": "true",
-                "rgb_camera.color_profile": "640x480x15",
-                "depth_module.depth_profile": "640x480x15",
-            }.items(),
+        # Wrap in GroupAction with forwarding=False so our custom launch
+        # arguments (enable_camera, enable_mks) don't propagate to the
+        # RealSense launch file, which rejects unknown arguments.
+        nodes.append(GroupAction(
+            actions=[
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(
+                        os.path.join(rs_launch_dir, "rs_launch.py")
+                    ),
+                    launch_arguments={
+                        "camera_name": "camera",
+                        "device_type": "d415",
+                        "pointcloud.enable": "false",
+                        "enable_color": "true",
+                        "enable_depth": "true",
+                        "align_depth.enable": "true",
+                        "rgb_camera.color_profile": "640x480x15",
+                        "depth_module.depth_profile": "640x480x15",
+                    }.items(),
+                ),
+            ],
+            forwarding=False,
         ))
         nodes.append(Node(
             package="horseshitbot",

@@ -20,7 +20,7 @@ wheel_driver_node:
     stop_decel_rpm_s: 500.0
     watchdog_sec: 0.8
     # ODrive-specific
-    odrive_port: "/dev/ttyACM1"
+    odrive_port: "/dev/ttyACM0"
     odrive_baud: 115200
     odrive_vel_limit: 100.0
     odrive_current_lim: 20.0
@@ -93,7 +93,7 @@ status_screen_node:
     dc_pin: 22
     rst_pin: 18
     led_pin: 12
-    rotation: 90
+    rotation: 0
     refresh_hz: 5.0
     backlight_brightness: 1.0
 

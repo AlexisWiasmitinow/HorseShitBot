@@ -7,39 +7,49 @@
 #   ./scripts/start.sh --no-camera      # skip RealSense + bag recorder
 #   ./scripts/start.sh --no-mks         # skip MKS bus node (ODrive-only setup)
 #   ./scripts/start.sh --drive-only     # just wheel driver + gamepad (no launch file)
+#   ./scripts/start.sh --rebuild        # force colcon build before launching
 #
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Source ROS 2
-source /opt/ros/humble/setup.bash
-
-# Source the workspace overlay if built
-if [ -f "$REPO_DIR/install/setup.bash" ]; then
-  source "$REPO_DIR/install/setup.bash"
+# ── Source ROS 2 ─────────────────────────────────────────────────
+if [ -f /opt/ros/humble/setup.bash ]; then
+  source /opt/ros/humble/setup.bash
 else
-  echo "Workspace not built. Building now..."
-  cd "$REPO_DIR"
-  colcon build
-  source "$REPO_DIR/install/setup.bash"
+  echo "ERROR: /opt/ros/humble/setup.bash not found."
+  echo "Install ROS 2 Humble or run:  sudo ./scripts/install.sh"
+  exit 1
 fi
 
-PARAMS="$REPO_DIR/src/horseshitbot/config/params.yaml"
-
-# Parse args
+# ── Parse args ───────────────────────────────────────────────────
 ENABLE_CAMERA=true
 ENABLE_MKS=true
 DRIVE_ONLY=false
+FORCE_REBUILD=false
 for arg in "$@"; do
   case "$arg" in
     --no-camera)   ENABLE_CAMERA=false ;;
     --no-mks)      ENABLE_MKS=false ;;
     --drive-only)  DRIVE_ONLY=true ;;
+    --rebuild)     FORCE_REBUILD=true ;;
   esac
 done
 
+# ── Build if requested ────────────────────────────────────────────
+if [ "$FORCE_REBUILD" = true ] || [ ! -f "$REPO_DIR/install/setup.bash" ]; then
+  echo "Building workspace..."
+  cd "$REPO_DIR"
+  colcon build
+  echo ""
+fi
+
+source "$REPO_DIR/install/setup.bash"
+
+PARAMS="$REPO_DIR/src/horseshitbot/config/params.yaml"
+
+# ── Launch ───────────────────────────────────────────────────────
 if [ "$DRIVE_ONLY" = true ]; then
   echo "=== HorseShitBot — Drive Only ==="
   echo "  wheel_driver_node + gamepad_teleop_node"
