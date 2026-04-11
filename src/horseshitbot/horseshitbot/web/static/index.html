@@ -4,103 +4,136 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HorseShitBot Dashboard</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <header>
     <h1>HorseShitBot</h1>
+    <nav class="tabs">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="controller">Controller</button>
+    </nav>
     <span id="ws-status">Disconnected</span>
   </header>
 
   <div id="estop-banner" class="estop-banner" style="display:none">E-STOP ACTIVE — Press B on gamepad to resume</div>
 
-  <div class="grid">
-    <!-- Wheels -->
-    <div class="card" id="card-wheels">
-      <h2>Wheels</h2>
-      <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
-      <div class="kv"><span class="label">Left RPM</span><span class="value" id="w-left">0</span></div>
-      <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
-      <div class="kv"><span class="label">Right RPM</span><span class="value" id="w-right">0</span></div>
-      <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
-      <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
-      <div class="btn-row">
-        <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
-        <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
-        <button onclick="switchBackend()">Switch Backend</button>
+  <!-- ─── Dashboard tab ─── -->
+  <div id="tab-dashboard" class="tab-content active">
+    <div class="grid">
+      <!-- Wheels -->
+      <div class="card" id="card-wheels">
+        <h2>Wheels</h2>
+        <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
+        <div class="kv"><span class="label">Left RPM</span><span class="value" id="w-left">0</span></div>
+        <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
+        <div class="kv"><span class="label">Right RPM</span><span class="value" id="w-right">0</span></div>
+        <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
+        <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
+        <div class="btn-row">
+          <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
+          <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
+          <button onclick="switchBackend()">Switch Backend</button>
+        </div>
+      </div>
+
+      <!-- Lift -->
+      <div class="card" id="card-lift">
+        <h2>Lift</h2>
+        <div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
+        <div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
+        <div class="kv"><span class="label">Referenced</span><span class="value" id="lift-ref">No</span></div>
+        <div class="btn-row">
+          <button onclick="cmd('lift_node','open')">Open</button>
+          <button onclick="cmd('lift_node','close')">Close</button>
+          <button onclick="cmd('lift_node','stop')">Stop</button>
+          <button onclick="cmd('lift_node','reference')">Reference</button>
+        </div>
+      </div>
+
+      <!-- Brush -->
+      <div class="card" id="card-brush">
+        <h2>Brush</h2>
+        <div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
+        <div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
+        <div class="kv"><span class="label">Referenced</span><span class="value" id="brush-ref">No</span></div>
+        <div class="btn-row">
+          <button onclick="cmd('brush_node','open')">Open</button>
+          <button onclick="cmd('brush_node','close')">Close</button>
+          <button onclick="cmd('brush_node','stop')">Stop</button>
+          <button onclick="cmd('brush_node','reference')">Reference</button>
+        </div>
+      </div>
+
+      <!-- Bin Door -->
+      <div class="card" id="card-bin-door">
+        <h2>Bin Door</h2>
+        <div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
+        <div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
+        <div class="kv"><span class="label">Referenced</span><span class="value" id="bin_door-ref">No</span></div>
+        <div class="btn-row">
+          <button onclick="cmd('bin_door_node','open')">Open</button>
+          <button onclick="cmd('bin_door_node','close')">Close</button>
+          <button onclick="cmd('bin_door_node','stop')">Stop</button>
+          <button onclick="cmd('bin_door_node','reference')">Reference</button>
+        </div>
+      </div>
+
+      <!-- Gamepad -->
+      <div class="card" id="card-gamepad">
+        <h2>Gamepad</h2>
+        <div class="kv">
+          <span class="label">Status</span>
+          <span class="value" id="gp-status">
+            <span class="gp-dot" id="gp-dot"></span>
+            <span id="gp-label">Disconnected</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Camera / Recording -->
+      <div class="card" id="card-recording">
+        <h2>Camera / Recording</h2>
+        <div class="kv">
+          <span class="label">Status</span>
+          <span class="value" id="rec-status">
+            <span class="rec-dot" id="rec-dot"></span>
+            <span id="rec-label">Idle</span>
+          </span>
+        </div>
+        <div class="kv"><span class="label">Duration</span><span class="value" id="rec-duration">--</span></div>
+        <div class="kv"><span class="label">Frames</span><span class="value" id="rec-frames">--</span></div>
+        <div class="kv"><span class="label">Bag Path</span><span class="value" id="rec-path" style="font-size:0.75rem;word-break:break-all;">--</span></div>
+        <div class="btn-row">
+          <button id="btn-rec-start" onclick="startRecording()">Start Recording</button>
+          <button id="btn-rec-stop" class="danger" onclick="stopRecording()">Stop Recording</button>
+        </div>
       </div>
     </div>
+  </div>
 
-    <!-- Lift -->
-    <div class="card" id="card-lift">
-      <h2>Lift</h2>
-      <div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
-      <div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
-      <div class="kv"><span class="label">Referenced</span><span class="value" id="lift-ref">No</span></div>
-      <div class="btn-row">
-        <button onclick="cmd('lift_node','open')">Open</button>
-        <button onclick="cmd('lift_node','close')">Close</button>
-        <button onclick="cmd('lift_node','stop')">Stop</button>
-        <button onclick="cmd('lift_node','reference')">Reference</button>
+  <!-- ─── Controller tab ─── -->
+  <div id="tab-controller" class="tab-content">
+    <div class="ctrl-center">
+      <div class="ctrl-img-wrap">
+        <img src="/static/controller.png" alt="Data Frog Controller">
       </div>
-    </div>
-
-    <!-- Brush -->
-    <div class="card" id="card-brush">
-      <h2>Brush</h2>
-      <div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
-      <div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
-      <div class="kv"><span class="label">Referenced</span><span class="value" id="brush-ref">No</span></div>
-      <div class="btn-row">
-        <button onclick="cmd('brush_node','open')">Open</button>
-        <button onclick="cmd('brush_node','close')">Close</button>
-        <button onclick="cmd('brush_node','stop')">Stop</button>
-        <button onclick="cmd('brush_node','reference')">Reference</button>
-      </div>
-    </div>
-
-    <!-- Bin Door -->
-    <div class="card" id="card-bin-door">
-      <h2>Bin Door</h2>
-      <div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
-      <div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
-      <div class="kv"><span class="label">Referenced</span><span class="value" id="bin_door-ref">No</span></div>
-      <div class="btn-row">
-        <button onclick="cmd('bin_door_node','open')">Open</button>
-        <button onclick="cmd('bin_door_node','close')">Close</button>
-        <button onclick="cmd('bin_door_node','stop')">Stop</button>
-        <button onclick="cmd('bin_door_node','reference')">Reference</button>
-      </div>
-    </div>
-
-    <!-- Gamepad -->
-    <div class="card" id="card-gamepad">
-      <h2>Gamepad</h2>
-      <div class="kv">
-        <span class="label">Status</span>
-        <span class="value" id="gp-status">
-          <span class="gp-dot" id="gp-dot"></span>
-          <span id="gp-label">Disconnected</span>
-        </span>
-      </div>
-    </div>
-
-    <!-- Camera / Recording -->
-    <div class="card" id="card-recording">
-      <h2>Camera / Recording</h2>
-      <div class="kv">
-        <span class="label">Status</span>
-        <span class="value" id="rec-status">
-          <span class="rec-dot" id="rec-dot"></span>
-          <span id="rec-label">Idle</span>
-        </span>
-      </div>
-      <div class="kv"><span class="label">Duration</span><span class="value" id="rec-duration">--</span></div>
-      <div class="kv"><span class="label">Frames</span><span class="value" id="rec-frames">--</span></div>
-      <div class="kv"><span class="label">Bag Path</span><span class="value" id="rec-path" style="font-size:0.75rem;word-break:break-all;">--</span></div>
-      <div class="btn-row">
-        <button id="btn-rec-start" onclick="startRecording()">Start Recording</button>
-        <button id="btn-rec-stop" class="danger" onclick="stopRecording()">Stop Recording</button>
+      <div class="card ctrl-panel">
+        <h2>Button Assignments</h2>
+        <p class="ctrl-hint">Press a button on the controller to see it light up.
+          Change assignments with the dropdowns, then hit Save.</p>
+        <div id="ctrl-loading" class="ctrl-hint">Loading config...</div>
+        <table class="ctrl-table" id="ctrl-table" style="display:none">
+          <thead><tr><th></th><th>Button</th><th>Action</th></tr></thead>
+          <tbody id="ctrl-tbody"></tbody>
+        </table>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="primary" onclick="saveCtrlConfig()">Save</button>
+          <button onclick="saveCtrlDefaults()">Save to Defaults</button>
+          <button onclick="resetCtrlConfig()">Reset Defaults</button>
+        </div>
+        <div id="ctrl-msg" class="ctrl-msg"></div>
       </div>
     </div>
   </div>

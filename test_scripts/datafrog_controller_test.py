@@ -432,7 +432,7 @@ def main():
     parser.add_argument("-m", "--monitor", action="store_true", help="Live event monitor mode")
     parser.add_argument("--axes-only", action="store_true", help="Run only the axis test")
     parser.add_argument("--buttons-only", action="store_true", help="Run only the button test")
-    parser.add_argument("-t", "--timeout", type=int, default=45, help="Seconds per test phase (default: 45)")
+    parser.add_argument("-t", "--timeout", type=int, default=15, help="Seconds per test phase (default: 15)")
     args = parser.parse_args()
 
     if args.list:

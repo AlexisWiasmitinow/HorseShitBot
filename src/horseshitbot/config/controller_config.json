@@ -1,0 +1,21 @@
+{
+  "buttons": {
+    "A": "camera_bag_recording",
+    "B": "stop_wheels",
+    "X": "stop_actuators",
+    "Y": "stop_wheels",
+    "LB": "lift_up",
+    "RB": "brush",
+    "LT": "lift_down",
+    "RT": "none",
+    "L3": "e_stop",
+    "R3": "e_stop",
+    "D-Pad Up": "bin_door",
+    "D-Pad Down": "none",
+    "D-Pad Left": "none",
+    "D-Pad Right": "none",
+    "Options": "e_stop",
+    "Menu": "reference_all",
+    "Logo": "toggle_controls"
+  }
+}

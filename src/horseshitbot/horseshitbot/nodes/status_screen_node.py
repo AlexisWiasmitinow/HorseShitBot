@@ -1,6 +1,9 @@
 """
 Status Screen Node — subscribes to wheel_status and actuator states,
 renders a live dashboard on the on-robot ILI9341 SPI TFT at ~5 Hz.
+
+Press the Xbox/Home button on the gamepad to toggle the controls overlay.
+The controls screen is built dynamically from the gamepad's button_map config.
 """
 
 from __future__ import annotations
@@ -38,8 +41,28 @@ COL_TEXT = (220, 220, 220)
 COL_MUTED = (138, 138, 154)
 COL_BAR_BG = (50, 50, 70)
 COL_WARN = (240, 201, 41)
+COL_HIGHLIGHT = (40, 70, 120)
 
 MAX_RPM = 500.0
+
+ACTION_LABELS = {
+    "e_stop": "E-STOP (fast)",
+    "stop_wheels": "Stop wheels",
+    "stop_actuators": "Stop actuators",
+    "brush": "Brush (hold)",
+    "bin_door": "Bin door (hold)",
+    "lift_up": "Lift up (hold)",
+    "lift_down": "Lift down (hold)",
+    "reference_all": "Reference all",
+    "camera_bag_recording": "Camera rec",
+    "toggle_controls": "Controls",
+    "none": "--",
+}
+
+FIXED_AXES = [
+    ("L Stick", "Drive"),
+    ("R Stick", "--"),
+]
 
 
 class StatusScreenNode(Node):
@@ -82,6 +105,7 @@ class StatusScreenNode(Node):
         self._actuators = {"lift": {}, "brush": {}, "bin_door": {}}
         self._bag_recorder: dict = {}
         self._gamepad: dict = {}
+        self._show_controls = False
 
         self.create_subscription(String, "/wheel_status", self._cb_wheel, 10)
         self.create_subscription(ActuatorStateMsg, "/lift/state", lambda m: self._cb_act("lift", m), 10)
@@ -89,6 +113,7 @@ class StatusScreenNode(Node):
         self.create_subscription(ActuatorStateMsg, "/bin_door/state", lambda m: self._cb_act("bin_door", m), 10)
         self.create_subscription(String, "/bag_recorder_node/status", self._cb_bag_recorder, 10)
         self.create_subscription(String, "/gamepad/status", self._cb_gamepad, 10)
+        self.create_subscription(String, "/gamepad/button", self._cb_gamepad_btn, 10)
 
         period = 1.0 / max(0.5, hz)
         self.create_timer(period, self._render)
@@ -124,10 +149,74 @@ class StatusScreenNode(Node):
         except Exception:
             pass
 
+    def _cb_gamepad_btn(self, msg: String):
+        if msg.data == "home":
+            self._show_controls = not self._show_controls
+
     def _render(self):
         if self._disp is None:
             return
 
+        if self._show_controls:
+            self._render_controls()
+        else:
+            self._render_dashboard()
+
+    # ── Controls screen ───────────────────────────────────────────
+
+    def _render_controls(self):
+        W = self._disp.width
+        H = self._disp.height
+        img = self._disp.new_image(COL_BG)
+        draw = ImageDraw.Draw(img)
+        font_sm = self._disp.font_sm()
+        font_lg = self._disp.font_lg()
+
+        active = set(self._gamepad.get("active_inputs", []))
+        button_map = self._gamepad.get("button_map", {})
+
+        rows: list[tuple[str, str]] = list(FIXED_AXES)
+        for btn, action in button_map.items():
+            desc = ACTION_LABELS.get(action, action)
+            rows.append((btn, desc))
+
+        # Header
+        draw.rectangle([0, 0, W, 22], fill=COL_HEADER)
+        draw.text((6, 2), "CONTROLS", fill=COL_ACCENT, font=font_lg)
+
+        footer_h = 16
+        usable = H - 28 - footer_h
+        row_h = max(14, min(19, usable // max(len(rows), 1)))
+
+        y = 28
+        for i, (btn, desc) in enumerate(rows):
+            if y + row_h > H - footer_h:
+                break
+            is_active = btn in active
+            if is_active:
+                row_bg = COL_HIGHLIGHT
+                btn_col = COL_OK
+                act_col = COL_OK
+            else:
+                row_bg = COL_ROW if (i % 2 == 0) else COL_BG
+                btn_col = COL_WARN
+                act_col = COL_TEXT
+
+            draw.rectangle([0, y, W, y + row_h - 1], fill=row_bg)
+            if is_active:
+                draw.rectangle([0, y, 3, y + row_h - 1], fill=COL_OK)
+            draw.text((6, y + 2), btn, fill=btn_col, font=font_sm)
+            draw.text((90, y + 2), desc, fill=act_col, font=font_sm)
+            y += row_h
+
+        draw.rectangle([0, H - footer_h, W, H], fill=COL_FOOTER)
+        draw.text((6, H - footer_h + 2), "[Home] back to status", fill=COL_MUTED, font=font_sm)
+
+        self._disp.draw_frame(img)
+
+    # ── Dashboard screen ──────────────────────────────────────────
+
+    def _render_dashboard(self):
         W = self._disp.width
         H = self._disp.height
         img = self._disp.new_image(COL_BG)
@@ -187,7 +276,7 @@ class StatusScreenNode(Node):
             draw.text((W - 46, y + 3), direction.upper()[:5], fill=COL_TEXT, font=font_sm)
             y += 22
 
-        # Footer — 4 lines of 16px each
+        # Footer
         y = H - 64
         draw.rectangle([0, y, W, H], fill=COL_FOOTER)
 
@@ -224,6 +313,9 @@ class StatusScreenNode(Node):
             draw.text((6, y + 34), err_text, fill=COL_ACCENT, font=font_sm)
         else:
             draw.text((6, y + 34), "No errors", fill=COL_OK, font=font_sm)
+
+        # Home button hint
+        draw.text((6, y + 50), "[Home] show controls", fill=COL_MUTED, font=font_sm)
 
         self._disp.draw_frame(img)
 

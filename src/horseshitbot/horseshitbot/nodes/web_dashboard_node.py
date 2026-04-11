@@ -23,7 +23,7 @@ from std_srvs.srv import Trigger
 try:
     import uvicorn
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
 
@@ -34,9 +34,91 @@ except ImportError:
 
 STATIC_DIR = Path(__file__).parent.parent / "web" / "static"
 
+_CONFIG_DIR = Path.home() / ".config" / "horseshitbot"
+_CONFIG_FILE = _CONFIG_DIR / "controller_config.json"
+
+def _find_repo_config() -> Path | None:
+    """Walk up from __file__ to find the git repo root, then return the
+    source config path.  Works whether running from source or install/."""
+    p = Path(__file__).resolve()
+    for parent in p.parents:
+        candidate = parent / "src" / "horseshitbot" / "config" / "controller_config.json"
+        if (parent / ".git").is_dir() and (parent / "src" / "horseshitbot").is_dir():
+            return candidate
+    return None
+
+_REPO_CONFIG_FILE = _find_repo_config()
+
+DEFAULT_BUTTON_MAP = {
+    "A": "e_stop",
+    "B": "stop_wheels",
+    "X": "stop_actuators",
+    "Y": "stop_wheels",
+    "LB": "bin_door",
+    "RB": "brush",
+    "LT": "none",
+    "RT": "none",
+    "L3": "e_stop",
+    "R3": "e_stop",
+    "D-Pad Up": "lift_up",
+    "D-Pad Down": "lift_down",
+    "D-Pad Left": "none",
+    "D-Pad Right": "none",
+    "Options": "camera_bag_recording",
+    "Menu": "reference_all",
+    "Logo": "toggle_controls",
+}
+
+AVAILABLE_ACTIONS = {
+    "e_stop": "E-STOP (fast stop)",
+    "stop_wheels": "Stop wheels (gentle)",
+    "stop_actuators": "Stop all actuators",
+    "brush": "Brush deploy (hold)",
+    "bin_door": "Bin door open (hold)",
+    "lift_up": "Lift up (hold)",
+    "lift_down": "Lift down (hold)",
+    "reference_all": "Reference all actuators",
+    "camera_bag_recording": "Camera bag recording",
+    "toggle_controls": "Toggle TFT controls",
+    "none": "Unassigned",
+}
+
+BUTTON_NAMES = [
+    "A", "B", "X", "Y",
+    "LB", "RB", "LT", "RT",
+    "L3", "R3",
+    "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right",
+    "Options", "Menu", "Logo",
+]
+
+AXIS_INFO = {
+    "L Stick": "Drive (fwd/back + turn)",
+    "R Stick": "Not assigned",
+}
+
 
 class ParamUpdate(BaseModel):
     params: dict
+
+
+class ControllerConfigUpdate(BaseModel):
+    buttons: dict[str, str]
+
+
+def _load_config() -> dict:
+    if _CONFIG_FILE.exists():
+        try:
+            with open(_CONFIG_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"buttons": dict(DEFAULT_BUTTON_MAP)}
+
+
+def _save_config(cfg: dict) -> None:
+    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(_CONFIG_FILE, "w") as f:
+        json.dump(cfg, f, indent=2)
 
 
 class _RosBridge:
@@ -120,6 +202,7 @@ class WebDashboardNode(Node):
 
         self._rec_start_cli = self.create_client(Trigger, "/bag_recorder_node/start_recording")
         self._rec_stop_cli = self.create_client(Trigger, "/bag_recorder_node/stop_recording")
+        self._config_pub = self.create_publisher(String, "/gamepad/config", 10)
 
         self._app = self._build_app()
 
@@ -148,12 +231,78 @@ class WebDashboardNode(Node):
         async def status():
             return bridge.snapshot()
 
+        @app.get("/api/controller-config")
+        async def get_controller_config():
+            cfg = _load_config()
+            return {
+                "buttons": cfg.get("buttons", DEFAULT_BUTTON_MAP),
+                "available_actions": AVAILABLE_ACTIONS,
+                "button_names": BUTTON_NAMES,
+                "axes": AXIS_INFO,
+                "defaults": DEFAULT_BUTTON_MAP,
+            }
+
+        @app.put("/api/controller-config")
+        async def set_controller_config(body: ControllerConfigUpdate):
+            valid_actions = set(AVAILABLE_ACTIONS.keys())
+            valid_buttons = set(BUTTON_NAMES)
+
+            cleaned = {}
+            for btn, action in body.buttons.items():
+                if btn not in valid_buttons:
+                    continue
+                if action not in valid_actions:
+                    action = "none"
+                cleaned[btn] = action
+
+            for btn in BUTTON_NAMES:
+                if btn not in cleaned:
+                    cleaned[btn] = DEFAULT_BUTTON_MAP.get(btn, "none")
+
+            cfg = {"buttons": cleaned}
+            _save_config(cfg)
+
+            msg = String()
+            msg.data = json.dumps(cfg)
+            ros_node._config_pub.publish(msg)
+
+            return {"success": True, "buttons": cleaned}
+
+        @app.put("/api/controller-config/defaults")
+        async def save_controller_defaults(body: ControllerConfigUpdate):
+            if _REPO_CONFIG_FILE is None:
+                ros_node.get_logger().error("Cannot find repo root (no .git found)")
+                return {"success": False, "message": "Cannot find repo root — is this a git checkout?"}
+
+            valid_actions = set(AVAILABLE_ACTIONS.keys())
+            valid_buttons = set(BUTTON_NAMES)
+
+            cleaned = {}
+            for btn, action in body.buttons.items():
+                if btn not in valid_buttons:
+                    continue
+                if action not in valid_actions:
+                    action = "none"
+                cleaned[btn] = action
+
+            for btn in BUTTON_NAMES:
+                if btn not in cleaned:
+                    cleaned[btn] = DEFAULT_BUTTON_MAP.get(btn, "none")
+
+            cfg = {"buttons": cleaned}
+            try:
+                _REPO_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+                with open(_REPO_CONFIG_FILE, "w") as f:
+                    json.dump(cfg, f, indent=2)
+                    f.write("\n")
+                ros_node.get_logger().info(f"Saved repo defaults to {_REPO_CONFIG_FILE}")
+                return {"success": True, "path": str(_REPO_CONFIG_FILE)}
+            except Exception as e:
+                ros_node.get_logger().error(f"Failed to save repo defaults: {e}")
+                return {"success": False, "message": str(e)}
+
         @app.get("/api/params/{node_name}")
         async def get_params(node_name: str):
-            cli = ros_node.create_client(
-                rcl_interfaces.srv.ListParameters, f"/{node_name}/list_parameters"
-            )
-            # Simplified: return placeholder indicating the mechanism
             return {"node": node_name, "note": "Use ros2 param list/get for now"}
 
         @app.put("/api/params/{node_name}")
