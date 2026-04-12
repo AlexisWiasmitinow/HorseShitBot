@@ -12,10 +12,10 @@ Example:
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node, PushRosNamespace
+from launch_ros.actions import Node
 
 
 def _launch_setup(context):
@@ -93,29 +93,22 @@ def _launch_setup(context):
         rs_launch_dir = os.path.join(
             get_package_share_directory("realsense2_camera"), "launch"
         )
-        # Wrap in GroupAction with forwarding=False so our custom launch
-        # arguments (enable_camera, enable_mks) don't propagate to the
-        # RealSense launch file, which rejects unknown arguments.
-        nodes.append(GroupAction(
-            actions=[
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(
-                        os.path.join(rs_launch_dir, "rs_launch.py")
-                    ),
-                    launch_arguments={
-                        "camera_name": "camera",
-                        "camera_namespace": "",
-                        "device_type": "d415",
-                        "pointcloud.enable": "false",
-                        "enable_color": "true",
-                        "enable_depth": "true",
-                        "align_depth.enable": "true",
-                        "rgb_camera.color_profile": "640x480x15",
-                        "depth_module.depth_profile": "640x480x15",
-                    }.items(),
-                ),
-            ],
-            forwarding=False,
+        camera_config = os.path.join(pkg_dir, "config", "camera_config.yaml")
+        nodes.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(rs_launch_dir, "rs_launch.py")
+            ),
+            launch_arguments={
+                "camera_name": "camera",
+                "camera_namespace": "",
+                "device_type": "d415",
+                "config_file": camera_config,
+                "enable_color": "true",
+                "enable_depth": "true",
+                "align_depth.enable": "true",
+                "rgb_camera.color_profile": "640x480x15",
+                "depth_module.depth_profile": "640x480x15",
+            }.items(),
         ))
         nodes.append(Node(
             package="horseshitbot",

@@ -33,11 +33,59 @@ except ImportError:
 
 
 _TOPIC_TYPE_MAP = {
+    # Camera — color
     "/camera/color/image_raw": "sensor_msgs/msg/Image",
-    "/camera/aligned_depth_to_color/image_raw": "sensor_msgs/msg/Image",
     "/camera/color/camera_info": "sensor_msgs/msg/CameraInfo",
+    # Camera — aligned depth
+    "/camera/aligned_depth_to_color/image_raw": "sensor_msgs/msg/Image",
     "/camera/aligned_depth_to_color/camera_info": "sensor_msgs/msg/CameraInfo",
+    # Camera — raw depth (not aligned)
+    "/camera/depth/image_rect_raw": "sensor_msgs/msg/Image",
+    "/camera/depth/camera_info": "sensor_msgs/msg/CameraInfo",
+    # Camera — point cloud (if enabled)
+    "/camera/depth/color/points": "sensor_msgs/msg/PointCloud2",
+    # Navigation
+    "/cmd_vel": "geometry_msgs/msg/Twist",
+    # Gamepad
+    "/gamepad/status": "std_msgs/msg/String",
+    "/gamepad/button": "std_msgs/msg/String",
 }
+
+_TOPIC_GROUPS = {
+    "Camera — Color": [
+        "/camera/color/image_raw",
+        "/camera/color/camera_info",
+    ],
+    "Camera — Depth (aligned)": [
+        "/camera/aligned_depth_to_color/image_raw",
+        "/camera/aligned_depth_to_color/camera_info",
+    ],
+    "Camera — Depth (raw)": [
+        "/camera/depth/image_rect_raw",
+        "/camera/depth/camera_info",
+    ],
+    "Camera — Point Cloud": [
+        "/camera/depth/color/points",
+    ],
+    "Navigation": [
+        "/cmd_vel",
+    ],
+    "Gamepad": [
+        "/gamepad/status",
+        "/gamepad/button",
+    ],
+}
+
+_DEFAULT_TOPICS = [
+    "/camera/color/image_raw",
+    "/camera/aligned_depth_to_color/image_raw",
+    "/camera/color/camera_info",
+    "/camera/aligned_depth_to_color/camera_info",
+]
+
+
+_CONFIG_DIR = Path.home() / ".config" / "horseshitbot"
+_BAG_TOPICS_FILE = _CONFIG_DIR / "bag_topics.json"
 
 
 class BagRecorderNode(Node):
@@ -46,18 +94,13 @@ class BagRecorderNode(Node):
 
         self.declare_parameter("output_dir", "~/rosbags")
         self.declare_parameter("bag_prefix", "horseshitbot")
-        self.declare_parameter(
-            "topics",
-            list(_TOPIC_TYPE_MAP.keys()),
-        )
         self.declare_parameter("storage_id", "mcap")
 
         self._output_dir = self.get_parameter("output_dir").get_parameter_value().string_value
         self._bag_prefix = self.get_parameter("bag_prefix").get_parameter_value().string_value
-        self._topics: list[str] = (
-            self.get_parameter("topics").get_parameter_value().string_array_value
-        )
         self._storage_id = self.get_parameter("storage_id").get_parameter_value().string_value
+
+        self._topics: list[str] = self._load_topics_from_file()
 
         self._recording = False
         self._writer: rosbag2_py.SequentialWriter | None = None if _HAS_ROSBAG2 else None
@@ -77,6 +120,7 @@ class BagRecorderNode(Node):
 
         self.create_timer(0.5, self._publish_status)
         self.create_timer(5.0, self._diag_topic_check)
+        self.create_timer(3.0, self._reload_topics_if_changed)
 
         if not _HAS_ROSBAG2:
             self.get_logger().error("rosbag2_py not available -- recording disabled")
@@ -85,6 +129,33 @@ class BagRecorderNode(Node):
             f"Bag recorder ready  topics={self._topics}  "
             f"storage={self._storage_id}  dir={self._output_dir}"
         )
+
+    def _load_topics_from_file(self) -> list[str]:
+        """Load selected topics from the config file, or return defaults."""
+        try:
+            if _BAG_TOPICS_FILE.is_file():
+                data = json.loads(_BAG_TOPICS_FILE.read_text())
+                topics = [t for t in data if t in _TOPIC_TYPE_MAP]
+                if topics:
+                    return topics
+        except Exception:
+            pass
+        return list(_DEFAULT_TOPICS)
+
+    def _reload_topics_if_changed(self):
+        """Periodically check config file and update topics if changed."""
+        if self._recording:
+            return
+        new_topics = self._load_topics_from_file()
+        if set(new_topics) != set(self._topics):
+            self._topics = new_topics
+            for sub in self._subscriptions:
+                self.destroy_subscription(sub)
+            self._subscriptions.clear()
+            self._msg_counts.clear()
+            self._topic_first_logged.clear()
+            self._create_topic_subscriptions()
+            self.get_logger().info(f"Topics updated from config: {self._topics}")
 
     def _create_topic_subscriptions(self):
         """Create subscriptions for each configured topic.
@@ -268,6 +339,9 @@ class BagRecorderNode(Node):
             "bag_path": self._bag_path,
             "duration_sec": round(duration, 1),
             "frame_count": self._frame_count,
+            "selected_topics": self._topics,
+            "available_topics": _TOPIC_TYPE_MAP,
+            "topic_groups": _TOPIC_GROUPS,
         }
         msg = String()
         msg.data = json.dumps(status)

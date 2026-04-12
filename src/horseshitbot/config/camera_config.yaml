@@ -1,0 +1,3 @@
+pointcloud.enable: true
+pointcloud.ordered_pc: false
+pointcloud__neon_.enable: true

@@ -9,6 +9,7 @@ The controls screen is built dynamically from the gamepad's button_map config.
 from __future__ import annotations
 
 import json
+import threading
 import time
 
 import rclpy
@@ -17,6 +18,7 @@ from std_msgs.msg import String
 
 from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
 from ..drivers.ili9341_display import ILI9341Display, default_display_pins
+from ..drivers.network_manager import get_ip_for_display
 
 from PIL import Image, ImageDraw
 
@@ -106,6 +108,10 @@ class StatusScreenNode(Node):
         self._bag_recorder: dict = {}
         self._gamepad: dict = {}
         self._show_controls = False
+        self._net_ifaces: list[dict] = []
+        self._net_lock = threading.Lock()
+        self._poll_network()
+        self.create_timer(10.0, self._poll_network)
 
         self.create_subscription(String, "/wheel_status", self._cb_wheel, 10)
         self.create_subscription(ActuatorStateMsg, "/lift/state", lambda m: self._cb_act("lift", m), 10)
@@ -152,6 +158,16 @@ class StatusScreenNode(Node):
     def _cb_gamepad_btn(self, msg: String):
         if msg.data == "home":
             self._show_controls = not self._show_controls
+
+    def _poll_network(self):
+        def _bg():
+            try:
+                ifaces = get_ip_for_display()
+            except Exception:
+                ifaces = []
+            with self._net_lock:
+                self._net_ifaces = ifaces
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _render(self):
         if self._disp is None:
@@ -277,8 +293,36 @@ class StatusScreenNode(Node):
             y += 22
 
         # Footer
-        y = H - 64
+        footer_rows = 5
+        row_h = 14
+        footer_h = footer_rows * row_h + 6
+        y = H - footer_h
         draw.rectangle([0, y, W, H], fill=COL_FOOTER)
+        fy = y + 2
+
+        # Network status
+        with self._net_lock:
+            net = list(self._net_ifaces)
+        if net:
+            parts = []
+            for iface in net:
+                tag = "W" if iface["type"] == "wifi" else "E"
+                ip = iface.get("ip", "")
+                if iface["connected"] and ip:
+                    label = iface.get("ssid") or iface["name"]
+                    if len(label) > 10:
+                        label = label[:9] + "."
+                    parts.append((f"{tag}:{label}", ip, COL_OK))
+                else:
+                    parts.append((f"{tag}:{iface['name']}", "--", COL_MUTED))
+            for tag_str, ip_str, col in parts[:2]:
+                draw.ellipse([6, fy + 3, 12, fy + 9], fill=col)
+                draw.text((16, fy), tag_str, fill=col, font=font_sm)
+                draw.text((110, fy), ip_str, fill=col, font=font_sm)
+                fy += row_h
+        else:
+            draw.text((6, fy), "NET: scanning...", fill=COL_MUTED, font=font_sm)
+            fy += row_h
 
         # Gamepad status
         gp_conn = self._gamepad.get("connected", False)
@@ -288,11 +332,12 @@ class StatusScreenNode(Node):
             gp_name = self._gamepad.get("name", "Gamepad")
             if len(gp_name) > 22:
                 gp_name = gp_name[:20] + ".."
-            draw.ellipse([6, y + 5, 14, y + 13], fill=COL_OK)
-            draw.text((18, y + 2), gp_name, fill=COL_OK, font=font_sm)
+            draw.ellipse([6, fy + 3, 12, fy + 9], fill=COL_OK)
+            draw.text((16, fy), gp_name, fill=COL_OK, font=font_sm)
         else:
-            draw.ellipse([6, y + 5, 14, y + 13], fill=COL_WARN)
-            draw.text((18, y + 2), "GAMEPAD: --", fill=COL_WARN, font=font_sm)
+            draw.ellipse([6, fy + 3, 12, fy + 9], fill=COL_WARN)
+            draw.text((16, fy), "GAMEPAD: --", fill=COL_WARN, font=font_sm)
+        fy += row_h
 
         # Recording status
         is_recording = self._bag_recorder.get("recording", False)
@@ -300,22 +345,20 @@ class StatusScreenNode(Node):
             dur = self._bag_recorder.get("duration_sec", 0)
             m, s = divmod(int(dur), 60)
             frames = self._bag_recorder.get("frame_count", 0)
-            draw.ellipse([6, y + 21, 14, y + 29], fill=COL_ACCENT)
-            draw.text((18, y + 18), f"REC {m}:{s:02d}  {frames}f", fill=COL_ACCENT, font=font_sm)
+            draw.ellipse([6, fy + 3, 12, fy + 9], fill=COL_ACCENT)
+            draw.text((16, fy), f"REC {m}:{s:02d}  {frames}f", fill=COL_ACCENT, font=font_sm)
         else:
-            draw.ellipse([6, y + 21, 14, y + 29], fill=COL_MUTED)
-            draw.text((18, y + 18), "REC: idle", fill=COL_MUTED, font=font_sm)
+            draw.ellipse([6, fy + 3, 12, fy + 9], fill=COL_MUTED)
+            draw.text((16, fy), "REC: idle", fill=COL_MUTED, font=font_sm)
+        fy += row_h
 
-        # Error line
+        # Error line or Home hint
         wheel_err = self._wheel.get("error", "")
         if wheel_err:
             err_text = wheel_err if len(wheel_err) <= 35 else wheel_err[:33] + ".."
-            draw.text((6, y + 34), err_text, fill=COL_ACCENT, font=font_sm)
+            draw.text((6, fy), err_text, fill=COL_ACCENT, font=font_sm)
         else:
-            draw.text((6, y + 34), "No errors", fill=COL_OK, font=font_sm)
-
-        # Home button hint
-        draw.text((6, y + 50), "[Home] show controls", fill=COL_MUTED, font=font_sm)
+            draw.text((6, fy), "[Home] controls", fill=COL_MUTED, font=font_sm)
 
         self._disp.draw_frame(img)
 

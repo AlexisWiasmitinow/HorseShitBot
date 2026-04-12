@@ -29,6 +29,8 @@ try:
 except ImportError:
     _HAS_EVDEV = False
 
+from ..drivers import bluetooth_helper as bth
+
 CONTROLLER_NAMES = [
     "data frog",
     "datafrog",
@@ -228,6 +230,13 @@ class GamepadTeleopNode(Node):
 
         self._axis_info: dict = {}
 
+        # Bluetooth / battery state (polled in background)
+        self._bt_mac: str = ""
+        self._bt_battery: int | None = None
+        self._bt_gamepad_info: dict | None = None
+        self._bt_poller = threading.Thread(target=self._poll_bt_info, daemon=True)
+        self._bt_poller.start()
+
         self.create_subscription(String, "/gamepad/config", self._cb_config, 10)
 
         if not _HAS_EVDEV:
@@ -245,6 +254,22 @@ class GamepadTeleopNode(Node):
             f"Gamepad teleop node started (config: "
             f"{'loaded' if _CONFIG_FILE.exists() else 'defaults'})"
         )
+
+    # ── bluetooth / battery polling ──────────────────────────────────
+
+    def _poll_bt_info(self):
+        while rclpy.ok():
+            try:
+                gp = bth.get_last_connected_gamepad()
+                self._bt_gamepad_info = gp
+                if gp:
+                    self._bt_mac = gp["mac"]
+                    self._bt_battery = bth.get_battery_level(gp["mac"])
+                else:
+                    self._bt_battery = None
+            except Exception:
+                pass
+            time.sleep(15)
 
     # ── config ────────────────────────────────────────────────────────
 
@@ -486,12 +511,17 @@ class GamepadTeleopNode(Node):
         msg.angular.z = x * self._max_ang
         self._cmd_vel_pub.publish(msg)
 
+        bt_info = self._bt_gamepad_info
         status = String()
         status.data = json.dumps({
             "connected": self._connected,
             "name": self._device.name if self._device else "",
             "active_inputs": active,
             "button_map": btn_map,
+            "battery": self._bt_battery,
+            "bt_mac": self._bt_mac,
+            "bt_name": bt_info["name"] if bt_info else "",
+            "bt_connected": bt_info["connected"] if bt_info else False,
         })
         self._gamepad_status_pub.publish(status)
 

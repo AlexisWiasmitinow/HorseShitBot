@@ -53,6 +53,16 @@ apt-get install -y --no-install-recommends \
   python3-spidev \
   || true
 
+# hostapd + dnsmasq for WiFi AP mode and DHCP server
+# NM manages these internally — we don't want them as standalone services
+apt-get install -y --no-install-recommends \
+  hostapd \
+  dnsmasq-base \
+  || true
+systemctl disable --now dnsmasq 2>/dev/null || true
+systemctl disable --now hostapd 2>/dev/null || true
+systemctl unmask hostapd 2>/dev/null || true
+
 # ── Python packages (system-wide, needed by ROS 2 nodes) ────────
 if [ "$ROS_ONLY" = false ]; then
   echo ""
@@ -76,11 +86,36 @@ fi
 REAL_USER="${SUDO_USER:-$USER}"
 echo ""
 echo "--- Adding $REAL_USER to required groups ---"
-for grp in input dialout spi gpio i2c; do
+for grp in input dialout spi gpio i2c netdev; do
   if getent group "$grp" > /dev/null 2>&1; then
     usermod -aG "$grp" "$REAL_USER" && echo "  + $grp" || true
   fi
 done
+
+# ── NetworkManager permissions (WiFi, AP, IP config) ────────────
+echo ""
+echo "--- NetworkManager polkit policy ---"
+POLKIT_FILE="/etc/polkit-1/localauthority/50-local.d/10-hsb-network.pkla"
+mkdir -p "$(dirname "$POLKIT_FILE")"
+cat > "$POLKIT_FILE" << EOF
+[Allow $REAL_USER to manage NetworkManager]
+Identity=unix-user:$REAL_USER
+Action=org.freedesktop.NetworkManager.*
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+EOF
+echo "  Created $POLKIT_FILE"
+
+# ── Bluetooth restart permission (for br-connection-create-socket recovery) ──
+echo ""
+echo "--- Bluetooth restart sudoers rule ---"
+SUDOERS_BT="/etc/sudoers.d/hsb-bluetooth"
+cat > "$SUDOERS_BT" << EOF
+$REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart bluetooth
+EOF
+chmod 0440 "$SUDOERS_BT"
+echo "  Created $SUDOERS_BT"
 
 # ── Fix line endings (repo may come from Windows) ────────────────
 echo ""

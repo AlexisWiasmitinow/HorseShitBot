@@ -151,6 +151,40 @@ button.primary:hover { background: #3db88a; }
 }
 .gp-dot.connected { background: var(--ok); }
 
+.gp-battery-icon {
+  display: inline-block;
+  width: 24px; height: 12px;
+  border: 2px solid var(--muted);
+  border-radius: 2px;
+  position: relative;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.gp-battery-icon::before {
+  content: "";
+  position: absolute;
+  left: 1px; top: 1px; bottom: 1px;
+  width: var(--batt-pct, 0%);
+  max-width: calc(100% - 2px);
+  border-radius: 1px;
+  background: var(--ok);
+  transition: width 0.3s;
+}
+.gp-battery-icon::after {
+  content: "";
+  position: absolute;
+  right: -4px; top: 3px;
+  width: 2px; height: 4px;
+  background: var(--muted);
+  border-radius: 0 1px 1px 0;
+}
+.gp-batt-low { border-color: var(--err); }
+.gp-batt-low::before { background: var(--err); }
+.gp-batt-med { border-color: var(--warn); }
+.gp-batt-med::before { background: var(--warn); }
+.gp-batt-ok { border-color: var(--ok); }
+.gp-batt-ok::before { background: var(--ok); }
+
 .estop-banner {
   background: var(--err);
   color: #fff;
@@ -169,6 +203,53 @@ button.primary:hover { background: #3db88a; }
   border: 2px solid var(--err);
   box-shadow: 0 0 12px rgba(233, 69, 96, 0.4);
 }
+
+/* ── Thermals ─── */
+.thermal-zones {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.thermal-placeholder {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.thermal-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 60px;
+  align-items: center;
+  gap: 10px;
+}
+.thermal-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thermal-bar-wrap {
+  height: 8px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.thermal-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.thermal-bar.thermal-ok   { background: var(--ok); }
+.thermal-bar.thermal-warn { background: var(--warn); }
+.thermal-bar.thermal-crit { background: var(--err); }
+.thermal-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.thermal-value.thermal-ok   { color: var(--ok); }
+.thermal-value.thermal-warn { color: var(--warn); }
+.thermal-value.thermal-crit { color: var(--err); }
 
 /* ── Camera Stream ─── */
 .cam-wrap {
@@ -340,6 +421,104 @@ button.primary:hover { background: #3db88a; }
 .ctrl-msg.warn { color: var(--warn); }
 .ctrl-msg.err  { color: var(--err); }
 
+/* ── Topic Picker ─── */
+.topic-picker {
+  margin-bottom: 20px;
+}
+.topic-picker h2 {
+  font-size: 1rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 0;
+}
+.topic-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.topic-picker-hint {
+  color: var(--warn);
+  font-size: 0.78rem;
+  margin-right: auto;
+}
+#topic-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.topic-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+.topic-group-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.topic-cb-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.topic-cb-label span {
+  color: var(--text);
+}
+.topic-cb {
+  accent-color: var(--ok);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.topic-cb:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Recording Bar ─── */
+.rec-bar {
+  margin-bottom: 20px;
+}
+.rec-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.rec-dot-lg {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.rec-dot-lg.recording {
+  background: var(--err);
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+.rec-bar-label {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.rec-bar-detail {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.rec-bar-row button {
+  margin-left: auto;
+}
+
 /* ── Recordings / Bags ─── */
 .bags-wrap {
   max-width: 900px;
@@ -457,6 +636,267 @@ button.primary:hover { background: #3db88a; }
 .bag-del {
   padding: 5px 10px;
   font-size: 0.78rem;
+}
+
+/* ── Network Tab ─── */
+.net-wrap {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.net-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.net-header h2 {
+  font-size: 1rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-right: auto;
+}
+.net-interfaces {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.net-iface-card {
+  position: relative;
+  transition: border-color 0.2s;
+}
+.net-iface-card.net-connected {
+  border-left: 3px solid var(--ok);
+}
+.net-iface-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.net-iface-icon {
+  font-size: 1.2rem;
+}
+.net-iface-name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+.net-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+}
+.net-dot.on { background: var(--ok); }
+.net-dot.off { background: var(--muted); }
+.net-iface-status {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-right: auto;
+}
+.net-cfg-btn {
+  font-size: 0.78rem;
+  padding: 5px 12px;
+}
+.net-iface-details .kv {
+  font-size: 0.88rem;
+}
+.net-dhcpd-on {
+  color: var(--warn) !important;
+}
+
+/* WiFi list */
+.net-wifi-section {
+  margin-top: 8px;
+}
+.wifi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 16px;
+  background: var(--card);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.wifi-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s;
+}
+.wifi-row:hover { background: var(--highlight); }
+.wifi-row.wifi-active { background: rgba(78, 204, 163, 0.08); }
+.wifi-signal {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 28px;
+  height: 18px;
+}
+.wifi-bar {
+  width: 4px;
+  background: var(--muted);
+  border-radius: 1px;
+  opacity: 0.3;
+}
+.wifi-bar:nth-child(1) { height: 5px; }
+.wifi-bar:nth-child(2) { height: 9px; }
+.wifi-bar:nth-child(3) { height: 13px; }
+.wifi-bar:nth-child(4) { height: 18px; }
+.wifi-bar.on { background: var(--ok); opacity: 1; }
+.wifi-ssid {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wifi-security {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.wifi-connected-badge {
+  font-size: 0.75rem;
+  background: var(--ok);
+  color: #111;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.wifi-connect-btn {
+  font-size: 0.78rem;
+  padding: 4px 12px;
+}
+
+/* WiFi connect panel */
+.net-wifi-connect h3,
+.net-ap-setup h3 {
+  font-size: 0.95rem;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.net-pw-row {
+  display: flex;
+  gap: 6px;
+}
+.net-pw-row input {
+  flex: 1;
+}
+.net-pw-toggle {
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* Access Point */
+.net-ap-start-btn {
+  margin-left: auto;
+  font-size: 0.78rem;
+  padding: 5px 12px;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.net-ap-start-btn:hover { background: var(--warn); color: #111; }
+.net-ap-badge {
+  color: var(--warn) !important;
+  font-weight: 700;
+}
+.net-ap-setup {
+  margin-top: 12px;
+}
+.net-ap-active {
+  border-left: 3px solid var(--warn);
+}
+.net-ap-active h2 {
+  color: var(--warn);
+}
+.net-ap-info {
+  margin-top: 8px;
+}
+
+/* Config modal */
+.net-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+.net-modal-inner {
+  width: 100%;
+  max-width: 460px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.net-modal-inner h2 {
+  margin-bottom: 14px;
+}
+.net-field {
+  margin-bottom: 10px;
+}
+.net-field label {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.net-field input[type="text"],
+.net-field input[type="number"],
+.net-field input[type="password"] {
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 0.88rem;
+}
+.net-field input:focus {
+  outline: none;
+  border-color: var(--ok);
+}
+.net-field select {
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.net-field select:focus {
+  outline: none;
+  border-color: var(--ok);
+}
+.net-cb-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem !important;
+  color: var(--text) !important;
+  cursor: pointer;
+}
+.net-cb-label input[type="checkbox"] {
+  accent-color: var(--ok);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.net-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.1);
+  margin: 14px 0;
 }
 
 /* ── Responsive ─── */

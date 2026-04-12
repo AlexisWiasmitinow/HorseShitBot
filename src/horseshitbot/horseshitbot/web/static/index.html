@@ -15,6 +15,7 @@
       <button class="tab" data-tab="camera">Camera</button>
       <button class="tab" data-tab="recordings">Recordings</button>
       <button class="tab" data-tab="controller">Controller</button>
+      <button class="tab" data-tab="network">Network</button>
     </nav>
     <span id="ws-status">Disconnected</span>
   </header>
@@ -92,6 +93,29 @@
             <span id="gp-label">Disconnected</span>
           </span>
         </div>
+        <div class="kv" id="gp-battery-row" style="display:none">
+          <span class="label">Battery</span>
+          <span class="value" id="gp-battery-wrap">
+            <span class="gp-battery-icon" id="gp-battery-icon"></span>
+            <span id="gp-battery-text">--</span>
+          </span>
+        </div>
+        <div class="kv" id="gp-bt-row" style="display:none">
+          <span class="label">Bluetooth</span>
+          <span class="value" id="gp-bt-mac" style="font-size:0.75rem">--</span>
+        </div>
+        <div class="btn-row" id="gp-reconnect-row" style="display:none">
+          <button id="gp-reconnect-btn" onclick="reconnectGamepad()">Reconnect</button>
+          <span id="gp-reconnect-msg" class="ctrl-msg" style="margin:0"></span>
+        </div>
+      </div>
+
+      <!-- Thermals -->
+      <div class="card" id="card-thermals">
+        <h2>Thermals</h2>
+        <div id="thermal-zones" class="thermal-zones">
+          <span class="thermal-placeholder">Waiting for data...</span>
+        </div>
       </div>
 
       <!-- Camera / Recording -->
@@ -148,6 +172,27 @@
   <!-- ─── Recordings tab ─── -->
   <div id="tab-recordings" class="tab-content">
     <div class="bags-wrap">
+      <div class="topic-picker card" id="topic-picker">
+        <div class="topic-picker-header">
+          <h2>Record Topics</h2>
+          <span class="topic-picker-hint" id="topic-picker-hint"></span>
+          <button class="primary" onclick="saveBagTopics()">Apply</button>
+        </div>
+        <div id="topic-groups"></div>
+        <div id="topic-msg" class="ctrl-msg"></div>
+      </div>
+
+      <div class="rec-bar card" id="rec-bar">
+        <div class="rec-bar-row">
+          <span class="rec-dot-lg" id="rec-dot-lg"></span>
+          <span class="rec-bar-label" id="rec-bar-label">Idle</span>
+          <span class="rec-bar-detail" id="rec-bar-time">--</span>
+          <span class="rec-bar-detail" id="rec-bar-frames">-- frames</span>
+          <button class="primary" id="rec-bar-start" onclick="startRecording()">Start Recording</button>
+          <button class="danger" id="rec-bar-stop" onclick="stopRecording()" style="display:none">Stop Recording</button>
+        </div>
+      </div>
+
       <div class="bags-header">
         <h2>Recorded Bags</h2>
         <span class="bags-summary" id="bags-summary"></span>
@@ -201,6 +246,152 @@
           <button onclick="resetCtrlConfig()">Reset Defaults</button>
         </div>
         <div id="ctrl-msg" class="ctrl-msg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Network tab ─── -->
+  <div id="tab-network" class="tab-content">
+    <div class="net-wrap">
+      <div class="net-header">
+        <h2>Network Interfaces</h2>
+        <button onclick="loadNetwork()">Refresh</button>
+      </div>
+      <div id="net-loading" class="ctrl-hint">Loading...</div>
+      <div id="net-interfaces" class="net-interfaces"></div>
+
+      <div id="net-wifi-section" class="net-wifi-section" style="display:none">
+
+        <!-- WiFi Client mode -->
+        <div id="net-wifi-client">
+          <div class="net-header">
+            <h2>WiFi Networks</h2>
+            <button id="wifi-scan-btn" onclick="scanWifi()">Scan</button>
+            <span id="wifi-scan-status" class="ctrl-hint"></span>
+            <button class="net-ap-start-btn" onclick="openApSetup()">Start Access Point</button>
+          </div>
+          <div id="wifi-list" class="wifi-list">
+            <div class="ctrl-hint" style="padding:14px">Click Scan to search for WiFi networks.</div>
+          </div>
+
+          <div class="card net-wifi-connect" id="wifi-connect-panel" style="display:none">
+            <h3>Connect to WiFi</h3>
+            <div class="net-field">
+              <label>SSID</label>
+              <input type="text" id="wifi-ssid" readonly>
+            </div>
+            <div class="net-field" id="wifi-password-field">
+              <label>Password</label>
+              <div class="net-pw-row">
+                <input type="password" id="wifi-password" placeholder="Leave empty for open networks">
+                <button type="button" class="net-pw-toggle" onclick="toggleWifiPw()" title="Show/hide password">Show</button>
+              </div>
+            </div>
+            <div class="btn-row">
+              <button class="primary" id="wifi-connect-btn" onclick="connectWifi()">Connect</button>
+              <button onclick="closeWifiPanel()">Cancel</button>
+            </div>
+            <div id="wifi-msg" class="ctrl-msg"></div>
+          </div>
+
+          <!-- AP setup panel (appears when "Start Access Point" clicked) -->
+          <div class="card net-ap-setup" id="ap-setup-panel" style="display:none">
+            <h3>Start Access Point</h3>
+            <p class="ctrl-hint">WiFi will disconnect from any network and become an access point. Other devices can connect to the robot directly.</p>
+            <div class="net-field">
+              <label>AP Name (SSID)</label>
+              <input type="text" id="ap-ssid" value="HorseShitBot" placeholder="HorseShitBot">
+            </div>
+            <div class="net-field">
+              <label>Password (min 8 chars, or leave empty for open)</label>
+              <input type="password" id="ap-password" placeholder="Optional">
+            </div>
+            <div class="net-field">
+              <label>Band</label>
+              <select id="ap-band">
+                <option value="bg">2.4 GHz</option>
+                <option value="a">5 GHz</option>
+              </select>
+            </div>
+            <div class="btn-row">
+              <button class="primary" id="ap-start-btn" onclick="startAp()">Start AP</button>
+              <button onclick="closeApSetup()">Cancel</button>
+            </div>
+            <div id="ap-msg" class="ctrl-msg"></div>
+          </div>
+        </div>
+
+        <!-- AP active mode -->
+        <div id="net-ap-section" style="display:none">
+          <div class="card net-ap-active">
+            <h2>Access Point Active</h2>
+            <div class="net-ap-info">
+              <div class="kv"><span class="label">SSID</span><span class="value" id="ap-current-ssid">--</span></div>
+              <div class="kv"><span class="label">IP Address</span><span class="value" id="ap-current-ip">10.0.0.1</span></div>
+              <p class="ctrl-hint" style="margin-top:10px">
+                The robot is broadcasting a WiFi network. Connect your device to the SSID above, then access the dashboard at the IP shown.
+              </p>
+            </div>
+            <div class="btn-row" style="margin-top:12px">
+              <button class="danger" onclick="stopAp()">Stop Access Point</button>
+            </div>
+            <div id="ap-msg" class="ctrl-msg"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div id="net-config-modal" class="net-modal" style="display:none">
+        <div class="net-modal-inner card">
+          <h2 id="net-cfg-title">Configure Interface</h2>
+          <div class="net-field">
+            <label>Mode</label>
+            <select id="net-cfg-mode" onchange="onNetModeChange()">
+              <option value="auto">DHCP (Automatic)</option>
+              <option value="manual">Static IP</option>
+            </select>
+          </div>
+          <div id="net-cfg-static-fields" style="display:none">
+            <div class="net-field">
+              <label>IP Address</label>
+              <input type="text" id="net-cfg-ip" placeholder="192.168.1.100">
+            </div>
+            <div class="net-field">
+              <label>Prefix Length</label>
+              <input type="number" id="net-cfg-prefix" value="24" min="1" max="32">
+            </div>
+            <div class="net-field">
+              <label>Gateway</label>
+              <input type="text" id="net-cfg-gateway" placeholder="192.168.1.1 (optional)">
+            </div>
+            <div class="net-field">
+              <label>DNS</label>
+              <input type="text" id="net-cfg-dns" placeholder="8.8.8.8 (optional)">
+            </div>
+            <div class="net-divider"></div>
+            <div class="net-field">
+              <label class="net-cb-label">
+                <input type="checkbox" id="net-cfg-dhcpd" onchange="onDhcpdToggle()">
+                Enable DHCP Server on this interface
+              </label>
+            </div>
+            <div id="net-cfg-dhcpd-fields" style="display:none">
+              <div class="net-field">
+                <label>DHCP Range Start</label>
+                <input type="text" id="net-cfg-dhcpd-start" placeholder="192.168.1.100">
+              </div>
+              <div class="net-field">
+                <label>DHCP Range End</label>
+                <input type="text" id="net-cfg-dhcpd-end" placeholder="192.168.1.200">
+              </div>
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:16px">
+            <button class="primary" onclick="applyNetConfig()">Apply</button>
+            <button onclick="closeNetConfig()">Cancel</button>
+          </div>
+          <div id="net-cfg-msg" class="ctrl-msg"></div>
+        </div>
       </div>
     </div>
   </div>
