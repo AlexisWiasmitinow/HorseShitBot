@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
@@ -44,6 +45,9 @@ COL_MUTED = (138, 138, 154)
 COL_BAR_BG = (50, 50, 70)
 COL_WARN = (240, 201, 41)
 COL_HIGHLIGHT = (40, 70, 120)
+
+THERMAL_WARN_C = 65.0
+THERMAL_CRIT_C = 85.0
 
 MAX_RPM = 500.0
 
@@ -113,6 +117,11 @@ class StatusScreenNode(Node):
         self._poll_network()
         self.create_timer(10.0, self._poll_network)
 
+        self._thermals: list[dict] = []
+        self._thermal_lock = threading.Lock()
+        self._poll_thermals()
+        self.create_timer(5.0, self._poll_thermals)
+
         self.create_subscription(String, "/wheel_status", self._cb_wheel, 10)
         self.create_subscription(ActuatorStateMsg, "/lift/state", lambda m: self._cb_act("lift", m), 10)
         self.create_subscription(ActuatorStateMsg, "/brush/state", lambda m: self._cb_act("brush", m), 10)
@@ -167,6 +176,24 @@ class StatusScreenNode(Node):
                 ifaces = []
             with self._net_lock:
                 self._net_ifaces = ifaces
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def _poll_thermals(self):
+        def _bg():
+            zones = []
+            thermal_base = Path("/sys/class/thermal")
+            if thermal_base.is_dir():
+                for zdir in sorted(thermal_base.iterdir()):
+                    if not zdir.name.startswith("thermal_zone"):
+                        continue
+                    try:
+                        zone_type = (zdir / "type").read_text().strip()
+                        temp_mc = int((zdir / "temp").read_text().strip())
+                        zones.append({"type": zone_type, "temp_c": round(temp_mc / 1000.0, 1)})
+                    except Exception:
+                        continue
+            with self._thermal_lock:
+                self._thermals = zones
         threading.Thread(target=_bg, daemon=True).start()
 
     def _render(self):
@@ -249,36 +276,27 @@ class StatusScreenNode(Node):
         draw.text((6, 2), "HORSESHITBOT", fill=COL_ACCENT, font=font_lg)
         draw.text((W - 48, 4), f"{mins:02d}:{secs:02d}", fill=COL_MUTED, font=font_sm)
 
-        # Wheels — starts at 24
+        # Wheels — single line (e-stop gets two lines)
         y = 24
         w = self._wheel
         backend = w.get("backend", "--")
         left = w.get("left_rpm", 0)
         right = w.get("right_rpm", 0)
-
         estopped = w.get("estopped", False)
 
         if estopped:
-            draw.rectangle([0, y, W, y + 36], fill=(100, 10, 10))
-            draw.text((6, y + 2), "E-STOP ACTIVE", fill=COL_ACCENT, font=font_lg)
-            draw.text((6, y + 20), "Press B to resume", fill=COL_TEXT, font=font_sm)
+            draw.rectangle([0, y, W, y + 28], fill=(100, 10, 10))
+            draw.text((6, y + 1), "E-STOP ACTIVE", fill=COL_ACCENT, font=font_lg)
+            draw.text((6, y + 16), "Press B to resume", fill=COL_TEXT, font=font_sm)
+            y += 30
         else:
-            draw.rectangle([0, y, W, y + 36], fill=COL_SECTION)
-            draw.text((6, y + 2), f"WHEELS [{backend}]", fill=COL_TEXT, font=font)
-            draw.text((6, y + 18), f"L: {left:+.0f}", fill=COL_OK, font=font_sm)
-            draw.text((W // 2, y + 18), f"R: {right:+.0f}", fill=COL_OK, font=font_sm)
+            draw.rectangle([0, y, W, y + 14], fill=COL_SECTION)
+            draw.text((6, y + 1), f"WHEELS [{backend}]", fill=COL_TEXT, font=font_sm)
+            draw.text((W // 2 - 40, y + 1), f"L:{left:+.0f}", fill=COL_OK, font=font_sm)
+            draw.text((W // 2 + 30, y + 1), f"R:{right:+.0f}", fill=COL_OK, font=font_sm)
+            y += 16
 
-        bar_y = y + 32
-        bar_w = W // 2 - 16
-        for i, rpm in enumerate([abs(left), abs(right)]):
-            bx = 6 + i * (W // 2)
-            pct = min(1.0, rpm / MAX_RPM) if MAX_RPM > 0 else 0
-            draw.rectangle([bx, bar_y, bx + bar_w, bar_y + 4], fill=COL_BAR_BG)
-            if pct > 0:
-                draw.rectangle([bx, bar_y, bx + int(bar_w * pct), bar_y + 4], fill=COL_OK)
-
-        # Actuators — starts at 64, 22px per row
-        y = 64
+        # Actuators — compact 16px rows
         for name, label in [("lift", "LIFT"), ("brush", "BRUSH"), ("bin_door", "BIN DOOR")]:
             a = self._actuators.get(name, {})
             st_idx = a.get("state", 0)
@@ -286,11 +304,36 @@ class StatusScreenNode(Node):
             st_col = STATE_COLOURS[st_idx] if st_idx < len(STATE_COLOURS) else COL_MUTED
             direction = a.get("direction", "---")
 
-            draw.rectangle([0, y, W, y + 20], fill=COL_ROW)
-            draw.text((6, y + 3), label, fill=COL_TEXT, font=font_sm)
-            draw.text((90, y + 3), f"[{st_name}]", fill=st_col, font=font_sm)
-            draw.text((W - 46, y + 3), direction.upper()[:5], fill=COL_TEXT, font=font_sm)
-            y += 22
+            draw.rectangle([0, y, W, y + 14], fill=COL_ROW)
+            draw.text((6, y + 1), label, fill=COL_TEXT, font=font_sm)
+            draw.text((90, y + 1), f"[{st_name}]", fill=st_col, font=font_sm)
+            draw.text((W - 46, y + 1), direction.upper()[:5], fill=COL_TEXT, font=font_sm)
+            y += 16
+
+        # Thermals — single line
+        with self._thermal_lock:
+            thermals = list(self._thermals)
+        if thermals:
+            y += 2
+            draw.rectangle([0, y, W, y + 14], fill=COL_SECTION)
+            draw.text((6, y + 1), "TEMP", fill=COL_TEXT, font=font_sm)
+            tx = 40
+            for tz in thermals:
+                try:
+                    temp = tz.get("temp_c", 0.0)
+                    if temp >= THERMAL_CRIT_C:
+                        tc = COL_ACCENT
+                    elif temp >= THERMAL_WARN_C:
+                        tc = COL_WARN
+                    else:
+                        tc = COL_OK
+                    name = tz.get("type", "?").replace("-thermal", "")
+                    tag = name[:3].upper()
+                    draw.text((tx, y + 1), f"{tag}:{temp:.0f}", fill=tc, font=font_sm)
+                    tx += 46
+                except Exception:
+                    pass
+            y += 16
 
         # Footer
         footer_rows = 5

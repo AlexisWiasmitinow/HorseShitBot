@@ -17,6 +17,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _DEVNULL = subprocess.DEVNULL
+_last_bt_restart: float = 0.0
+_BT_RESTART_COOLDOWN = 60.0  # seconds between bluetooth service restarts
 
 
 def _run(cmd: list[str], timeout: int = 5) -> subprocess.CompletedProcess:
@@ -141,23 +143,36 @@ def get_last_connected_gamepad() -> dict | None:
     return devices[0] if devices else None
 
 
+def _restart_bluetooth_if_needed() -> bool:
+    """Restart bluetooth service if cooldown has elapsed. Returns True if restarted."""
+    global _last_bt_restart
+    now = time.monotonic()
+    if now - _last_bt_restart < _BT_RESTART_COOLDOWN:
+        logger.info("BT restart skipped — cooldown active (%.0fs remaining)",
+                     _BT_RESTART_COOLDOWN - (now - _last_bt_restart))
+        return False
+    logger.warning("Restarting bluetooth service")
+    _last_bt_restart = now
+    _run(["sudo", "systemctl", "restart", "bluetooth"], timeout=15)
+    time.sleep(4)
+    return True
+
+
 def connect_device(mac: str) -> dict:
     """Connect to a Bluetooth device by MAC address.
 
     If the connection fails with ``br-connection-create-socket``, the
-    bluetooth service is restarted automatically and one retry is made.
+    bluetooth service is restarted once (with a 60 s cooldown) and retried.
     """
     r = _run(["bluetoothctl", "connect", mac], timeout=15)
     combined = r.stdout + r.stderr
     ok = r.returncode == 0 or "successful" in combined.lower()
 
     if not ok and "br-connection-create-socket" in combined:
-        logger.warning("BT socket error — restarting bluetooth service and retrying")
-        _run(["sudo", "systemctl", "restart", "bluetooth"], timeout=15)
-        time.sleep(2)
-        r = _run(["bluetoothctl", "connect", mac], timeout=15)
-        combined = r.stdout + r.stderr
-        ok = r.returncode == 0 or "successful" in combined.lower()
+        if _restart_bluetooth_if_needed():
+            r = _run(["bluetoothctl", "connect", mac], timeout=15)
+            combined = r.stdout + r.stderr
+            ok = r.returncode == 0 or "successful" in combined.lower()
 
     msg = r.stdout.strip() or r.stderr.strip()
     return {"success": ok, "message": msg}
