@@ -299,6 +299,198 @@ function showCtrlMsg(text, type) {
   el._timer = setTimeout(() => { el.textContent = ""; el.className = "ctrl-msg"; }, 4000);
 }
 
+// ─── Camera (MJPEG) ──────────────────────────────────────────────
+
+let camStreaming = false;
+
+function startCamera() {
+  const fps = document.getElementById("cam-fps").value;
+  const quality = document.getElementById("cam-quality").value;
+
+  const colorImg = document.getElementById("cam-color");
+  const depthImg = document.getElementById("cam-depth");
+  const stateEl = document.getElementById("cam-state");
+
+  const qs = `fps=${fps}&quality=${quality}`;
+  colorImg.src = `/api/stream/color?${qs}`;
+  depthImg.src = `/api/stream/depth?${qs}`;
+
+  camStreaming = true;
+  document.getElementById("cam-toggle").textContent = "Stop Stream";
+  document.getElementById("cam-toggle").className = "danger";
+  if (stateEl) { stateEl.textContent = "Streaming"; stateEl.className = "cam-state ok"; }
+
+  colorImg.onerror = () => {
+    if (stateEl) { stateEl.textContent = "Stream error"; stateEl.className = "cam-state err"; }
+  };
+}
+
+function stopCamera() {
+  const colorImg = document.getElementById("cam-color");
+  const depthImg = document.getElementById("cam-depth");
+  const stateEl = document.getElementById("cam-state");
+
+  colorImg.src = "";
+  depthImg.src = "";
+  camStreaming = false;
+  document.getElementById("cam-toggle").textContent = "Start Stream";
+  document.getElementById("cam-toggle").className = "primary";
+  if (stateEl) { stateEl.textContent = "Stopped"; stateEl.className = "cam-state"; }
+}
+
+function toggleCamera() {
+  if (camStreaming) stopCamera();
+  else startCamera();
+}
+
+// ─── Recordings ──────────────────────────────────────────────────
+
+let bagsData = null;
+let bagsAutoRefresh = null;
+
+async function loadBags() {
+  const loading = document.getElementById("bags-loading");
+  const table = document.getElementById("bags-table");
+  const empty = document.getElementById("bags-empty");
+  try {
+    const resp = await fetch("/api/bags");
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    bagsData = await resp.json();
+    renderBags();
+    if (loading) loading.style.display = "none";
+    if (bagsData.bags.length === 0) {
+      if (table) table.style.display = "none";
+      if (empty) empty.style.display = "";
+    } else {
+      if (table) table.style.display = "";
+      if (empty) empty.style.display = "none";
+    }
+  } catch (e) {
+    console.error("Failed to load bags:", e);
+    if (loading) loading.textContent = "Failed to load: " + e.message;
+  }
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const val = bytes / Math.pow(1024, i);
+  return val.toFixed(i === 0 ? 0 : 1) + " " + units[i];
+}
+
+function formatDate(isoStr) {
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return isoStr;
+  }
+}
+
+function renderBags() {
+  const tbody = document.getElementById("bags-tbody");
+  const summary = document.getElementById("bags-summary");
+  if (!tbody || !bagsData) return;
+
+  tbody.innerHTML = "";
+  const bags = bagsData.bags || [];
+
+  if (summary) {
+    summary.textContent = `${bags.length} recording${bags.length !== 1 ? "s" : ""} · ${formatBytes(bagsData.total_bytes)}`;
+  }
+
+  // Disk usage bar
+  const diskWrap = document.getElementById("disk-bar-wrap");
+  if (diskWrap && bagsData.disk_total) {
+    diskWrap.style.display = "";
+    const total = bagsData.disk_total;
+    const free = bagsData.disk_free;
+    const used = bagsData.disk_used;
+    const bagBytes = bagsData.total_bytes;
+    const otherUsed = used - bagBytes;
+
+    const pctBags = Math.max(0.5, (bagBytes / total) * 100);
+    const pctOther = Math.max(0.5, (otherUsed / total) * 100);
+
+    document.getElementById("disk-bar-bags").style.width = pctBags + "%";
+    document.getElementById("disk-bar-other").style.width = pctOther + "%";
+    document.getElementById("disk-label-used").textContent =
+      `Bags: ${formatBytes(bagBytes)} · Other: ${formatBytes(otherUsed)} · Total: ${formatBytes(total)}`;
+    document.getElementById("disk-label-free").textContent =
+      `${formatBytes(free)} free`;
+  }
+
+  for (const bag of bags) {
+    const tr = document.createElement("tr");
+
+    const tdName = document.createElement("td");
+    tdName.className = "bag-name";
+    tdName.textContent = bag.name;
+    tr.appendChild(tdName);
+
+    const tdDate = document.createElement("td");
+    tdDate.textContent = formatDate(bag.modified);
+    tr.appendChild(tdDate);
+
+    const tdSize = document.createElement("td");
+    tdSize.textContent = formatBytes(bag.size_bytes);
+    tr.appendChild(tdSize);
+
+    const tdFiles = document.createElement("td");
+    tdFiles.className = "bag-files";
+    const exts = [...new Set((bag.files || []).map(f => f.includes(".") ? "." + f.split(".").pop() : f))];
+    tdFiles.textContent = `${(bag.files || []).length} files (${exts.join(", ")})`;
+    tr.appendChild(tdFiles);
+
+    const tdActions = document.createElement("td");
+    tdActions.className = "bag-actions";
+
+    const dlBtn = document.createElement("a");
+    dlBtn.href = `/api/bags/${encodeURIComponent(bag.name)}/download`;
+    dlBtn.className = "bag-dl";
+    dlBtn.textContent = "Download";
+    dlBtn.setAttribute("download", "");
+    tdActions.appendChild(dlBtn);
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "danger bag-del";
+    delBtn.textContent = "Delete";
+    delBtn.onclick = () => deleteBag(bag.name);
+    tdActions.appendChild(delBtn);
+
+    tr.appendChild(tdActions);
+    tbody.appendChild(tr);
+  }
+}
+
+async function deleteBag(name) {
+  if (!confirm(`Delete recording "${name}"?\nThis cannot be undone.`)) return;
+  try {
+    const resp = await fetch(`/api/bags/${encodeURIComponent(name)}`, { method: "DELETE" });
+    const result = await resp.json();
+    if (result.success || resp.ok) {
+      loadBags();
+    } else {
+      alert("Delete failed: " + (result.error || "unknown error"));
+    }
+  } catch (e) {
+    alert("Network error: " + e.message);
+  }
+}
+
+function startBagsAutoRefresh() {
+  if (bagsAutoRefresh) return;
+  bagsAutoRefresh = setInterval(loadBags, 3000);
+}
+
+function stopBagsAutoRefresh() {
+  if (bagsAutoRefresh) {
+    clearInterval(bagsAutoRefresh);
+    bagsAutoRefresh = null;
+  }
+}
+
 // ─── Tabs ────────────────────────────────────────────────────────
 
 function initTabs() {
@@ -310,6 +502,16 @@ function initTabs() {
       document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
       const target = document.getElementById("tab-" + tab.dataset.tab);
       if (target) target.classList.add("active");
+
+      if (tab.dataset.tab === "recordings") {
+        loadBags();
+        startBagsAutoRefresh();
+      } else {
+        stopBagsAutoRefresh();
+      }
+      if (tab.dataset.tab !== "camera" && camStreaming) {
+        stopCamera();
+      }
     });
   });
 }
@@ -354,3 +556,15 @@ async function stopRecording() {
 initTabs();
 connectWs();
 loadCtrlConfig();
+
+// Camera slider readouts
+const _fpsSlider = document.getElementById("cam-fps");
+const _fpsVal = document.getElementById("cam-fps-val");
+if (_fpsSlider && _fpsVal) {
+  _fpsSlider.addEventListener("input", () => { _fpsVal.textContent = _fpsSlider.value; });
+}
+const _qualSlider = document.getElementById("cam-quality");
+const _qualVal = document.getElementById("cam-quality-val");
+if (_qualSlider && _qualVal) {
+  _qualSlider.addEventListener("input", () => { _qualVal.textContent = _qualSlider.value; });
+}

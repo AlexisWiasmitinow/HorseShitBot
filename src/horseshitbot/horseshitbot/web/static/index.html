@@ -12,6 +12,8 @@
     <h1>HorseShitBot</h1>
     <nav class="tabs">
       <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="camera">Camera</button>
+      <button class="tab" data-tab="recordings">Recordings</button>
       <button class="tab" data-tab="controller">Controller</button>
     </nav>
     <span id="ws-status">Disconnected</span>
@@ -110,6 +112,71 @@
           <button id="btn-rec-stop" class="danger" onclick="stopRecording()">Stop Recording</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ─── Camera tab ─── -->
+  <div id="tab-camera" class="tab-content">
+    <div class="cam-wrap">
+      <div class="cam-controls">
+        <button id="cam-toggle" class="primary" onclick="toggleCamera()">Start Stream</button>
+        <label class="cam-slider-label">
+          FPS
+          <input type="range" id="cam-fps" min="1" max="15" value="10">
+          <span id="cam-fps-val">10</span>
+        </label>
+        <label class="cam-slider-label">
+          Quality
+          <input type="range" id="cam-quality" min="10" max="95" value="50">
+          <span id="cam-quality-val">50</span>
+        </label>
+        <span class="cam-state" id="cam-state">Stopped</span>
+      </div>
+      <div class="cam-grid">
+        <div class="cam-card">
+          <h3>Color</h3>
+          <img id="cam-color" alt="Color stream">
+        </div>
+        <div class="cam-card">
+          <h3>Depth</h3>
+          <img id="cam-depth" alt="Depth stream">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Recordings tab ─── -->
+  <div id="tab-recordings" class="tab-content">
+    <div class="bags-wrap">
+      <div class="bags-header">
+        <h2>Recorded Bags</h2>
+        <span class="bags-summary" id="bags-summary"></span>
+        <button onclick="loadBags()">Refresh</button>
+      </div>
+      <div class="disk-bar-wrap" id="disk-bar-wrap" style="display:none">
+        <div class="disk-labels">
+          <span id="disk-label-used"></span>
+          <span id="disk-label-free"></span>
+        </div>
+        <div class="disk-bar">
+          <div class="disk-bar-bags" id="disk-bar-bags"></div>
+          <div class="disk-bar-other" id="disk-bar-other"></div>
+        </div>
+      </div>
+      <div id="bags-loading" class="ctrl-hint">Loading...</div>
+      <table class="bags-table" id="bags-table" style="display:none">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Date</th>
+            <th>Size</th>
+            <th>Files</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="bags-tbody"></tbody>
+      </table>
+      <div id="bags-empty" class="ctrl-hint" style="display:none">No recordings found.</div>
     </div>
   </div>
 

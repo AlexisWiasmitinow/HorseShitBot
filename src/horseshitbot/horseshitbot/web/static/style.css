@@ -170,6 +170,68 @@ button.primary:hover { background: #3db88a; }
   box-shadow: 0 0 12px rgba(233, 69, 96, 0.4);
 }
 
+/* ── Camera Stream ─── */
+.cam-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.cam-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.cam-slider-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.cam-slider-label input[type="range"] {
+  width: 100px;
+  accent-color: var(--ok);
+}
+.cam-state {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-left: auto;
+}
+.cam-state.ok { color: var(--ok); }
+.cam-state.warn { color: var(--warn); }
+.cam-state.err { color: var(--err); }
+
+.cam-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.cam-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 12px;
+  overflow: hidden;
+}
+.cam-card h3 {
+  font-size: 0.85rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.cam-card video,
+.cam-card img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 4px;
+  background: #000;
+  aspect-ratio: 4/3;
+  object-fit: contain;
+}
+
 /* ── Controller Setup ─── */
 .ctrl-center {
   max-width: 600px;
@@ -278,9 +340,135 @@ button.primary:hover { background: #3db88a; }
 .ctrl-msg.warn { color: var(--warn); }
 .ctrl-msg.err  { color: var(--err); }
 
+/* ── Recordings / Bags ─── */
+.bags-wrap {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.bags-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.bags-header h2 {
+  font-size: 1rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.bags-summary {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-right: auto;
+}
+
+/* Disk usage bar */
+.disk-bar-wrap {
+  margin-bottom: 16px;
+}
+.disk-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.disk-bar {
+  height: 10px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 5px;
+  overflow: hidden;
+  display: flex;
+}
+.disk-bar-bags {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+  min-width: 0;
+}
+.disk-bar-other {
+  height: 100%;
+  background: var(--muted);
+  opacity: 0.5;
+  transition: width 0.3s;
+  min-width: 0;
+}
+
+.bags-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.bags-table th {
+  text-align: left;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.bags-table td {
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  vertical-align: middle;
+}
+.bags-table tr:hover td {
+  background: var(--highlight);
+}
+.bag-name {
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+.bag-files {
+  color: var(--muted);
+  font-size: 0.78rem;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bag-actions {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+.bag-dl {
+  display: inline-block;
+  background: var(--surface);
+  color: var(--ok);
+  border: 1px solid var(--ok);
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.bag-dl:hover { background: var(--ok); color: #111; }
+.bag-del {
+  padding: 5px 10px;
+  font-size: 0.78rem;
+}
+
 /* ── Responsive ─── */
 @media (max-width: 740px) {
   header {
     flex-wrap: wrap;
+  }
+  .cam-grid {
+    grid-template-columns: 1fr;
+  }
+  .bags-table th:nth-child(4),
+  .bags-table td:nth-child(4) {
+    display: none;
   }
 }

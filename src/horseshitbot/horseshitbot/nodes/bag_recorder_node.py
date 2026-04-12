@@ -15,6 +15,12 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    QoSProfile,
+    QoSReliabilityPolicy,
+    QoSHistoryPolicy,
+    QoSDurabilityPolicy,
+)
 from rclpy.serialization import serialize_message
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
@@ -58,6 +64,8 @@ class BagRecorderNode(Node):
         self._bag_path = ""
         self._start_time = 0.0
         self._frame_count = 0
+        self._msg_counts: dict[str, int] = {}
+        self._topic_first_logged: set[str] = set()
 
         self.create_service(Trigger, "~/start_recording", self._srv_start)
         self.create_service(Trigger, "~/stop_recording", self._srv_stop)
@@ -68,6 +76,7 @@ class BagRecorderNode(Node):
         self._create_topic_subscriptions()
 
         self.create_timer(0.5, self._publish_status)
+        self.create_timer(5.0, self._diag_topic_check)
 
         if not _HAS_ROSBAG2:
             self.get_logger().error("rosbag2_py not available -- recording disabled")
@@ -78,35 +87,51 @@ class BagRecorderNode(Node):
         )
 
     def _create_topic_subscriptions(self):
-        """Create generic (raw) subscriptions for each configured topic."""
-        from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+        """Create subscriptions for each configured topic.
 
-        qos = QoSProfile(
+        Tries two QoS profiles per topic: BEST_EFFORT (for sensor-data
+        publishers) and RELIABLE (for system-default publishers).  At least
+        one will match the camera node regardless of its QoS setting.
+        """
+        qos_best_effort = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            history=QoSHistoryPolicy.KEEP_LAST,
             depth=10,
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.VOLATILE,
+        )
+        qos_reliable = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=10,
         )
 
-        topic_msg_modules: dict[str, type] = {}
+        created = 0
         for topic in self._topics:
             type_str = _TOPIC_TYPE_MAP.get(topic)
             if type_str is None:
-                self.get_logger().warn(f"Unknown topic type for {topic}, skipping subscription")
+                self.get_logger().warn(f"Unknown topic type for {topic}, skipping")
                 continue
             msg_cls = self._import_msg_type(type_str)
             if msg_cls is None:
                 self.get_logger().warn(f"Could not import {type_str}, skipping {topic}")
                 continue
-            topic_msg_modules[topic] = msg_cls
 
-        for topic, msg_cls in topic_msg_modules.items():
-            sub = self.create_subscription(
-                msg_cls,
-                topic,
-                lambda msg, t=topic: self._on_message(t, msg),
-                qos,
-            )
-            self._subscriptions.append(sub)
+            self._msg_counts[topic] = 0
+            for label, qos in [("best_effort", qos_best_effort),
+                                ("reliable", qos_reliable)]:
+                sub = self.create_subscription(
+                    msg_cls,
+                    topic,
+                    lambda msg, t=topic: self._on_message(t, msg),
+                    qos,
+                )
+                self._subscriptions.append(sub)
+                created += 1
+
+        self.get_logger().info(
+            f"Created {created} subscriptions for {len(self._msg_counts)} topics"
+        )
 
     @staticmethod
     def _import_msg_type(type_str: str):
@@ -115,10 +140,40 @@ class BagRecorderNode(Node):
             parts = type_str.split("/")
             mod = __import__(f"{parts[0]}.{parts[1]}", fromlist=[parts[2]])
             return getattr(mod, parts[2])
-        except Exception:
+        except Exception as exc:
             return None
 
+    def _diag_topic_check(self):
+        """Periodically log which target topics have actual publishers."""
+        missing = []
+        found = []
+        for t in self._topics:
+            pubs = self.get_publishers_info_by_topic(t)
+            if pubs:
+                qos = pubs[0].qos_profile
+                found.append(f"{t} (reliability={qos.reliability})")
+            else:
+                missing.append(t)
+
+        if missing:
+            all_topics = [n for n, _ in self.get_topic_names_and_types()]
+            camera_topics = [n for n in all_topics if "camera" in n.lower()]
+            self.get_logger().warn(
+                f"NO publishers for: {missing}  |  "
+                f"Camera topics on network: {camera_topics}"
+            )
+        elif found and not self._topic_first_logged:
+            self.get_logger().info(f"Publishers found: {found}")
+
     def _on_message(self, topic: str, msg):
+        self._msg_counts[topic] = self._msg_counts.get(topic, 0) + 1
+        if topic not in self._topic_first_logged:
+            self._topic_first_logged.add(topic)
+            self.get_logger().info(
+                f"First message received on {topic} "
+                f"(type={type(msg).__module__}.{type(msg).__name__})"
+            )
+
         if not self._recording or self._writer is None:
             return
         try:
@@ -139,6 +194,9 @@ class BagRecorderNode(Node):
             response.success = False
             response.message = "rosbag2_py not installed"
             return response
+
+        rx_summary = {t: c for t, c in self._msg_counts.items()}
+        self.get_logger().info(f"Messages received so far: {rx_summary}")
 
         try:
             self._open_bag()

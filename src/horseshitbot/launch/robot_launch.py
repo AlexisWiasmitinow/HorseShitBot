@@ -104,6 +104,7 @@ def _launch_setup(context):
                     ),
                     launch_arguments={
                         "camera_name": "camera",
+                        "camera_namespace": "",
                         "device_type": "d415",
                         "pointcloud.enable": "false",
                         "enable_color": "true",

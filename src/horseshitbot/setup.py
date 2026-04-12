@@ -21,6 +21,7 @@ setup(
         "pyserial",
         "Pillow",
         "luma.lcd",
+        "opencv-python",
     ],
     zip_safe=True,
     maintainer="horseshitbot",
