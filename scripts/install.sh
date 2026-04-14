@@ -138,6 +138,15 @@ EOF
 chmod 0440 "$SUDOERS_DNSMASQ"
 echo "  Created $SUDOERS_DNSMASQ"
 
+# ── udev rules (stable /dev/odrive, /dev/mksbus symlinks) ────────
+echo ""
+echo "--- udev rules ---"
+cp "$SCRIPT_DIR/99-horseshitbot.rules" /etc/udev/rules.d/99-horseshitbot.rules
+udevadm control --reload-rules
+udevadm trigger
+echo "  Installed /etc/udev/rules.d/99-horseshitbot.rules"
+echo "  /dev/odrive → ODrive,  /dev/mksbus → RS485 adapter"
+
 # ── Fix line endings (repo may come from Windows) ────────────────
 echo ""
 echo "--- Fixing line endings ---"

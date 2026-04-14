@@ -60,7 +60,7 @@ class WheelDriverNode(Node):
         self.declare_parameter("decel_rpm_s", 80.0)
         self.declare_parameter("stop_decel_rpm_s", 500.0)
         self.declare_parameter("watchdog_sec", 0.8)
-        self.declare_parameter("odrive_port", "/dev/ttyACM0")
+        self.declare_parameter("odrive_port", "/dev/odrive")
         self.declare_parameter("odrive_baud", 115200)
         self.declare_parameter("odrive_vel_limit", 100.0)
         self.declare_parameter("odrive_current_lim", 20.0)

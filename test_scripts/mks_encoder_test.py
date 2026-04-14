@@ -128,7 +128,7 @@ def test_one(client, addr: int) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="MKS SERVO57D RS485 encoder test (Modbus RTU)")
-    parser.add_argument("-p", "--port", default="/dev/ttyUSB0", help="Serial port (default: /dev/ttyUSB0)")
+    parser.add_argument("-p", "--port", default="/dev/mksbus", help="Serial port (default: /dev/mksbus)")
     parser.add_argument("-b", "--baud", type=int, default=38400, help="Baud rate (default: 38400)")
     parser.add_argument("-a", "--addr", type=int, default=1, help="Slave address 1-255 (default: 1)")
     parser.add_argument("-s", "--scan", action="store_true", help="Scan addresses 1-16")

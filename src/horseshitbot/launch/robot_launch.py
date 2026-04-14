@@ -20,7 +20,11 @@ from launch_ros.actions import Node
 
 def _launch_setup(context):
     pkg_dir = get_package_share_directory("horseshitbot")
-    params_file = os.path.join(pkg_dir, "config", "params.yaml")
+    params_override = LaunchConfiguration("params_file").perform(context)
+    if params_override and os.path.isfile(params_override):
+        params_file = params_override
+    else:
+        params_file = os.path.join(pkg_dir, "config", "params.yaml")
 
     enable_camera = LaunchConfiguration("enable_camera").perform(context).lower() == "true"
     enable_mks = LaunchConfiguration("enable_mks").perform(context).lower() == "true"
@@ -125,5 +129,6 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("enable_camera", default_value="true"),
         DeclareLaunchArgument("enable_mks", default_value="true"),
+        DeclareLaunchArgument("params_file", default_value=""),
         OpaqueFunction(function=_launch_setup),
     ])

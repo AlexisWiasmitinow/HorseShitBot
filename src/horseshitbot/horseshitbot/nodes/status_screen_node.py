@@ -410,6 +410,9 @@ class StatusScreenNode(Node):
 
         # Error line or Home hint
         err_parts: list[str] = []
+        vbus = diag.get("vbus", 0)
+        if 0 < vbus < 10:
+            err_parts.append(f"ODrive no pwr ({vbus:.0f}V)")
         wheel_err = self._wheel.get("error", "")
         if wheel_err:
             err_parts.append(wheel_err)

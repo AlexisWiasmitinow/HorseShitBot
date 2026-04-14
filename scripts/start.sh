@@ -84,5 +84,6 @@ else
 
   ros2 launch horseshitbot robot_launch.py \
     enable_camera:="$ENABLE_CAMERA" \
-    enable_mks:="$ENABLE_MKS"
+    enable_mks:="$ENABLE_MKS" \
+    params_file:="$PARAMS"
 fi

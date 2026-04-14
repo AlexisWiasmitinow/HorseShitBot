@@ -21,7 +21,7 @@ class MksBusNode(Node):
     def __init__(self):
         super().__init__("mks_bus_node")
 
-        self.declare_parameter("port", "/dev/ttyUSB0")
+        self.declare_parameter("port", "/dev/mksbus")
         self.declare_parameter("baud", 38400)
         self.declare_parameter("timeout", 0.35)
         self.declare_parameter("retries", 3)

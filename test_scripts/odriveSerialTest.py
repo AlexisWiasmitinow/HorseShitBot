@@ -15,7 +15,7 @@ import re
 # =====================================================
 # DEFAULT CONFIGURATION
 # =====================================================
-DEFAULT_PORT = "/dev/ttyACM0"
+DEFAULT_PORT = "/dev/odrive"
 DEFAULT_BAUDRATE = 115200
 DEFAULT_TIMEOUT = 2.0
 

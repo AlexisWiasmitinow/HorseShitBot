@@ -46,7 +46,7 @@ class Settings:
 
 def load_settings() -> Settings:
     return Settings(
-        port=get_env_str("MKS_PORT", "/dev/ttyUSB0"),
+        port=get_env_str("MKS_PORT", "/dev/mksbus"),
         baud=get_env_int("MKS_BAUD", 38400),
 
         id_left=get_env_int("ID_LEFT", 1),

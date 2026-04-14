@@ -54,8 +54,8 @@ def main():
                         help="Current motor address (1-247)")
     parser.add_argument("-t", "--target", type=int, default=None,
                         help="New address to assign (1-247)")
-    parser.add_argument("-p", "--port", default="/dev/ttyUSB0",
-                        help="Serial port (default: /dev/ttyUSB0)")
+    parser.add_argument("-p", "--port", default="/dev/mksbus",
+                        help="Serial port (default: /dev/mksbus)")
     parser.add_argument("-b", "--baud", type=int, default=38400,
                         help="Baud rate (default: 38400)")
     parser.add_argument("--timeout", type=float, default=0.3,

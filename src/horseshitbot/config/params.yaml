@@ -1,6 +1,6 @@
 mks_bus_node:
   ros__parameters:
-    port: "/dev/ttyUSB0"
+    port: "/dev/mksbus"
     baud: 115200
     timeout: 0.35
     retries: 3
@@ -20,7 +20,7 @@ wheel_driver_node:
     stop_decel_rpm_s: 500.0
     watchdog_sec: 0.8
     # ODrive-specific
-    odrive_port: "/dev/ttyACM0"
+    odrive_port: "/dev/odrive"
     odrive_baud: 115200
     odrive_vel_limit: 100.0
     odrive_current_lim: 20.0

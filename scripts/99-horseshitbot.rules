@@ -1,0 +1,12 @@
+# Stable device symlinks for HorseShitBot hardware.
+# Install: sudo cp scripts/99-horseshitbot.rules /etc/udev/rules.d/
+#          sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# ODrive v3.x  (USB VID:PID 1209:0d32 — CDC ACM interface)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0d32", SYMLINK+="odrive", MODE="0666"
+
+# USB-to-RS485 adapter for MKS bus (CH340/CH341)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="mksbus", MODE="0666"
+
+# Lidar (CP2102)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="lidar", MODE="0666"

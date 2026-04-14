@@ -73,9 +73,11 @@ function updateDashboard(data) {
     if (wBackend === "odrive") {
       const hasErr = !!w.error;
       const diag = w.diag || {};
-      let label = hasErr ? "Error" : "Connected";
+      const vbus = diag.vbus || 0;
+      const noPower = vbus > 0 && vbus < 10;
+      let label = noPower ? "No motor power" : hasErr ? "Error" : "Connected";
       const parts = [];
-      if (diag.vbus) parts.push(diag.vbus.toFixed(1) + "V");
+      if (vbus) parts.push(vbus.toFixed(1) + "V");
       if (diag.fet_temp_left != null || diag.fet_temp_right != null) {
         const tl = diag.fet_temp_left, tr = diag.fet_temp_right;
         if (tl != null && tr != null) parts.push(`FET ${tl}/${tr}°C`);
@@ -84,7 +86,7 @@ function updateDashboard(data) {
       }
       if (parts.length) label += " · " + parts.join(" · ");
       odriveEl.textContent = label;
-      odriveEl.style.color = hasErr ? "var(--err)" : "var(--ok, #4ecca3)";
+      odriveEl.style.color = noPower ? "var(--warn, #f0c929)" : hasErr ? "var(--err)" : "var(--ok, #4ecca3)";
     } else if (wBackend === "none" && w.error) {
       odriveEl.textContent = "Disconnected";
       odriveEl.style.color = "var(--err)";

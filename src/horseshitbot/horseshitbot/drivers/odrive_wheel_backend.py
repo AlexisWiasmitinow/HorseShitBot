@@ -21,7 +21,7 @@ class ODriveWheelBackend(WheelBackend):
     Parameters
     ----------
     port : str
-        Serial port for the ODrive (e.g. /dev/ttyACM0, COM18).
+        Serial port for the ODrive (e.g. /dev/odrive, /dev/ttyACM0, COM18).
     baudrate : int
         Serial baud rate (default 115200).
     vel_limit : float
