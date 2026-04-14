@@ -4,6 +4,7 @@ Launch file for the complete HorseShitBot ROS 2 system.
 Arguments:
   enable_camera:=true/false   — enable/disable RealSense + bag recorder (default true)
   enable_mks:=true/false      — enable/disable MKS bus node (default true)
+  enable_lidar:=true/false    — enable/disable lidar node (default true)
 
 Example:
   ros2 launch horseshitbot robot_launch.py enable_camera:=false enable_mks:=false
@@ -28,6 +29,7 @@ def _launch_setup(context):
 
     enable_camera = LaunchConfiguration("enable_camera").perform(context).lower() == "true"
     enable_mks = LaunchConfiguration("enable_mks").perform(context).lower() == "true"
+    enable_lidar = LaunchConfiguration("enable_lidar").perform(context).lower() == "true"
 
     nodes = []
 
@@ -92,6 +94,15 @@ def _launch_setup(context):
         ),
     ]
 
+    if enable_lidar:
+        nodes.append(Node(
+            package="horseshitbot",
+            executable="lidar_node",
+            name="lidar_node",
+            parameters=[params_file],
+            output="screen",
+        ))
+
     if enable_camera:
         from launch.actions import IncludeLaunchDescription
         rs_launch_dir = os.path.join(
@@ -129,6 +140,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("enable_camera", default_value="true"),
         DeclareLaunchArgument("enable_mks", default_value="true"),
+        DeclareLaunchArgument("enable_lidar", default_value="true"),
         DeclareLaunchArgument("params_file", default_value=""),
         OpaqueFunction(function=_launch_setup),
     ])

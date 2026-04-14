@@ -15,6 +15,7 @@
       <button class="tab" data-tab="camera">Camera</button>
       <button class="tab" data-tab="recordings">Recordings</button>
       <button class="tab" data-tab="controller">Controller</button>
+      <button class="tab" data-tab="lidar">Lidar</button>
       <button class="tab" data-tab="network">Network</button>
     </nav>
     <span id="ws-status">Disconnected</span>
@@ -260,6 +261,25 @@
           <button onclick="resetCtrlConfig()">Reset Defaults</button>
         </div>
         <div id="ctrl-msg" class="ctrl-msg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Lidar tab ─── -->
+  <div id="tab-lidar" class="tab-content">
+    <div class="lidar-wrap">
+      <div class="lidar-controls">
+        <button id="lidar-toggle" class="primary" onclick="toggleLidar()">Start Scan</button>
+        <span class="lidar-status" id="lidar-status">Stopped</span>
+        <span class="lidar-stats" id="lidar-stats"></span>
+        <label class="cam-slider-label">
+          Range (m)
+          <input type="range" id="lidar-range" min="1" max="20" value="8" step="1">
+          <span id="lidar-range-val">8</span>
+        </label>
+      </div>
+      <div class="lidar-view">
+        <canvas id="lidar-canvas" width="700" height="700"></canvas>
       </div>
     </div>
   </div>

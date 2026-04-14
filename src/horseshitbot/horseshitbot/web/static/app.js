@@ -251,6 +251,32 @@ function updateDashboard(data) {
   }
 
   updateThermals(data.thermals || []);
+
+  // Lidar
+  const lidar = data.lidar || {};
+  const lidarPts = data.lidar_points;
+  if (lidarPts && Array.isArray(lidarPts) && lidarPts.length > 0) {
+    lidarPoints = lidarPts;
+  }
+  const lidarStatusEl = document.getElementById("lidar-status");
+  if (lidarStatusEl && !lidarScanning && lidar.scanning) {
+    lidarScanning = true;
+    lidarStatusEl.textContent = "Scanning";
+    lidarStatusEl.className = "lidar-status ok";
+    document.getElementById("lidar-toggle").textContent = "Stop Scan";
+    document.getElementById("lidar-toggle").className = "danger";
+    if (!lidarAnimFrame) lidarAnimFrame = requestAnimationFrame(drawLidar);
+  }
+  const statsEl = document.getElementById("lidar-stats");
+  if (statsEl && lidar.connected != null) {
+    const parts = [];
+    if (!lidar.connected) parts.push("Disconnected");
+    else {
+      parts.push(`${lidar.point_count || 0} pts`);
+      if (lidar.firmware) parts.push(`fw ${lidar.firmware}`);
+    }
+    statsEl.textContent = parts.join(" · ");
+  }
 }
 
 // ─── Thermals ─────────────────────────────────────────────────────
@@ -1215,6 +1241,118 @@ function showApMsg(text, type) {
   el.className = "ctrl-msg " + (type || "");
 }
 
+// ─── Lidar ───────────────────────────────────────────────────────
+
+let lidarScanning = false;
+let lidarPoints = [];
+let lidarAnimFrame = null;
+
+async function startLidar() {
+  try {
+    const resp = await fetch("/api/lidar/start", { method: "POST" });
+    const r = await resp.json();
+    if (!r.success) {
+      const el = document.getElementById("lidar-status");
+      if (el) { el.textContent = r.message || "Failed"; el.className = "lidar-status err"; }
+      return;
+    }
+  } catch (e) { console.error("Lidar start failed:", e); return; }
+
+  lidarScanning = true;
+  document.getElementById("lidar-toggle").textContent = "Stop Scan";
+  document.getElementById("lidar-toggle").className = "danger";
+  const el = document.getElementById("lidar-status");
+  if (el) { el.textContent = "Scanning"; el.className = "lidar-status ok"; }
+  if (!lidarAnimFrame) lidarAnimFrame = requestAnimationFrame(drawLidar);
+}
+
+async function stopLidar() {
+  try { await fetch("/api/lidar/stop", { method: "POST" }); } catch (e) { /* ignore */ }
+
+  lidarScanning = false;
+  document.getElementById("lidar-toggle").textContent = "Start Scan";
+  document.getElementById("lidar-toggle").className = "primary";
+  const el = document.getElementById("lidar-status");
+  if (el) { el.textContent = "Stopped"; el.className = "lidar-status"; }
+  if (lidarAnimFrame) { cancelAnimationFrame(lidarAnimFrame); lidarAnimFrame = null; }
+}
+
+function toggleLidar() {
+  if (lidarScanning) stopLidar();
+  else startLidar();
+}
+
+function drawLidar() {
+  const canvas = document.getElementById("lidar-canvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+  const rangeM = parseFloat(document.getElementById("lidar-range")?.value || "8");
+  const rangeMax = rangeM * 1000;
+  const radius = Math.min(cx, cy) - 20;
+
+  ctx.fillStyle = "#0a0e17";
+  ctx.fillRect(0, 0, W, H);
+
+  // Distance rings
+  const ringCount = 4;
+  ctx.strokeStyle = "#1a2035";
+  ctx.lineWidth = 1;
+  ctx.font = "11px monospace";
+  ctx.fillStyle = "#3a4565";
+  for (let i = 1; i <= ringCount; i++) {
+    const r = (radius / ringCount) * i;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    const mLabel = ((rangeM / ringCount) * i).toFixed(1) + "m";
+    ctx.fillText(mLabel, cx + r + 3, cy - 3);
+  }
+
+  // Cross-hairs
+  ctx.strokeStyle = "#1a2035";
+  ctx.beginPath();
+  ctx.moveTo(cx, 10); ctx.lineTo(cx, H - 10);
+  ctx.moveTo(10, cy); ctx.lineTo(W - 10, cy);
+  ctx.stroke();
+
+  // Robot marker
+  ctx.fillStyle = "#e94560";
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Points
+  if (lidarPoints.length > 0) {
+    ctx.fillStyle = "#4ecca3";
+    for (const pt of lidarPoints) {
+      const angleDeg = pt[0];
+      const distMm = pt[1];
+      if (distMm <= 0 || distMm > rangeMax) continue;
+      const angleRad = (angleDeg - 90) * Math.PI / 180;
+      const r = (distMm / rangeMax) * radius;
+      const px = cx + r * Math.cos(angleRad);
+      const py = cy + r * Math.sin(angleRad);
+      ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+    }
+  }
+
+  // Forward direction indicator
+  ctx.fillStyle = "#4ecca366";
+  ctx.font = "11px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("0\u00b0", cx, 14);
+  ctx.fillText("180\u00b0", cx, H - 6);
+  ctx.textAlign = "left";
+  ctx.fillText("270\u00b0", 2, cy - 3);
+  ctx.textAlign = "right";
+  ctx.fillText("90\u00b0", W - 2, cy - 3);
+  ctx.textAlign = "left";
+
+  if (lidarScanning) lidarAnimFrame = requestAnimationFrame(drawLidar);
+}
+
 // ─── Tabs ────────────────────────────────────────────────────────
 
 function initTabs() {
@@ -1236,6 +1374,9 @@ function initTabs() {
       }
       if (tab.dataset.tab === "network") {
         loadNetwork();
+      }
+      if (tab.dataset.tab === "lidar") {
+        drawLidar();
       }
       if (tab.dataset.tab !== "camera" && camStreaming) {
         stopCamera();
@@ -1343,4 +1484,10 @@ const _qualSlider = document.getElementById("cam-quality");
 const _qualVal = document.getElementById("cam-quality-val");
 if (_qualSlider && _qualVal) {
   _qualSlider.addEventListener("input", () => { _qualVal.textContent = _qualSlider.value; });
+}
+
+const _lidarRange = document.getElementById("lidar-range");
+const _lidarRangeVal = document.getElementById("lidar-range-val");
+if (_lidarRange && _lidarRangeVal) {
+  _lidarRange.addEventListener("input", () => { _lidarRangeVal.textContent = _lidarRange.value; });
 }

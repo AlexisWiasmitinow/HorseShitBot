@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-RPLIDAR (SLAMTEC) test script — device info, health check, and short scan.
+YDLidar T-MINI Plus test script — device info, health check, and short scan.
 
-Uses raw serial protocol (no SDK needed, only pyserial).
+Uses the YDLidar serial protocol directly (only needs pyserial).
 
 Usage:
     python3 lidar_test.py                       # defaults
     python3 lidar_test.py -p /dev/ttyUSB1       # different port
     python3 lidar_test.py --scan                 # run a short scan (~3 rotations)
-    python3 lidar_test.py --scan -n 1000         # collect 1000 points
+    python3 lidar_test.py --scan -n 2000         # collect 2000 points
+    python3 lidar_test.py --raw                  # dump raw serial bytes (debug)
 """
 
 import argparse
@@ -18,114 +19,102 @@ import time
 
 import serial
 
-# RPLIDAR protocol constants
-SYNC_BYTE = 0xA5
-RESP_SYNC1 = 0xA5
-RESP_SYNC2 = 0x5A
+# YDLidar protocol — same framing (0xA5/0x5A) as RPLIDAR, different commands
+SYNC = 0xA5
+RESP1 = 0xA5
+RESP2 = 0x5A
 
-CMD_STOP = 0x25
-CMD_RESET = 0x40
-CMD_SCAN = 0x20
-CMD_GET_INFO = 0x50
-CMD_GET_HEALTH = 0x52
-CMD_EXPRESS_SCAN = 0x82
-CMD_MOTOR_PWM = 0xF0
+CMD_STOP = 0x65
+CMD_SCAN = 0x60
+CMD_FORCE_SCAN = 0x61
+CMD_RESET = 0x80
+CMD_GET_INFO = 0x90
+CMD_GET_HEALTH = 0x92
 
-HEALTH_GOOD = 0
-HEALTH_WARNING = 1
-HEALTH_ERROR = 2
+# Scan package header (little-endian 0x55AA)
+PKG_HEADER = 0x55AA
+
 HEALTH_NAMES = {0: "Good", 1: "Warning", 2: "Error"}
 
-MODEL_NAMES = {
-    0x18: "RPLIDAR A1",
-    0x28: "RPLIDAR A2",
-    0x38: "RPLIDAR A3",
-    0x61: "RPLIDAR S1",
-    0x62: "RPLIDAR S2",
-    0x63: "RPLIDAR S3",
-    0xA1: "RPLIDAR T1",
-    0xA2: "RPLIDAR T-MINI Plus",
-    0xA5: "RPLIDAR T-MINI",
-    0xC0: "RPLIDAR C1",
-}
 
+class YDLidar:
+    """Minimal YDLidar driver for T-MINI Plus."""
 
-class RPLidar:
-    """Minimal RPLIDAR driver using raw serial protocol."""
-
-    def __init__(self, port: str, baudrate: int = 115200, timeout: float = 3.0):
+    def __init__(self, port: str, baudrate: int = 230400, timeout: float = 3.0):
         self.ser = serial.Serial(port, baudrate=baudrate, timeout=timeout,
                                  parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
+        self.ser.dtr = False
         time.sleep(0.1)
-        self.ser.reset_input_buffer()
+        self.ser.dtr = True
+        time.sleep(1.0)
+
+        # Drain boot banner (e.g. "[Platform]:Welcome to Tmini-Plus\n")
+        boot_msg = b""
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            chunk = self.ser.read(256)
+            if chunk:
+                boot_msg += chunk
+            elif boot_msg:
+                break
+        if boot_msg:
+            text = boot_msg.decode("ascii", errors="replace").strip()
+            print(f"  Boot: {text}")
+
+        # Stop any auto-scan, drain residual
+        self._send(CMD_STOP)
+        time.sleep(0.1)
+        self._send(CMD_STOP)
+        time.sleep(0.3)
+        self._drain()
 
     def close(self):
-        self.stop_scan()
+        try:
+            self._send(CMD_STOP)
+            time.sleep(0.05)
+        except Exception:
+            pass
         self.ser.close()
 
-    def _send_cmd(self, cmd: int, payload: bytes = b""):
-        if payload:
-            pkt = bytes([SYNC_BYTE, cmd, len(payload)]) + payload
-            checksum = 0
-            for b in pkt:
-                checksum ^= b
-            pkt += bytes([checksum])
-        else:
-            pkt = bytes([SYNC_BYTE, cmd])
-        self.ser.write(pkt)
+    def _send(self, cmd: int):
+        self.ser.write(bytes([SYNC, cmd]))
 
-    def _read_descriptor(self) -> tuple[int, bool, int]:
-        """Read 7-byte response descriptor. Returns (data_size, is_single, data_type)."""
-        header = self.ser.read(7)
-        if len(header) < 7:
-            raise TimeoutError("No response from lidar (check power and wiring)")
-        if header[0] != RESP_SYNC1 or header[1] != RESP_SYNC2:
-            raise ValueError(f"Bad response header: {header.hex()}")
-        size_and_mode = struct.unpack("<I", header[2:6])[0]
-        data_size = size_and_mode & 0x3FFFFFFF
-        send_mode = (size_and_mode >> 30) & 0x03
-        data_type = header[6]
-        return data_size, send_mode == 0x00, data_type
-
-    def _read_response(self, expected_size: int) -> bytes:
-        data = self.ser.read(expected_size)
-        if len(data) < expected_size:
-            raise TimeoutError(f"Incomplete response: got {len(data)}/{expected_size} bytes")
-        return data
-
-    def stop_scan(self):
-        self._send_cmd(CMD_STOP)
-        time.sleep(0.05)
+    def _drain(self):
+        while self.ser.in_waiting:
+            self.ser.read(self.ser.in_waiting)
+            time.sleep(0.02)
         self.ser.reset_input_buffer()
 
-    def reset(self):
-        self._send_cmd(CMD_RESET)
-        time.sleep(0.5)
-        self.ser.reset_input_buffer()
+    def _read_header(self) -> tuple[int, int, int]:
+        """Read 7-byte response header. Returns (data_size, send_mode, data_type)."""
+        hdr = self.ser.read(7)
+        if len(hdr) < 7:
+            raise TimeoutError(f"No response (got {len(hdr)} bytes: {hdr.hex()})")
+        if hdr[0] != RESP1 or hdr[1] != RESP2:
+            raise ValueError(f"Bad header: {hdr.hex()}")
+        size_mode = struct.unpack("<I", hdr[2:6])[0]
+        return size_mode & 0x3FFFFFFF, (size_mode >> 30) & 0x03, hdr[6]
 
     def get_info(self) -> dict:
-        self.ser.reset_input_buffer()
-        self._send_cmd(CMD_GET_INFO)
-        data_size, _, _ = self._read_descriptor()
-        data = self._read_response(20)
+        self._drain()
+        self._send(CMD_GET_INFO)
+        _, _, _ = self._read_header()
+        data = self.ser.read(20)
+        if len(data) < 20:
+            raise TimeoutError(f"Incomplete device info ({len(data)} bytes)")
         model = data[0]
-        fw_minor = data[1]
-        fw_major = data[2]
-        hardware = data[3]
-        serial_num = data[4:20].hex().upper()
-        return {
-            "model": model,
-            "model_name": MODEL_NAMES.get(model, f"Unknown (0x{model:02X})"),
-            "firmware": f"{fw_major}.{fw_minor:02d}",
-            "hardware": hardware,
-            "serial": serial_num,
-        }
+        fw = f"{data[2]}.{data[1]:02d}"
+        hw = data[3]
+        sn = data[4:20].hex().upper()
+        return {"model": model, "firmware": fw, "hardware": hw, "serial": sn}
 
     def get_health(self) -> dict:
-        self.ser.reset_input_buffer()
-        self._send_cmd(CMD_GET_HEALTH)
-        data_size, _, _ = self._read_descriptor()
-        data = self._read_response(3)
+        self._drain()
+        self._send(CMD_GET_HEALTH)
+        _, _, _ = self._read_header()
+        data = self.ser.read(3)
+        if len(data) < 3:
+            raise TimeoutError("Incomplete health response")
         status = data[0]
         error_code = struct.unpack("<H", data[1:3])[0]
         return {
@@ -135,60 +124,130 @@ class RPLidar:
         }
 
     def scan(self, max_points: int = 720) -> list[dict]:
-        """Start a scan and collect points. Returns list of {angle, distance, quality}."""
-        self.ser.reset_input_buffer()
-        self._send_cmd(CMD_SCAN)
-        self._read_descriptor()
+        """Start scan, collect points. Each point has angle (deg), distance (mm), intensity."""
+        self._drain()
+        self._send(CMD_SCAN)
+        # Read scan response header
+        self._read_header()
 
         points = []
         rotations = 0
-        prev_angle = 0.0
+        prev_start = False
 
         while len(points) < max_points:
-            raw = self.ser.read(5)
-            if len(raw) < 5:
+            # Find package header 0xAA55
+            b0 = self.ser.read(1)
+            if not b0:
+                break
+            if b0[0] != 0xAA:
+                continue
+            b1 = self.ser.read(1)
+            if not b1 or b1[0] != 0x55:
+                continue
+
+            # Read package metadata: CT(1) + count(1) + firstAngle(2) + lastAngle(2) + checksum(2)
+            meta = self.ser.read(8)
+            if len(meta) < 8:
                 break
 
-            quality = (raw[0] >> 2) & 0x3F
-            start_flag = raw[0] & 0x01
-            angle_raw = ((raw[2] << 8) | raw[1]) >> 1
-            angle = angle_raw / 64.0
-            distance_raw = (raw[4] << 8) | raw[3]
-            distance = distance_raw / 4.0
+            ct = meta[0]
+            count = meta[1]
+            first_angle = struct.unpack("<H", meta[2:4])[0]
+            last_angle = struct.unpack("<H", meta[4:6])[0]
 
-            if start_flag and len(points) > 0:
+            is_start = (ct & 0x01) == 1
+            if is_start and points:
                 rotations += 1
                 if rotations >= 3:
                     break
 
-            if distance > 0 and quality > 0:
-                points.append({
-                    "angle": round(angle, 2),
-                    "distance": round(distance, 1),
-                    "quality": quality,
-                })
+            if count == 0:
+                continue
 
-        self.stop_scan()
+            # T-MINI Plus with intensity: 3 bytes per node (intensity:1 + distance:2)
+            node_bytes = self.ser.read(count * 3)
+            if len(node_bytes) < count * 3:
+                break
+
+            fa = (first_angle >> 1) / 64.0
+            la = (last_angle >> 1) / 64.0
+
+            for i in range(count):
+                off = i * 3
+                intensity = node_bytes[off]
+                dist = struct.unpack("<H", node_bytes[off + 1:off + 3])[0]
+                distance_mm = dist / 4.0
+
+                if count > 1:
+                    angle_diff = la - fa
+                    if angle_diff < 0:
+                        angle_diff += 360.0
+                    angle = fa + angle_diff * i / (count - 1)
+                else:
+                    angle = fa
+
+                if angle >= 360.0:
+                    angle -= 360.0
+
+                if distance_mm > 0:
+                    points.append({
+                        "angle": round(angle, 2),
+                        "distance": round(distance_mm, 1),
+                        "quality": intensity,
+                    })
+
+        self._send(CMD_STOP)
+        time.sleep(0.1)
+        self._drain()
         return points
 
 
+def dump_raw(port: str, baud: int, seconds: float = 3.0):
+    """Read raw bytes to check if lidar sends anything."""
+    print(f"\n  Raw dump ({baud} baud, {seconds}s):")
+    ser = serial.Serial(port, baudrate=baud, timeout=0.5)
+    ser.dtr = False
+    time.sleep(0.1)
+    ser.dtr = True
+    time.sleep(1.0)
+    ser.reset_input_buffer()
+
+    # Send YDLidar reset + get_info
+    ser.write(bytes([SYNC, CMD_RESET]))
+    time.sleep(0.5)
+    ser.write(bytes([SYNC, CMD_GET_INFO]))
+    time.sleep(0.3)
+
+    end = time.time() + seconds
+    total = 0
+    while time.time() < end:
+        chunk = ser.read(256)
+        if chunk:
+            total += len(chunk)
+            hex_str = chunk[:48].hex(" ")
+            ascii_str = chunk[:48].decode("ascii", errors=".")
+            if len(chunk) > 48:
+                hex_str += " ..."
+            print(f"    [{len(chunk):4d} bytes] {hex_str}")
+            printable = "".join(c if 32 <= ord(c) < 127 else "." for c in ascii_str)
+            print(f"             ascii: {printable}")
+    ser.close()
+    if total == 0:
+        print("    (no data received)")
+    else:
+        print(f"    Total: {total} bytes in {seconds}s")
+    return total
+
+
 def print_info(info: dict):
+    print()
     print("=" * 50)
     print("LIDAR DEVICE INFO")
     print("=" * 50)
-    print(f"  Model      : {info['model_name']}")
+    print(f"  Model      : {info['model']} (0x{info['model']:02X})")
     print(f"  Firmware   : {info['firmware']}")
     print(f"  Hardware   : Rev {info['hardware']}")
     print(f"  Serial     : {info['serial']}")
-
-
-def print_health(health: dict):
-    print()
-    print(f"  Health     : {health['status_name']}", end="")
-    if health["error_code"]:
-        print(f"  (error code: 0x{health['error_code']:04X})")
-    else:
-        print()
 
 
 def print_scan_summary(points: list[dict]):
@@ -198,57 +257,55 @@ def print_scan_summary(points: list[dict]):
 
     distances = [p["distance"] for p in points]
     qualities = [p["quality"] for p in points]
-    min_d = min(distances)
-    max_d = max(distances)
-    avg_d = sum(distances) / len(distances)
-    avg_q = sum(qualities) / len(qualities)
 
     print()
     print("=" * 50)
     print("SCAN RESULTS")
     print("=" * 50)
     print(f"  Points     : {len(points)}")
-    print(f"  Distance   : min={min_d:.0f}mm  max={max_d:.0f}mm  avg={avg_d:.0f}mm")
-    print(f"  Quality    : avg={avg_q:.1f} / 63")
+    print(f"  Distance   : min={min(distances):.0f}mm  max={max(distances):.0f}mm  avg={sum(distances)/len(distances):.0f}mm")
+    print(f"  Intensity  : avg={sum(qualities)/len(qualities):.0f} / 255")
 
-    # Simple ASCII "radar" — 8 sectors
     sectors = [[] for _ in range(8)]
     for p in points:
         idx = int(p["angle"] / 45) % 8
         sectors[idx].append(p["distance"])
 
-    sector_labels = ["  0° (front)", " 45°", " 90° (right)", "135°",
-                     "180° (back)", "225°", "270° (left)", "315°"]
+    labels = ["  0° (front)", " 45°", " 90° (right)", "135°",
+              "180° (back)", "225°", "270° (left)", "315°"]
     print()
     print("  Sector averages:")
-    for i, label in enumerate(sector_labels):
+    for i, label in enumerate(labels):
         if sectors[i]:
             avg = sum(sectors[i]) / len(sectors[i])
-            count = len(sectors[i])
-            bar_len = min(40, int(avg / 100))
-            bar = "█" * bar_len
-            print(f"    {label:>14s} : {avg:6.0f}mm ({count:3d}pts) {bar}")
+            bar = "█" * min(40, int(avg / 100))
+            print(f"    {label:>14s} : {avg:6.0f}mm ({len(sectors[i]):3d}pts) {bar}")
         else:
             print(f"    {label:>14s} :   -- no data --")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="SLAMTEC RPLIDAR test script")
+    parser = argparse.ArgumentParser(description="YDLidar T-MINI Plus test script")
     parser.add_argument("-p", "--port", default="/dev/lidar",
                         help="Serial port (default: /dev/lidar)")
     parser.add_argument("-b", "--baud", type=int, default=230400,
-                        help="Baud rate (default: 230400 for T-MINI Plus)")
+                        help="Baud rate (default: 230400)")
     parser.add_argument("-s", "--scan", action="store_true",
                         help="Run a short scan (~3 rotations)")
     parser.add_argument("-n", "--points", type=int, default=720,
-                        help="Max points to collect during scan (default: 720)")
+                        help="Max points to collect (default: 720)")
+    parser.add_argument("--raw", action="store_true",
+                        help="Dump raw serial data (debug)")
     args = parser.parse_args()
 
     print(f"Port: {args.port}  Baud: {args.baud}")
-    print()
+
+    if args.raw:
+        dump_raw(args.port, args.baud)
+        return
 
     try:
-        lidar = RPLidar(args.port, args.baud)
+        lidar = YDLidar(args.port, args.baud)
     except serial.SerialException as e:
         print(f"Cannot open {args.port}: {e}", file=sys.stderr)
         sys.exit(1)
@@ -258,27 +315,23 @@ def main():
         print_info(info)
 
         health = lidar.get_health()
-        print_health(health)
-
-        if health["status"] == HEALTH_ERROR:
-            print("\n  Lidar reports error — attempting reset...")
-            lidar.reset()
-            health = lidar.get_health()
-            print_health(health)
+        print(f"\n  Health     : {health['status_name']}", end="")
+        if health["error_code"]:
+            print(f"  (error: 0x{health['error_code']:04X})")
+        else:
+            print()
 
         if args.scan:
             print("\n  Scanning...")
             points = lidar.scan(max_points=args.points)
             print_scan_summary(points)
         else:
-            print("\n  Use --scan to run a measurement scan.")
+            print("\n  Use --scan / -s to run a measurement scan.")
 
-        print()
-        print("Lidar OK.")
+        print("\nLidar OK.")
 
     except TimeoutError as e:
         print(f"\nError: {e}", file=sys.stderr)
-        print("Check that the lidar motor is spinning (needs 5V on motor pin).", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"\nError: {e}", file=sys.stderr)

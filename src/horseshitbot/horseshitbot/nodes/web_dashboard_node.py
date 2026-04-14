@@ -218,6 +218,8 @@ class _RosBridge:
             "gamepad": {},
             "network": [],
             "thermals": [],
+            "lidar": {},
+            "lidar_points": [],
         }
         self._ws_clients: list[WebSocket] = []
 
@@ -235,6 +237,8 @@ class _RosBridge:
         ros_node.create_subscription(ActuatorStateMsg, "/bin_door/state", lambda m: self._cb_actuator("bin_door", m), 10)
         ros_node.create_subscription(String, "/bag_recorder_node/status", self._cb_bag_recorder, 10)
         ros_node.create_subscription(String, "/gamepad/status", self._cb_gamepad, 10)
+        ros_node.create_subscription(String, "/lidar/status", self._cb_lidar_status, 10)
+        ros_node.create_subscription(String, "/lidar/points", self._cb_lidar_points, 10)
 
         if _HAS_SENSOR_MSGS:
             qos_be = QoSProfile(
@@ -320,6 +324,22 @@ class _RosBridge:
         with self._lock:
             self._state["gamepad"] = data
 
+    def _cb_lidar_status(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            data = {"raw": msg.data}
+        with self._lock:
+            self._state["lidar"] = data
+
+    def _cb_lidar_points(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            data = []
+        with self._lock:
+            self._state["lidar_points"] = data
+
     def _cb_color(self, msg: RosImage):
         try:
             frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 3)
@@ -384,6 +404,8 @@ class WebDashboardNode(Node):
 
         self._rec_start_cli = self.create_client(Trigger, "/bag_recorder_node/start_recording")
         self._rec_stop_cli = self.create_client(Trigger, "/bag_recorder_node/stop_recording")
+        self._lidar_start_cli = self.create_client(Trigger, "/lidar_node/start_scan")
+        self._lidar_stop_cli = self.create_client(Trigger, "/lidar_node/stop_scan")
         self._config_pub = self.create_publisher(String, "/gamepad/config", 10)
         self._bag_topics_file = _CONFIG_DIR / "bag_topics.json"
 
@@ -531,6 +553,22 @@ class WebDashboardNode(Node):
                 return {"success": False, "message": "bag_recorder_node not available"}
             future = ros_node._rec_stop_cli.call_async(Trigger.Request())
             return {"success": True, "message": "stop_recording called"}
+
+        # ── Lidar ──────────────────────────────────────────────────
+
+        @app.post("/api/lidar/start")
+        async def lidar_start():
+            if not ros_node._lidar_start_cli.service_is_ready():
+                return {"success": False, "message": "lidar_node not available"}
+            ros_node._lidar_start_cli.call_async(Trigger.Request())
+            return {"success": True, "message": "start_scan called"}
+
+        @app.post("/api/lidar/stop")
+        async def lidar_stop():
+            if not ros_node._lidar_stop_cli.service_is_ready():
+                return {"success": False, "message": "lidar_node not available"}
+            ros_node._lidar_stop_cli.call_async(Trigger.Request())
+            return {"success": True, "message": "stop_scan called"}
 
         @app.get("/api/bag-topics")
         async def get_bag_topics():

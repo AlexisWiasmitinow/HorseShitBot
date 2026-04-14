@@ -39,6 +39,7 @@ setup(
             "web_dashboard_node = horseshitbot.nodes.web_dashboard_node:main",
             "status_screen_node = horseshitbot.nodes.status_screen_node:main",
             "bag_recorder_node = horseshitbot.nodes.bag_recorder_node:main",
+            "lidar_node = horseshitbot.nodes.lidar_node:main",
         ],
     },
 )

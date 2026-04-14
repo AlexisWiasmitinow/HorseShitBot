@@ -6,6 +6,7 @@
 #   ./scripts/start.sh                  # launch everything
 #   ./scripts/start.sh --no-camera      # skip RealSense + bag recorder
 #   ./scripts/start.sh --no-mks         # skip MKS bus node (ODrive-only setup)
+#   ./scripts/start.sh --no-lidar       # skip lidar node
 #   ./scripts/start.sh --drive-only     # just wheel driver + gamepad (no launch file)
 #   ./scripts/start.sh --rebuild        # force colcon build before launching
 #
@@ -26,12 +27,14 @@ fi
 # ── Parse args ───────────────────────────────────────────────────
 ENABLE_CAMERA=true
 ENABLE_MKS=true
+ENABLE_LIDAR=true
 DRIVE_ONLY=false
 FORCE_REBUILD=false
 for arg in "$@"; do
   case "$arg" in
     --no-camera)   ENABLE_CAMERA=false ;;
     --no-mks)      ENABLE_MKS=false ;;
+    --no-lidar)    ENABLE_LIDAR=false ;;
     --drive-only)  DRIVE_ONLY=true ;;
     --rebuild)     FORCE_REBUILD=true ;;
   esac
@@ -79,11 +82,13 @@ else
   echo "=== HorseShitBot — Full Launch ==="
   [ "$ENABLE_CAMERA" = false ] && echo "  (camera disabled)"
   [ "$ENABLE_MKS" = false ]    && echo "  (MKS bus disabled)"
+  [ "$ENABLE_LIDAR" = false ]  && echo "  (lidar disabled)"
   echo "  Ctrl+C to stop"
   echo ""
 
   ros2 launch horseshitbot robot_launch.py \
     enable_camera:="$ENABLE_CAMERA" \
     enable_mks:="$ENABLE_MKS" \
+    enable_lidar:="$ENABLE_LIDAR" \
     params_file:="$PARAMS"
 fi

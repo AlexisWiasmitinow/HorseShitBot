@@ -97,6 +97,13 @@ status_screen_node:
     refresh_hz: 5.0
     backlight_brightness: 1.0
 
+lidar_node:
+  ros__parameters:
+    port: "/dev/lidar"
+    baud: 230400
+    auto_start: false
+    publish_hz: 5.0
+
 bag_recorder_node:
   ros__parameters:
     output_dir: "~/rosbags"
