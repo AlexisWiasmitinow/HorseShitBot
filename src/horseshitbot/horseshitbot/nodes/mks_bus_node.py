@@ -1,13 +1,16 @@
 """
 MKS Bus Node — owns the Modbus RTU serial connection and exposes ROS 2
 services so other nodes can command MKS servo motors without serial
-port contention.
+port contention.  Publishes per-motor connectivity on /mks_bus/status.
 """
 
 from __future__ import annotations
 
+import json
+
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import String
 from horseshitbot_interfaces.srv import MksSetSpeed
 from std_srvs.srv import Trigger
 
@@ -22,23 +25,48 @@ class MksBusNode(Node):
         self.declare_parameter("baud", 38400)
         self.declare_parameter("timeout", 0.35)
         self.declare_parameter("retries", 3)
+        self.declare_parameter("motor_ids", [3, 4, 5, 6])
+        self.declare_parameter("health_hz", 0.5)
 
         port = self.get_parameter("port").get_parameter_value().string_value
         baud = self.get_parameter("baud").get_parameter_value().integer_value
         timeout = self.get_parameter("timeout").get_parameter_value().double_value
         retries = self.get_parameter("retries").get_parameter_value().integer_value
+        self._motor_ids = list(
+            self.get_parameter("motor_ids").get_parameter_value().integer_array_value
+        )
+        health_hz = self.get_parameter("health_hz").get_parameter_value().double_value
 
         self._bus = MksBus(BusCfg(port=port, baud=baud, timeout=timeout, retries=retries))
+        self._bus_connected = False
 
         self.create_service(MksSetSpeed, "/mks/set_speed", self._srv_set_speed)
         self.create_service(Trigger, "/mks/init_servo", self._srv_init_servo)
         self.create_service(Trigger, "/mks/clear_errors", self._srv_clear_errors)
 
+        self._status_pub = self.create_publisher(String, "/mks_bus/status", 10)
+        self._motor_online: dict[int, bool] = {m: False for m in self._motor_ids}
+
         try:
             self._bus.connect()
+            self._bus_connected = True
             self.get_logger().info(f"MKS bus connected on {port} @ {baud}")
         except Exception as e:
             self.get_logger().error(f"MKS bus connection failed: {e}")
+
+        period = 1.0 / max(0.1, health_hz)
+        self.create_timer(period, self._health_tick)
+
+    def _health_tick(self):
+        for mid in self._motor_ids:
+            self._motor_online[mid] = self._bus.probe(mid)
+
+        msg = String()
+        msg.data = json.dumps({
+            "bus_connected": self._bus_connected,
+            "motors": {str(m): self._motor_online[m] for m in self._motor_ids},
+        })
+        self._status_pub.publish(msg)
 
     def _srv_set_speed(self, request, response):
         try:

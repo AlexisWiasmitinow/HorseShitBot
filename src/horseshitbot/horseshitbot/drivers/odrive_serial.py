@@ -17,7 +17,7 @@ MOTOR_DEFAULTS = {
     "current_lim": 20,
     "calibration_current": 10,
     "motor_type": 0,
-    "pre_calibrated": 1,
+    "pre_calibrated": 0,
 }
 
 ENCODER_DEFAULTS = {
@@ -274,6 +274,31 @@ class ODriveSerial:
             return float(raw)
         except (ValueError, TypeError):
             return 0.0
+
+    def get_temperature(self, axis: int) -> float | None:
+        """Read FET thermistor temperature (°C) for the given axis.
+
+        Returns None if the ODrive firmware doesn't expose this property.
+        """
+        raw = self.read_property(f"axis{axis}.fet_thermistor.temperature")
+        try:
+            val = float(raw)
+            if -40.0 < val < 200.0:
+                return val
+        except (ValueError, TypeError):
+            pass
+        return None
+
+    def get_motor_temperature(self, axis: int) -> float | None:
+        """Read motor thermistor temperature (°C), if a thermistor is wired."""
+        raw = self.read_property(f"axis{axis}.motor_thermistor.temperature")
+        try:
+            val = float(raw)
+            if -40.0 < val < 200.0:
+                return val
+        except (ValueError, TypeError):
+            pass
+        return None
 
     def save_config(self):
         self.send_command("ss")

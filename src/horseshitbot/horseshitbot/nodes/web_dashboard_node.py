@@ -210,6 +210,7 @@ class _RosBridge:
         self._lock = threading.Lock()
         self._state: dict = {
             "wheel_status": {},
+            "mks_bus": {},
             "lift": {},
             "brush": {},
             "bin_door": {},
@@ -228,6 +229,7 @@ class _RosBridge:
         self._start_thermal_poller()
 
         ros_node.create_subscription(String, "/wheel_status", self._cb_wheel, 10)
+        ros_node.create_subscription(String, "/mks_bus/status", self._cb_mks_bus, 10)
         ros_node.create_subscription(ActuatorStateMsg, "/lift/state", lambda m: self._cb_actuator("lift", m), 10)
         ros_node.create_subscription(ActuatorStateMsg, "/brush/state", lambda m: self._cb_actuator("brush", m), 10)
         ros_node.create_subscription(ActuatorStateMsg, "/bin_door/state", lambda m: self._cb_actuator("bin_door", m), 10)
@@ -282,6 +284,14 @@ class _RosBridge:
             data = {"raw": msg.data}
         with self._lock:
             self._state["wheel_status"] = data
+
+    def _cb_mks_bus(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            data = {"raw": msg.data}
+        with self._lock:
+            self._state["mks_bus"] = data
 
     def _cb_actuator(self, name: str, msg: ActuatorStateMsg):
         data = {

@@ -65,6 +65,67 @@ function updateDashboard(data) {
     }
   }
 
+  // Hardware status
+  const hw = data.mks_bus || {};
+  const wBackend = (w.backend || "").toLowerCase();
+  const odriveEl = document.getElementById("hw-odrive");
+  if (odriveEl) {
+    if (wBackend === "odrive") {
+      const hasErr = !!w.error;
+      const diag = w.diag || {};
+      let label = hasErr ? "Error" : "Connected";
+      const parts = [];
+      if (diag.vbus) parts.push(diag.vbus.toFixed(1) + "V");
+      if (diag.fet_temp_left != null || diag.fet_temp_right != null) {
+        const tl = diag.fet_temp_left, tr = diag.fet_temp_right;
+        if (tl != null && tr != null) parts.push(`FET ${tl}/${tr}°C`);
+        else if (tl != null) parts.push(`FET L ${tl}°C`);
+        else parts.push(`FET R ${tr}°C`);
+      }
+      if (parts.length) label += " · " + parts.join(" · ");
+      odriveEl.textContent = label;
+      odriveEl.style.color = hasErr ? "var(--err)" : "var(--ok, #4ecca3)";
+    } else if (wBackend === "none" && w.error) {
+      odriveEl.textContent = "Disconnected";
+      odriveEl.style.color = "var(--err)";
+    } else {
+      odriveEl.textContent = wBackend === "mks" ? "Not active" : "--";
+      odriveEl.style.color = "";
+    }
+  }
+  const mksBusEl = document.getElementById("hw-mks-bus");
+  if (mksBusEl) {
+    if (hw.bus_connected) {
+      mksBusEl.textContent = "Connected";
+      mksBusEl.style.color = "var(--ok, #4ecca3)";
+    } else if (hw.bus_connected === false) {
+      mksBusEl.textContent = "Disconnected";
+      mksBusEl.style.color = "var(--err)";
+    } else {
+      mksBusEl.textContent = "--";
+      mksBusEl.style.color = "";
+    }
+  }
+  const motorsEl = document.getElementById("hw-motors");
+  if (motorsEl && hw.motors) {
+    const motorNames = {"3": "Lift A", "4": "Brush", "5": "Lift B", "6": "Door"};
+    motorsEl.innerHTML = "";
+    for (const [id, online] of Object.entries(hw.motors)) {
+      const row = document.createElement("div");
+      row.className = "kv";
+      const label = document.createElement("span");
+      label.className = "label";
+      label.textContent = `Motor ${id} (${motorNames[id] || "?"})`;
+      const value = document.createElement("span");
+      value.className = "value";
+      value.textContent = online ? "Online" : "Offline";
+      value.style.color = online ? "var(--ok, #4ecca3)" : "var(--err)";
+      row.appendChild(label);
+      row.appendChild(value);
+      motorsEl.appendChild(row);
+    }
+  }
+
   for (const name of ["lift", "brush", "bin_door"]) {
     const a = data[name] || {};
     const stateIdx = a.state || 0;

@@ -34,3 +34,7 @@ class WheelBackend(ABC):
     def resume(self) -> bool:
         """Re-enable motors after emergency stop. Returns True if successful."""
         return True
+
+    def get_diagnostics(self) -> dict:
+        """Return backend-specific diagnostics (temps, voltages, etc.)."""
+        return {}

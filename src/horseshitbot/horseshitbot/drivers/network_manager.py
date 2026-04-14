@@ -273,7 +273,8 @@ def set_dhcp(iface: str) -> dict:
 
     cmds = [
         ["nmcli", "connection", "modify", conn,
-         "ipv4.method", "auto", "ipv4.addresses", "", "ipv4.gateway", ""],
+         "ipv4.method", "auto", "ipv4.addresses", "", "ipv4.gateway", "",
+         "connection.autoconnect", "yes"],
         ["nmcli", "connection", "up", conn],
     ]
     for cmd in cmds:
@@ -294,7 +295,8 @@ def set_static(iface: str, ip: str, prefix: int = 24,
 
     addr = f"{ip}/{prefix}"
     cmd = ["nmcli", "connection", "modify", conn,
-           "ipv4.method", "manual", "ipv4.addresses", addr]
+           "ipv4.method", "manual", "ipv4.addresses", addr,
+           "connection.autoconnect", "yes"]
     if gateway:
         cmd += ["ipv4.gateway", gateway]
     if dns:
@@ -378,7 +380,7 @@ def enable_dhcp_server(iface: str, range_start: str, range_end: str,
     conf = _dnsmasq_conf_path(iface)
     content = (
         f"interface={iface}\n"
-        f"bind-interfaces\n"
+        f"bind-dynamic\n"
         f"dhcp-range={range_start},{range_end},{lease_time}\n"
     )
     try:

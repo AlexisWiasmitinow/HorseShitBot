@@ -31,55 +31,45 @@ echo ""
 echo "--- APT packages ---"
 apt-get update -qq
 
-# ROS 2 build tools
 apt-get install -y --no-install-recommends \
   python3-colcon-common-extensions \
   python3-rosdep \
   python3-pip \
-  dos2unix
-
-# ROS 2 Humble packages (ignore failures for packages not in all repos)
-apt-get install -y --no-install-recommends \
-  ros-humble-ros-base \
-  || true
-
-# RealSense (optional — only available on some architectures)
-apt-get install -y --no-install-recommends \
-  ros-humble-realsense2-camera \
-  || echo "  (realsense2_camera not available — camera features disabled)"
-
-# spidev for display tests
-apt-get install -y --no-install-recommends \
   python3-spidev \
-  || true
+  dos2unix \
+  hostapd \
+  dnsmasq \
+  ros-humble-ros-base \
+  ros-humble-realsense2-camera \
+  2>/dev/null || true
 
-# hostapd for WiFi AP (managed by NM — keep the service disabled)
-apt-get install -y --no-install-recommends hostapd || true
+# hostapd is managed by NM — keep the service disabled
 systemctl disable --now hostapd 2>/dev/null || true
 systemctl unmask hostapd 2>/dev/null || true
 
-# dnsmasq for DHCP server — runs as a systemd service, always enabled.
-# With no config files in /etc/dnsmasq.d/ and DNS disabled (port=0) it idles
-# doing nothing.  Per-interface hsb-*.conf files control DHCP ranges and
-# survive reboots automatically.
-apt-get install -y --no-install-recommends dnsmasq || true
+# dnsmasq runs as a systemd service for DHCP + DNS forwarding.
+# Per-interface hsb-*.conf files control DHCP ranges.
 systemctl enable dnsmasq 2>/dev/null || true
 
 # ── Python packages (system-wide, needed by ROS 2 nodes) ────────
 if [ "$ROS_ONLY" = false ]; then
   echo ""
   echo "--- pip packages ---"
+
+  # Remove stale apt pymodbus (too old for our codebase)
+  apt-get remove -y python3-pymodbus 2>/dev/null || true
+
   pip3 install --break-system-packages \
     luma.lcd \
     Pillow \
-    pymodbus \
+    "pymodbus>=3.10" \
     pyserial \
     evdev \
     2>/dev/null \
   || pip3 install \
     luma.lcd \
     Pillow \
-    pymodbus \
+    "pymodbus>=3.10" \
     pyserial \
     evdev
 fi
@@ -126,15 +116,18 @@ mkdir -p /etc/dnsmasq.d
 chown "$REAL_USER":"$REAL_USER" /etc/dnsmasq.d
 echo "  /etc/dnsmasq.d owned by $REAL_USER"
 
-# Disable DNS (port=0) so dnsmasq only acts as a DHCP server.
-# Per-interface configs in /etc/dnsmasq.d/hsb-*.conf add dhcp-range lines.
+# Base dnsmasq config: forward DNS to public resolvers so the
+# resolvconf hook (nameserver 127.0.0.1) actually works, and AP
+# clients also get working DNS.
+# Per-interface hsb-*.conf files add DHCP ranges.
 HSB_DNSMASQ_BASE="/etc/dnsmasq.d/00-hsb-base.conf"
 cat > "$HSB_DNSMASQ_BASE" << 'EOF'
-port=0
 no-resolv
+server=8.8.8.8
+server=1.1.1.1
 EOF
 chown "$REAL_USER":"$REAL_USER" "$HSB_DNSMASQ_BASE"
-echo "  Created $HSB_DNSMASQ_BASE (DNS disabled, DHCP only)"
+echo "  Created $HSB_DNSMASQ_BASE (DNS forwarding to 8.8.8.8 / 1.1.1.1)"
 
 systemctl restart dnsmasq 2>/dev/null || true
 

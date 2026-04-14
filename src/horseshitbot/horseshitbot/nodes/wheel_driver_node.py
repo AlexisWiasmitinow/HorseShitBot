@@ -89,6 +89,7 @@ class WheelDriverNode(Node):
         self._backend: WheelBackend | None = None
         self._backend_name = ""
         self._backend_error = ""
+        self._backend_diag: dict = {}
 
         # Subscriptions and services
         self.create_subscription(Twist, "/cmd_vel", self._cb_cmd_vel, 10)
@@ -107,6 +108,9 @@ class WheelDriverNode(Node):
         period = 1.0 / max(1.0, self._update_hz)
         self._last_tick = time.monotonic()
         self.create_timer(period, self._control_loop)
+
+        # Slower diagnostics timer (temps, voltages) — every 5 s
+        self.create_timer(5.0, self._diag_tick)
 
         self.get_logger().info(f"Wheel driver started (backend={self._backend_name})")
 
@@ -247,6 +251,17 @@ class WheelDriverNode(Node):
         response.message = "emergency stop"
         return response
 
+    # ── diagnostics ────────────────────────────────────────────
+
+    def _diag_tick(self):
+        if self._backend:
+            try:
+                self._backend_diag = self._backend.get_diagnostics()
+            except Exception:
+                self._backend_diag = {}
+        else:
+            self._backend_diag = {}
+
     # ── control loop ─────────────────────────────────────────────
 
     def _control_loop(self):
@@ -280,14 +295,17 @@ class WheelDriverNode(Node):
         import json
         with self._lock:
             estopped = self._estopped
-        status = json.dumps({
+        payload = {
             "backend": self._backend_name,
             "left_rpm": round(self._actual_left, 1),
             "right_rpm": round(self._actual_right, 1),
             "stopping": stop_fast,
             "estopped": estopped,
             "error": self._backend_error,
-        })
+        }
+        if self._backend_diag:
+            payload["diag"] = self._backend_diag
+        status = json.dumps(payload)
         msg = String()
         msg.data = status
         self._status_pub.publish(msg)

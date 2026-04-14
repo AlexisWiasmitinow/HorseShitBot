@@ -108,6 +108,7 @@ class StatusScreenNode(Node):
             self._disp = None
 
         self._wheel = {}
+        self._mks_bus: dict = {}
         self._actuators = {"lift": {}, "brush": {}, "bin_door": {}}
         self._bag_recorder: dict = {}
         self._gamepad: dict = {}
@@ -123,6 +124,7 @@ class StatusScreenNode(Node):
         self.create_timer(5.0, self._poll_thermals)
 
         self.create_subscription(String, "/wheel_status", self._cb_wheel, 10)
+        self.create_subscription(String, "/mks_bus/status", self._cb_mks_bus, 10)
         self.create_subscription(ActuatorStateMsg, "/lift/state", lambda m: self._cb_act("lift", m), 10)
         self.create_subscription(ActuatorStateMsg, "/brush/state", lambda m: self._cb_act("brush", m), 10)
         self.create_subscription(ActuatorStateMsg, "/bin_door/state", lambda m: self._cb_act("bin_door", m), 10)
@@ -139,6 +141,12 @@ class StatusScreenNode(Node):
     def _cb_wheel(self, msg: String):
         try:
             self._wheel = json.loads(msg.data)
+        except Exception:
+            pass
+
+    def _cb_mks_bus(self, msg: String):
+        try:
+            self._mks_bus = json.loads(msg.data)
         except Exception:
             pass
 
@@ -310,9 +318,14 @@ class StatusScreenNode(Node):
             draw.text((W - 46, y + 1), direction.upper()[:5], fill=COL_TEXT, font=font_sm)
             y += 16
 
-        # Thermals — single line
+        # Thermals — single line (Jetson zones + ODrive FET temps)
         with self._thermal_lock:
             thermals = list(self._thermals)
+        diag = w.get("diag", {})
+        for side, label in [("left", "ODL"), ("right", "ODR")]:
+            t = diag.get(f"fet_temp_{side}")
+            if t is not None:
+                thermals.append({"type": label, "temp_c": t})
         if thermals:
             y += 2
             draw.rectangle([0, y, W, y + 14], fill=COL_SECTION)
@@ -396,9 +409,21 @@ class StatusScreenNode(Node):
         fy += row_h
 
         # Error line or Home hint
+        err_parts: list[str] = []
         wheel_err = self._wheel.get("error", "")
         if wheel_err:
-            err_text = wheel_err if len(wheel_err) <= 35 else wheel_err[:33] + ".."
+            err_parts.append(wheel_err)
+        motors = self._mks_bus.get("motors", {})
+        offline = [mid for mid, ok in motors.items() if not ok]
+        if offline:
+            err_parts.append(f"MKS {','.join(offline)} offline")
+        if not self._mks_bus.get("bus_connected", True) and motors:
+            err_parts.append("MKS bus down")
+
+        if err_parts:
+            err_text = " | ".join(err_parts)
+            if len(err_text) > 35:
+                err_text = err_text[:33] + ".."
             draw.text((6, fy), err_text, fill=COL_ACCENT, font=font_sm)
         else:
             draw.text((6, fy), "[Home] controls", fill=COL_MUTED, font=font_sm)

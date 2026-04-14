@@ -60,10 +60,19 @@ class ODriveWheelBackend(WheelBackend):
         if not self._odrv.connect():
             raise RuntimeError(f"Cannot connect to ODrive on {self._odrv.port}")
 
-        both_ready = all(self._odrv.is_ready_for_closed_loop(ax) for ax in (0, 1))
+        vbus = self._odrv.get_vbus_voltage()
+        _log.info("ODrive connected — Vbus=%.1fV", vbus)
 
-        if not both_ready:
-            _log.info("Motors not yet calibrated, applying defaults and calibrating...")
+        ready = {}
+        for ax in (0, 1):
+            ready[ax] = self._odrv.is_ready_for_closed_loop(ax)
+            cal = self._odrv.read_property(f"axis{ax}.motor.is_calibrated")
+            enc = self._odrv.read_property(f"axis{ax}.encoder.is_ready")
+            _log.info("Axis %d: calibrated=%s  encoder_ready=%s  ready=%s",
+                       ax, cal, enc, ready[ax])
+
+        if not all(ready.values()):
+            _log.info("Calibration needed — applying defaults …")
             self._odrv.apply_defaults()
 
         for ax in (0, 1):
@@ -78,7 +87,10 @@ class ODriveWheelBackend(WheelBackend):
             )
 
         for ax in (0, 1):
-            _log.info("Starting motor on axis %d ...", ax)
+            if ready[ax]:
+                _log.info("Axis %d already calibrated — entering closed loop …", ax)
+            else:
+                _log.info("Axis %d needs calibration — starting full sequence …", ax)
             if not self._odrv.start_motor(ax):
                 raise RuntimeError(f"ODrive axis{ax} startup failed")
             self._odrv.set_velocity_mode(ax)
@@ -151,3 +163,27 @@ class ODriveWheelBackend(WheelBackend):
         except Exception as e:
             _log.error("Resume failed: %s", e)
             return False
+
+    def get_diagnostics(self) -> dict:
+        if not self._connected:
+            return {}
+        diag: dict = {}
+        try:
+            diag["vbus"] = self._odrv.get_vbus_voltage()
+        except Exception:
+            pass
+        for ax in (0, 1):
+            label = "left" if ax == 0 else "right"
+            try:
+                t = self._odrv.get_temperature(ax)
+                if t is not None:
+                    diag[f"fet_temp_{label}"] = round(t, 1)
+            except Exception:
+                pass
+            try:
+                t = self._odrv.get_motor_temperature(ax)
+                if t is not None:
+                    diag[f"motor_temp_{label}"] = round(t, 1)
+            except Exception:
+                pass
+        return diag

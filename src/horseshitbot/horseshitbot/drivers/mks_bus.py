@@ -7,18 +7,15 @@ Provides thread-safe Modbus RTU communication with MKS servo motors.
 
 from __future__ import annotations
 
-import inspect
+import logging
 import threading
 import time
 from dataclasses import dataclass
 
+from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
 
-try:
-    from pymodbus import FramerType
-    _FRAMER = FramerType.RTU
-except Exception:
-    _FRAMER = None
+_pymodbus_logger = logging.getLogger("pymodbus")
 
 REG_WORKMODE = 0x0082
 REG_ENABLE = 0x00F3
@@ -31,22 +28,6 @@ MODE_SR_OPEN = 3
 MODE_SR_VFOC = 5
 
 COUNTS_PER_REV = 0x4000
-
-
-def _id_kw(method):
-    try:
-        params = inspect.signature(method).parameters
-        for key in ("device_id", "unit", "slave"):
-            if key in params:
-                return key
-    except Exception:
-        pass
-    return None
-
-
-def _with_unit(method, unit_id: int):
-    kw = _id_kw(method)
-    return {kw: unit_id} if kw else {}
 
 
 def _split_i32_to_u16s(val: int):
@@ -74,27 +55,16 @@ class MksBus:
         self.cfg = cfg
         self.lock = threading.Lock()
 
-        if _FRAMER is not None:
-            self.client = ModbusSerialClient(
-                port=cfg.port,
-                framer=_FRAMER,
-                baudrate=cfg.baud,
-                bytesize=8,
-                parity="N",
-                stopbits=1,
-                timeout=cfg.timeout,
-                retries=0,
-            )
-        else:
-            self.client = ModbusSerialClient(
-                method="rtu",
-                port=cfg.port,
-                baudrate=cfg.baud,
-                bytesize=8,
-                parity="N",
-                stopbits=1,
-                timeout=cfg.timeout,
-            )
+        self.client = ModbusSerialClient(
+            port=cfg.port,
+            framer=FramerType.RTU,
+            baudrate=cfg.baud,
+            bytesize=8,
+            parity="N",
+            stopbits=1,
+            timeout=cfg.timeout,
+            retries=cfg.retries,
+        )
 
     def connect(self):
         if not self.client.connect():
@@ -114,41 +84,45 @@ class MksBus:
             pass
 
     def _retry(self, call, err_ctx: str):
-        last_exc = None
-        attempts = max(1, int(self.cfg.retries) + 1)
-
-        for i in range(attempts):
+        """Execute a Modbus call. Pymodbus handles protocol-level retries;
+        we only reconnect if the serial port itself drops."""
+        self._ensure_connected()
+        try:
+            with self.lock:
+                rr = call()
+            if hasattr(rr, "isError") and rr.isError():
+                raise RuntimeError(f"{err_ctx}: {rr}")
+            if self.cfg.inter_delay and self.cfg.inter_delay > 0:
+                time.sleep(self.cfg.inter_delay)
+            return rr
+        except Exception as first_err:
+            # One reconnect attempt in case the port dropped
             try:
-                self._ensure_connected()
+                self.client.close()
+            except Exception:
+                pass
+            try:
+                self.client.connect()
+            except Exception:
+                pass
+            time.sleep(0.02)
+            try:
                 with self.lock:
                     rr = call()
                 if hasattr(rr, "isError") and rr.isError():
                     raise RuntimeError(f"{err_ctx}: {rr}")
-
                 if self.cfg.inter_delay and self.cfg.inter_delay > 0:
                     time.sleep(self.cfg.inter_delay)
                 return rr
-
-            except Exception as e:
-                last_exc = e
-                try:
-                    self.client.close()
-                except Exception:
-                    pass
-                try:
-                    self.client.connect()
-                except Exception:
-                    pass
-                time.sleep(0.02 * (i + 1))
-
-        raise RuntimeError(f"{err_ctx}: {last_exc}")
+            except Exception:
+                raise RuntimeError(f"{err_ctx}: {first_err}") from None
 
     def write_reg(self, unit_id: int, addr: int, value: int):
         def _call():
             return self.client.write_register(
                 address=addr,
                 value=int(value) & 0xFFFF,
-                **_with_unit(self.client.write_register, unit_id),
+                device_id=unit_id,
             )
         return self._retry(_call, f"write_reg failed unit={unit_id} addr=0x{addr:04X}")
 
@@ -157,7 +131,7 @@ class MksBus:
             return self.client.write_registers(
                 address=addr,
                 values=[int(v) & 0xFFFF for v in values],
-                **_with_unit(self.client.write_registers, unit_id),
+                device_id=unit_id,
             )
         return self._retry(_call, f"write_regs failed unit={unit_id} addr=0x{addr:04X}")
 
@@ -166,10 +140,40 @@ class MksBus:
             return self.client.read_holding_registers(
                 address=addr,
                 count=count,
-                **_with_unit(self.client.read_holding_registers, unit_id),
+                device_id=unit_id,
             )
         rr = self._retry(_call, f"read_regs failed unit={unit_id} addr=0x{addr:04X}")
         return rr.registers if hasattr(rr, "registers") else []
+
+    def read_input_regs(self, unit_id: int, addr: int, count: int = 1):
+        def _call():
+            return self.client.read_input_registers(
+                address=addr,
+                count=count,
+                device_id=unit_id,
+            )
+        rr = self._retry(_call, f"read_input_regs failed unit={unit_id} addr=0x{addr:04X}")
+        return rr.registers if hasattr(rr, "registers") else []
+
+    def probe(self, unit_id: int) -> bool:
+        """Quick single-attempt connectivity check (no retries, no reconnect).
+        Suppresses pymodbus log noise for expected timeouts."""
+        self._ensure_connected()
+        prev_level = _pymodbus_logger.level
+        prev_retries = getattr(self.client, "retries", 0)
+        _pymodbus_logger.setLevel(logging.CRITICAL)
+        try:
+            self.client.retries = 0
+            with self.lock:
+                rr = self.client.read_input_registers(
+                    address=0x3A, count=1, device_id=unit_id,
+                )
+            return not (hasattr(rr, "isError") and rr.isError())
+        except Exception:
+            return False
+        finally:
+            self.client.retries = prev_retries
+            _pymodbus_logger.setLevel(prev_level)
 
     def init_servo(self, unit_id: int, mode: int = MODE_SR_VFOC, enable: bool = True):
         self.write_reg(unit_id, REG_WORKMODE, int(mode))

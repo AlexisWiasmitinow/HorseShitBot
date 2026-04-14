@@ -1,15 +1,9 @@
-import inspect
 import threading
 import time
 from dataclasses import dataclass
 
+from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
-
-try:
-    from pymodbus import FramerType
-    _FRAMER = FramerType.RTU
-except Exception:
-    _FRAMER = None
 
 REG_WORKMODE         = 0x0082
 REG_ENABLE           = 0x00F3
@@ -22,20 +16,6 @@ MODE_SR_OPEN = 3
 MODE_SR_VFOC = 5
 
 COUNTS_PER_REV = 0x4000
-
-def _id_kw(method):
-    try:
-        params = inspect.signature(method).parameters
-        for key in ("device_id", "unit", "slave"):
-            if key in params:
-                return key
-    except Exception:
-        pass
-    return None
-
-def _with_unit(method, unit_id: int):
-    kw = _id_kw(method)
-    return {kw: unit_id} if kw else {}
 
 def _split_i32_to_u16s(val: int):
     val &= 0xFFFFFFFF
@@ -57,27 +37,16 @@ class MksBus:
         self.cfg = cfg
         self.lock = threading.Lock()
 
-        if _FRAMER is not None:
-            self.client = ModbusSerialClient(
-                port=cfg.port,
-                framer=_FRAMER,
-                baudrate=cfg.baud,
-                bytesize=8,
-                parity="N",
-                stopbits=1,
-                timeout=cfg.timeout,
-                retries=0,
-            )
-        else:
-            self.client = ModbusSerialClient(
-                method="rtu",
-                port=cfg.port,
-                baudrate=cfg.baud,
-                bytesize=8,
-                parity="N",
-                stopbits=1,
-                timeout=cfg.timeout,
-            )
+        self.client = ModbusSerialClient(
+            port=cfg.port,
+            framer=FramerType.RTU,
+            baudrate=cfg.baud,
+            bytesize=8,
+            parity="N",
+            stopbits=1,
+            timeout=cfg.timeout,
+            retries=0,
+        )
 
     def connect(self):
         if not self.client.connect():
@@ -131,7 +100,7 @@ class MksBus:
             return self.client.write_register(
                 address=addr,
                 value=int(value) & 0xFFFF,
-                **_with_unit(self.client.write_register, unit_id),
+                device_id=unit_id,
             )
         return self._retry(_call, f"write_reg failed unit={unit_id} addr=0x{addr:04X}")
 
@@ -140,7 +109,7 @@ class MksBus:
             return self.client.write_registers(
                 address=addr,
                 values=[int(v) & 0xFFFF for v in values],
-                **_with_unit(self.client.write_registers, unit_id),
+                device_id=unit_id,
             )
         return self._retry(_call, f"write_regs failed unit={unit_id} addr=0x{addr:04X}")
 
