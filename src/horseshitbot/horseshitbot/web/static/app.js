@@ -817,6 +817,15 @@ function renderNetInterfaces() {
   }
 }
 
+async function _parseJsonResponse(resp) {
+  const text = await resp.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { success: false, message: text || `HTTP ${resp.status}` };
+  }
+}
+
 function openNetConfig(ifaceName) {
   netConfigIface = ifaceName;
   const modal = document.getElementById("net-config-modal");
@@ -881,7 +890,7 @@ async function applyNetConfig() {
       const resp = await fetch(`/api/network/interface/${encodeURIComponent(iface)}/dhcp`, {
         method: "PUT",
       });
-      result = await resp.json();
+      result = await _parseJsonResponse(resp);
     } else {
       const ip = document.getElementById("net-cfg-ip").value.trim();
       if (!ip) { showNetMsg("IP address is required.", "err"); return; }
@@ -895,7 +904,7 @@ async function applyNetConfig() {
           dns: document.getElementById("net-cfg-dns").value.trim(),
         }),
       });
-      result = await resp.json();
+      result = await _parseJsonResponse(resp);
     }
 
     if (!result.success) {
@@ -916,7 +925,7 @@ async function applyNetConfig() {
           range_end: document.getElementById("net-cfg-dhcpd-end").value.trim(),
         }),
       });
-      const dhcpResult = await dhcpResp.json();
+      const dhcpResult = await _parseJsonResponse(dhcpResp);
       if (!dhcpResult.success) {
         showNetMsg(result.message + " | DHCP server: " + dhcpResult.message, "warn");
       } else if (dhcpdEnabled) {

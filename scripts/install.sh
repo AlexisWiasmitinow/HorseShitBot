@@ -53,15 +53,17 @@ apt-get install -y --no-install-recommends \
   python3-spidev \
   || true
 
-# hostapd + dnsmasq for WiFi AP mode and DHCP server
-# NM manages these internally — we don't want them as standalone services
-apt-get install -y --no-install-recommends \
-  hostapd \
-  dnsmasq-base \
-  || true
-systemctl disable --now dnsmasq 2>/dev/null || true
+# hostapd for WiFi AP (managed by NM — keep the service disabled)
+apt-get install -y --no-install-recommends hostapd || true
 systemctl disable --now hostapd 2>/dev/null || true
 systemctl unmask hostapd 2>/dev/null || true
+
+# dnsmasq for DHCP server — runs as a systemd service, always enabled.
+# With no config files in /etc/dnsmasq.d/ and DNS disabled (port=0) it idles
+# doing nothing.  Per-interface hsb-*.conf files control DHCP ranges and
+# survive reboots automatically.
+apt-get install -y --no-install-recommends dnsmasq || true
+systemctl enable dnsmasq 2>/dev/null || true
 
 # ── Python packages (system-wide, needed by ROS 2 nodes) ────────
 if [ "$ROS_ONLY" = false ]; then
@@ -116,6 +118,32 @@ $REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart bluetooth
 EOF
 chmod 0440 "$SUDOERS_BT"
 echo "  Created $SUDOERS_BT"
+
+# ── dnsmasq DHCP server permissions ──────────────────────────────
+echo ""
+echo "--- dnsmasq permissions ---"
+mkdir -p /etc/dnsmasq.d
+chown "$REAL_USER":"$REAL_USER" /etc/dnsmasq.d
+echo "  /etc/dnsmasq.d owned by $REAL_USER"
+
+# Disable DNS (port=0) so dnsmasq only acts as a DHCP server.
+# Per-interface configs in /etc/dnsmasq.d/hsb-*.conf add dhcp-range lines.
+HSB_DNSMASQ_BASE="/etc/dnsmasq.d/00-hsb-base.conf"
+cat > "$HSB_DNSMASQ_BASE" << 'EOF'
+port=0
+no-resolv
+EOF
+chown "$REAL_USER":"$REAL_USER" "$HSB_DNSMASQ_BASE"
+echo "  Created $HSB_DNSMASQ_BASE (DNS disabled, DHCP only)"
+
+systemctl restart dnsmasq 2>/dev/null || true
+
+SUDOERS_DNSMASQ="/etc/sudoers.d/hsb-dnsmasq"
+cat > "$SUDOERS_DNSMASQ" << EOF
+$REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart dnsmasq
+EOF
+chmod 0440 "$SUDOERS_DNSMASQ"
+echo "  Created $SUDOERS_DNSMASQ"
 
 # ── Fix line endings (repo may come from Windows) ────────────────
 echo ""

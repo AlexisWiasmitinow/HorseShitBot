@@ -48,7 +48,7 @@ except ImportError:
 
 try:
     import uvicorn
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
     from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
@@ -393,6 +393,13 @@ class WebDashboardNode(Node):
         bridge = self._bridge
         ros_node = self
 
+        @app.exception_handler(Exception)
+        async def _global_exception_handler(request: Request, exc: Exception):
+            return JSONResponse(
+                {"success": False, "message": f"Internal error: {exc}"},
+                status_code=500,
+            )
+
         @app.get("/")
         async def index():
             index_path = STATIC_DIR / "index.html"
@@ -671,13 +678,25 @@ class WebDashboardNode(Node):
 
         @app.put("/api/network/interface/{iface}/static")
         async def set_static_ip(iface: str, body: StaticIpBody):
-            return await _run_in_thread(
-                netmgr.set_static, iface, body.ip, body.prefix, body.gateway, body.dns
-            )
+            try:
+                return await _run_in_thread(
+                    netmgr.set_static, iface, body.ip, body.prefix, body.gateway, body.dns
+                )
+            except Exception as e:
+                return JSONResponse(
+                    {"success": False, "message": f"Failed to set static IP: {e}"},
+                    status_code=500,
+                )
 
         @app.put("/api/network/interface/{iface}/dhcp")
         async def set_dhcp_ip(iface: str):
-            return await _run_in_thread(netmgr.set_dhcp, iface)
+            try:
+                return await _run_in_thread(netmgr.set_dhcp, iface)
+            except Exception as e:
+                return JSONResponse(
+                    {"success": False, "message": f"Failed to set DHCP: {e}"},
+                    status_code=500,
+                )
 
         @app.put("/api/network/interface/{iface}/dhcp-server")
         async def set_dhcp_server(iface: str, body: DhcpServerBody):
@@ -687,12 +706,24 @@ class WebDashboardNode(Node):
                         {"success": False, "message": "range_start and range_end required"},
                         status_code=400,
                     )
-                return await _run_in_thread(
-                    netmgr.enable_dhcp_server,
-                    iface, body.range_start, body.range_end, body.lease_time,
-                )
+                try:
+                    return await _run_in_thread(
+                        netmgr.enable_dhcp_server,
+                        iface, body.range_start, body.range_end, body.lease_time,
+                    )
+                except Exception as e:
+                    return JSONResponse(
+                        {"success": False, "message": f"Failed to enable DHCP server: {e}"},
+                        status_code=500,
+                    )
             else:
-                return await _run_in_thread(netmgr.disable_dhcp_server, iface)
+                try:
+                    return await _run_in_thread(netmgr.disable_dhcp_server, iface)
+                except Exception as e:
+                    return JSONResponse(
+                        {"success": False, "message": f"Failed to disable DHCP server: {e}"},
+                        status_code=500,
+                    )
 
         @app.put("/api/network/interface/{iface}/ap")
         async def set_ap_mode(iface: str, body: ApModeBody):

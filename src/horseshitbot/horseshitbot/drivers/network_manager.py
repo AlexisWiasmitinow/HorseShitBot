@@ -348,7 +348,10 @@ def _dnsmasq_conf_path(iface: str) -> Path:
 
 
 def _is_dnsmasq_active(iface: str) -> bool:
-    return _dnsmasq_conf_path(iface).exists()
+    if not _dnsmasq_conf_path(iface).exists():
+        return False
+    r = _run(["systemctl", "is-active", "--quiet", "dnsmasq"])
+    return r.returncode == 0
 
 
 def _read_dnsmasq_range(iface: str) -> tuple[str, str]:
@@ -367,7 +370,11 @@ def _read_dnsmasq_range(iface: str) -> tuple[str, str]:
 
 def enable_dhcp_server(iface: str, range_start: str, range_end: str,
                        lease_time: str = "12h") -> dict:
-    """Write a per-interface dnsmasq config and restart dnsmasq."""
+    """Write a per-interface dnsmasq config and restart dnsmasq.
+
+    Expects /etc/dnsmasq.d to be writable by the current user
+    (set up by install.sh) and passwordless sudo for systemctl restart dnsmasq.
+    """
     conf = _dnsmasq_conf_path(iface)
     content = (
         f"interface={iface}\n"
@@ -377,17 +384,9 @@ def enable_dhcp_server(iface: str, range_start: str, range_end: str,
     try:
         _DNSMASQ_CONF_DIR.mkdir(parents=True, exist_ok=True)
         conf.write_text(content)
-    except PermissionError:
-        r = _run(["sudo", "tee", str(conf)], timeout=5)
-        if r.returncode != 0:
-            return {"success": False, "message": "Permission denied writing dnsmasq config"}
-        # Write via sudo tee
-        r = subprocess.run(
-            ["sudo", "tee", str(conf)],
-            input=content, capture_output=True, text=True, timeout=5,
-        )
-        if r.returncode != 0:
-            return {"success": False, "message": r.stderr.strip()}
+    except PermissionError as e:
+        return {"success": False,
+                "message": f"Cannot write {conf} — run install.sh to fix permissions: {e}"}
 
     r = _run(["sudo", "systemctl", "restart", "dnsmasq"])
     if r.returncode != 0:
@@ -402,8 +401,9 @@ def disable_dhcp_server(iface: str) -> dict:
     if conf.exists():
         try:
             conf.unlink()
-        except PermissionError:
-            _run(["sudo", "rm", str(conf)])
+        except PermissionError as e:
+            return {"success": False,
+                    "message": f"Cannot remove {conf} — run install.sh to fix permissions: {e}"}
 
     r = _run(["sudo", "systemctl", "restart", "dnsmasq"])
     ok = r.returncode == 0
