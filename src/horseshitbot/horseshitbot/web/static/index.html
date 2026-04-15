@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -469,3 +470,440 @@
   <script src="/static/app.js"></script>
 </body>
 </html>
+=======
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HorseShitBot Dashboard</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>HorseShitBot</h1>
+    <nav class="tabs">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="camera">Camera</button>
+      <button class="tab" data-tab="recordings">Recordings</button>
+      <button class="tab" data-tab="controller">Controller</button>
+      <button class="tab" data-tab="lidar">Lidar</button>
+      <button class="tab" data-tab="network">Network</button>
+    </nav>
+    <span id="ws-status">Disconnected</span>
+  </header>
+
+  <div id="estop-banner" class="estop-banner" style="display:none">E-STOP ACTIVE — Press B on gamepad to resume</div>
+
+  <!-- ─── Dashboard tab ─── -->
+  <div id="tab-dashboard" class="tab-content active">
+    <div class="grid">
+      <!-- Wheels -->
+      <div class="card" id="card-wheels">
+        <h2>Wheels</h2>
+        <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
+        <div class="kv"><span class="label">Left RPM</span><span class="value" id="w-left">0</span></div>
+        <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
+        <div class="kv"><span class="label">Right RPM</span><span class="value" id="w-right">0</span></div>
+        <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
+        <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
+        <div class="btn-row">
+          <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
+          <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
+          <button onclick="switchBackend()">Switch Backend</button>
+        </div>
+      </div>
+
+      <!-- Lift -->
+      <div class="card" id="card-lift">
+        <h2>Lift</h2>
+        <div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
+        <div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
+        <div class="kv"><span class="label">Referenced</span><span class="value" id="lift-ref">No</span></div>
+        <div class="btn-row">
+          <button onclick="cmd('lift_node','open')">Open</button>
+          <button onclick="cmd('lift_node','close')">Close</button>
+          <button onclick="cmd('lift_node','stop')">Stop</button>
+          <button onclick="cmd('lift_node','reference')">Reference</button>
+        </div>
+      </div>
+
+      <!-- Brush -->
+      <div class="card" id="card-brush">
+        <h2>Brush</h2>
+        <div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
+        <div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
+        <div class="kv"><span class="label">Referenced</span><span class="value" id="brush-ref">No</span></div>
+        <div class="btn-row">
+          <button onclick="cmd('brush_node','open')">Open</button>
+          <button onclick="cmd('brush_node','close')">Close</button>
+          <button onclick="cmd('brush_node','stop')">Stop</button>
+          <button onclick="cmd('brush_node','reference')">Reference</button>
+        </div>
+      </div>
+
+      <!-- Bin Door -->
+      <div class="card" id="card-bin-door">
+        <h2>Bin Door</h2>
+        <div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
+        <div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
+        <div class="kv"><span class="label">Referenced</span><span class="value" id="bin_door-ref">No</span></div>
+        <div class="btn-row">
+          <button onclick="cmd('bin_door_node','open')">Open</button>
+          <button onclick="cmd('bin_door_node','close')">Close</button>
+          <button onclick="cmd('bin_door_node','stop')">Stop</button>
+          <button onclick="cmd('bin_door_node','reference')">Reference</button>
+        </div>
+      </div>
+
+      <!-- Hardware -->
+      <div class="card" id="card-hardware">
+        <h2>Hardware</h2>
+        <div class="kv">
+          <span class="label">ODrive</span>
+          <span class="value" id="hw-odrive">--</span>
+        </div>
+        <div class="kv">
+          <span class="label">MKS Bus</span>
+          <span class="value" id="hw-mks-bus">--</span>
+        </div>
+        <div id="hw-motors"></div>
+      </div>
+
+      <!-- Gamepad -->
+      <div class="card" id="card-gamepad">
+        <h2>Gamepad</h2>
+        <div class="kv">
+          <span class="label">Status</span>
+          <span class="value" id="gp-status">
+            <span class="gp-dot" id="gp-dot"></span>
+            <span id="gp-label">Disconnected</span>
+          </span>
+        </div>
+        <div class="kv" id="gp-battery-row" style="display:none">
+          <span class="label">Battery</span>
+          <span class="value" id="gp-battery-wrap">
+            <span class="gp-battery-icon" id="gp-battery-icon"></span>
+            <span id="gp-battery-text">--</span>
+          </span>
+        </div>
+        <div class="kv" id="gp-bt-row" style="display:none">
+          <span class="label">Bluetooth</span>
+          <span class="value" id="gp-bt-mac" style="font-size:0.75rem">--</span>
+        </div>
+        <div class="btn-row" id="gp-reconnect-row" style="display:none">
+          <button id="gp-reconnect-btn" onclick="reconnectGamepad()">Reconnect</button>
+          <span id="gp-reconnect-msg" class="ctrl-msg" style="margin:0"></span>
+        </div>
+      </div>
+
+      <!-- Thermals -->
+      <div class="card" id="card-thermals">
+        <h2>Thermals</h2>
+        <div id="thermal-zones" class="thermal-zones">
+          <span class="thermal-placeholder">Waiting for data...</span>
+        </div>
+      </div>
+
+      <!-- Camera / Recording -->
+      <div class="card" id="card-recording">
+        <h2>Camera / Recording</h2>
+        <div class="kv">
+          <span class="label">Status</span>
+          <span class="value" id="rec-status">
+            <span class="rec-dot" id="rec-dot"></span>
+            <span id="rec-label">Idle</span>
+          </span>
+        </div>
+        <div class="kv"><span class="label">Duration</span><span class="value" id="rec-duration">--</span></div>
+        <div class="kv"><span class="label">Frames</span><span class="value" id="rec-frames">--</span></div>
+        <div class="kv"><span class="label">Bag Path</span><span class="value" id="rec-path" style="font-size:0.75rem;word-break:break-all;">--</span></div>
+        <div class="btn-row">
+          <button id="btn-rec-start" onclick="startRecording()">Start Recording</button>
+          <button id="btn-rec-stop" class="danger" onclick="stopRecording()">Stop Recording</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Camera tab ─── -->
+  <div id="tab-camera" class="tab-content">
+    <div class="cam-wrap">
+      <div class="cam-controls">
+        <button id="cam-toggle" class="primary" onclick="toggleCamera()">Start Stream</button>
+        <label class="cam-slider-label">
+          FPS
+          <input type="range" id="cam-fps" min="1" max="15" value="10">
+          <span id="cam-fps-val">10</span>
+        </label>
+        <label class="cam-slider-label">
+          Quality
+          <input type="range" id="cam-quality" min="10" max="95" value="50">
+          <span id="cam-quality-val">50</span>
+        </label>
+        <span class="cam-state" id="cam-state">Stopped</span>
+      </div>
+      <div class="cam-grid">
+        <div class="cam-card">
+          <h3>Color</h3>
+          <img id="cam-color" alt="Color stream">
+        </div>
+        <div class="cam-card">
+          <h3>Depth</h3>
+          <img id="cam-depth" alt="Depth stream">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Recordings tab ─── -->
+  <div id="tab-recordings" class="tab-content">
+    <div class="bags-wrap">
+      <div class="topic-picker card" id="topic-picker">
+        <div class="topic-picker-header">
+          <h2>Record Topics</h2>
+          <span class="topic-picker-hint" id="topic-picker-hint"></span>
+          <button class="primary" onclick="saveBagTopics()">Apply</button>
+        </div>
+        <div id="topic-groups"></div>
+        <div id="topic-msg" class="ctrl-msg"></div>
+      </div>
+
+      <div class="rec-bar card" id="rec-bar">
+        <div class="rec-bar-row">
+          <span class="rec-dot-lg" id="rec-dot-lg"></span>
+          <span class="rec-bar-label" id="rec-bar-label">Idle</span>
+          <span class="rec-bar-detail" id="rec-bar-time">--</span>
+          <span class="rec-bar-detail" id="rec-bar-frames">-- frames</span>
+          <button class="primary" id="rec-bar-start" onclick="startRecording()">Start Recording</button>
+          <button class="danger" id="rec-bar-stop" onclick="stopRecording()" style="display:none">Stop Recording</button>
+        </div>
+      </div>
+
+      <div class="bags-header">
+        <h2>Recorded Bags</h2>
+        <span class="bags-summary" id="bags-summary"></span>
+        <button onclick="loadBags()">Refresh</button>
+      </div>
+      <div class="disk-bar-wrap" id="disk-bar-wrap" style="display:none">
+        <div class="disk-labels">
+          <span id="disk-label-used"></span>
+          <span id="disk-label-free"></span>
+        </div>
+        <div class="disk-bar">
+          <div class="disk-bar-bags" id="disk-bar-bags"></div>
+          <div class="disk-bar-other" id="disk-bar-other"></div>
+        </div>
+      </div>
+      <div id="bags-loading" class="ctrl-hint">Loading...</div>
+      <table class="bags-table" id="bags-table" style="display:none">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Date</th>
+            <th>Size</th>
+            <th>Files</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="bags-tbody"></tbody>
+      </table>
+      <div id="bags-empty" class="ctrl-hint" style="display:none">No recordings found.</div>
+    </div>
+  </div>
+
+  <!-- ─── Controller tab ─── -->
+  <div id="tab-controller" class="tab-content">
+    <div class="ctrl-center">
+      <div class="ctrl-img-wrap">
+        <img src="/static/controller.png" alt="Data Frog Controller">
+      </div>
+      <div class="card ctrl-panel">
+        <h2>Button Assignments</h2>
+        <p class="ctrl-hint">Press a button on the controller to see it light up.
+          Change assignments with the dropdowns, then hit Save.</p>
+        <div id="ctrl-loading" class="ctrl-hint">Loading config...</div>
+        <table class="ctrl-table" id="ctrl-table" style="display:none">
+          <thead><tr><th></th><th>Button</th><th>Action</th></tr></thead>
+          <tbody id="ctrl-tbody"></tbody>
+        </table>
+        <div class="btn-row" style="margin-top:16px">
+          <button class="primary" onclick="saveCtrlConfig()">Save</button>
+          <button onclick="saveCtrlDefaults()">Save to Defaults</button>
+          <button onclick="resetCtrlConfig()">Reset Defaults</button>
+        </div>
+        <div id="ctrl-msg" class="ctrl-msg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Lidar tab ─── -->
+  <div id="tab-lidar" class="tab-content">
+    <div class="lidar-wrap">
+      <div class="lidar-controls">
+        <button id="lidar-toggle" class="primary" onclick="toggleLidar()">Start Scan</button>
+        <span class="lidar-status" id="lidar-status">Stopped</span>
+        <span class="lidar-stats" id="lidar-stats"></span>
+        <label class="cam-slider-label">
+          Range (m)
+          <input type="range" id="lidar-range" min="1" max="20" value="8" step="1">
+          <span id="lidar-range-val">8</span>
+        </label>
+      </div>
+      <div class="lidar-view">
+        <canvas id="lidar-canvas" width="700" height="700"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Network tab ─── -->
+  <div id="tab-network" class="tab-content">
+    <div class="net-wrap">
+      <div class="net-header">
+        <h2>Network Interfaces</h2>
+        <button onclick="loadNetwork()">Refresh</button>
+      </div>
+      <div id="net-loading" class="ctrl-hint">Loading...</div>
+      <div id="net-interfaces" class="net-interfaces"></div>
+
+      <div id="net-wifi-section" class="net-wifi-section" style="display:none">
+
+        <!-- WiFi Client mode -->
+        <div id="net-wifi-client">
+          <div class="net-header">
+            <h2>WiFi Networks</h2>
+            <button id="wifi-scan-btn" onclick="scanWifi()">Scan</button>
+            <span id="wifi-scan-status" class="ctrl-hint"></span>
+            <button class="net-ap-start-btn" onclick="openApSetup()">Start Access Point</button>
+          </div>
+          <div id="wifi-list" class="wifi-list">
+            <div class="ctrl-hint" style="padding:14px">Click Scan to search for WiFi networks.</div>
+          </div>
+
+          <div class="card net-wifi-connect" id="wifi-connect-panel" style="display:none">
+            <h3>Connect to WiFi</h3>
+            <div class="net-field">
+              <label>SSID</label>
+              <input type="text" id="wifi-ssid" readonly>
+            </div>
+            <div class="net-field" id="wifi-password-field">
+              <label>Password</label>
+              <div class="net-pw-row">
+                <input type="password" id="wifi-password" placeholder="Leave empty for open networks">
+                <button type="button" class="net-pw-toggle" onclick="toggleWifiPw()" title="Show/hide password">Show</button>
+              </div>
+            </div>
+            <div class="btn-row">
+              <button class="primary" id="wifi-connect-btn" onclick="connectWifi()">Connect</button>
+              <button onclick="closeWifiPanel()">Cancel</button>
+            </div>
+            <div id="wifi-msg" class="ctrl-msg"></div>
+          </div>
+
+          <!-- AP setup panel (appears when "Start Access Point" clicked) -->
+          <div class="card net-ap-setup" id="ap-setup-panel" style="display:none">
+            <h3>Start Access Point</h3>
+            <p class="ctrl-hint">WiFi will disconnect from any network and become an access point. Other devices can connect to the robot directly.</p>
+            <div class="net-field">
+              <label>AP Name (SSID)</label>
+              <input type="text" id="ap-ssid" value="HorseShitBot" placeholder="HorseShitBot">
+            </div>
+            <div class="net-field">
+              <label>Password (min 8 chars, or leave empty for open)</label>
+              <input type="password" id="ap-password" placeholder="Optional">
+            </div>
+            <div class="net-field">
+              <label>Band</label>
+              <select id="ap-band">
+                <option value="bg">2.4 GHz</option>
+                <option value="a">5 GHz</option>
+              </select>
+            </div>
+            <div class="btn-row">
+              <button class="primary" id="ap-start-btn" onclick="startAp()">Start AP</button>
+              <button onclick="closeApSetup()">Cancel</button>
+            </div>
+            <div id="ap-msg" class="ctrl-msg"></div>
+          </div>
+        </div>
+
+        <!-- AP active mode -->
+        <div id="net-ap-section" style="display:none">
+          <div class="card net-ap-active">
+            <h2>Access Point Active</h2>
+            <div class="net-ap-info">
+              <div class="kv"><span class="label">SSID</span><span class="value" id="ap-current-ssid">--</span></div>
+              <div class="kv"><span class="label">IP Address</span><span class="value" id="ap-current-ip">10.0.0.1</span></div>
+              <p class="ctrl-hint" style="margin-top:10px">
+                The robot is broadcasting a WiFi network. Connect your device to the SSID above, then access the dashboard at the IP shown.
+              </p>
+            </div>
+            <div class="btn-row" style="margin-top:12px">
+              <button class="danger" onclick="stopAp()">Stop Access Point</button>
+            </div>
+            <div id="ap-msg" class="ctrl-msg"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div id="net-config-modal" class="net-modal" style="display:none">
+        <div class="net-modal-inner card">
+          <h2 id="net-cfg-title">Configure Interface</h2>
+          <div class="net-field">
+            <label>Mode</label>
+            <select id="net-cfg-mode" onchange="onNetModeChange()">
+              <option value="auto">DHCP (Automatic)</option>
+              <option value="manual">Static IP</option>
+            </select>
+          </div>
+          <div id="net-cfg-static-fields" style="display:none">
+            <div class="net-field">
+              <label>IP Address</label>
+              <input type="text" id="net-cfg-ip" placeholder="192.168.1.100">
+            </div>
+            <div class="net-field">
+              <label>Prefix Length</label>
+              <input type="number" id="net-cfg-prefix" value="24" min="1" max="32">
+            </div>
+            <div class="net-field">
+              <label>Gateway</label>
+              <input type="text" id="net-cfg-gateway" placeholder="192.168.1.1 (optional)">
+            </div>
+            <div class="net-field">
+              <label>DNS</label>
+              <input type="text" id="net-cfg-dns" placeholder="8.8.8.8 (optional)">
+            </div>
+            <div class="net-divider"></div>
+            <div class="net-field">
+              <label class="net-cb-label">
+                <input type="checkbox" id="net-cfg-dhcpd" onchange="onDhcpdToggle()">
+                Enable DHCP Server on this interface
+              </label>
+            </div>
+            <div id="net-cfg-dhcpd-fields" style="display:none">
+              <div class="net-field">
+                <label>DHCP Range Start</label>
+                <input type="text" id="net-cfg-dhcpd-start" placeholder="192.168.1.100">
+              </div>
+              <div class="net-field">
+                <label>DHCP Range End</label>
+                <input type="text" id="net-cfg-dhcpd-end" placeholder="192.168.1.200">
+              </div>
+            </div>
+          </div>
+          <div class="btn-row" style="margin-top:16px">
+            <button class="primary" onclick="applyNetConfig()">Apply</button>
+            <button onclick="closeNetConfig()">Cancel</button>
+          </div>
+          <div id="net-cfg-msg" class="ctrl-msg"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
+>>>>>>> Stashed changes
