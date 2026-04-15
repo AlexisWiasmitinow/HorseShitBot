@@ -133,22 +133,39 @@
         </div>
       </div>
 
-      <!-- Camera / Recording -->
-      <div class="card" id="card-recording">
-        <h2>Camera / Recording</h2>
+      <!-- Recording — Perception -->
+      <div class="card" id="card-recording-perception">
+        <h2>Perception Recording</h2>
         <div class="kv">
           <span class="label">Status</span>
-          <span class="value" id="rec-status">
-            <span class="rec-dot" id="rec-dot"></span>
-            <span id="rec-label">Idle</span>
+          <span class="value">
+            <span class="rec-dot" id="rec-dot-perception"></span>
+            <span id="rec-label-perception">Idle</span>
           </span>
         </div>
-        <div class="kv"><span class="label">Duration</span><span class="value" id="rec-duration">--</span></div>
-        <div class="kv"><span class="label">Frames</span><span class="value" id="rec-frames">--</span></div>
-        <div class="kv"><span class="label">Bag Path</span><span class="value" id="rec-path" style="font-size:0.75rem;word-break:break-all;">--</span></div>
+        <div class="kv"><span class="label">Duration</span><span class="value" id="rec-duration-perception">--</span></div>
+        <div class="kv"><span class="label">Frames</span><span class="value" id="rec-frames-perception">--</span></div>
         <div class="btn-row">
-          <button id="btn-rec-start" onclick="startRecording()">Start Recording</button>
-          <button id="btn-rec-stop" class="danger" onclick="stopRecording()">Stop Recording</button>
+          <button onclick="startRecording('perception')">Start</button>
+          <button class="danger" onclick="stopRecording('perception')">Stop</button>
+        </div>
+      </div>
+
+      <!-- Recording — Mapping -->
+      <div class="card" id="card-recording-mapping">
+        <h2>Mapping Recording</h2>
+        <div class="kv">
+          <span class="label">Status</span>
+          <span class="value">
+            <span class="rec-dot" id="rec-dot-mapping"></span>
+            <span id="rec-label-mapping">Idle</span>
+          </span>
+        </div>
+        <div class="kv"><span class="label">Duration</span><span class="value" id="rec-duration-mapping">--</span></div>
+        <div class="kv"><span class="label">Frames</span><span class="value" id="rec-frames-mapping">--</span></div>
+        <div class="btn-row">
+          <button onclick="startRecording('mapping')">Start</button>
+          <button class="danger" onclick="stopRecording('mapping')">Stop</button>
         </div>
       </div>
     </div>
@@ -187,24 +204,43 @@
   <!-- ─── Recordings tab ─── -->
   <div id="tab-recordings" class="tab-content">
     <div class="bags-wrap">
-      <div class="topic-picker card" id="topic-picker">
-        <div class="topic-picker-header">
-          <h2>Record Topics</h2>
-          <span class="topic-picker-hint" id="topic-picker-hint"></span>
-          <button class="primary" onclick="saveBagTopics()">Apply</button>
+      <div class="rec-profiles-row">
+        <!-- Perception recorder -->
+        <div class="topic-picker card" id="topic-picker-perception">
+          <div class="topic-picker-header">
+            <h2>Perception Topics</h2>
+            <span class="topic-picker-hint" id="topic-picker-hint-perception"></span>
+            <button class="primary" onclick="saveBagTopics('perception')">Apply</button>
+          </div>
+          <div id="topic-groups-perception"></div>
+          <div id="topic-msg-perception" class="ctrl-msg"></div>
+          <div class="rec-bar-row" style="margin-top:12px">
+            <span class="rec-dot-lg" id="rec-dot-lg-perception"></span>
+            <span class="rec-bar-label" id="rec-bar-label-perception">Idle</span>
+            <span class="rec-bar-detail" id="rec-bar-time-perception">--</span>
+            <span class="rec-bar-detail" id="rec-bar-frames-perception">-- frames</span>
+            <button class="primary" id="rec-bar-start-perception" onclick="startRecording('perception')">Start</button>
+            <button class="danger" id="rec-bar-stop-perception" onclick="stopRecording('perception')" style="display:none">Stop</button>
+          </div>
         </div>
-        <div id="topic-groups"></div>
-        <div id="topic-msg" class="ctrl-msg"></div>
-      </div>
 
-      <div class="rec-bar card" id="rec-bar">
-        <div class="rec-bar-row">
-          <span class="rec-dot-lg" id="rec-dot-lg"></span>
-          <span class="rec-bar-label" id="rec-bar-label">Idle</span>
-          <span class="rec-bar-detail" id="rec-bar-time">--</span>
-          <span class="rec-bar-detail" id="rec-bar-frames">-- frames</span>
-          <button class="primary" id="rec-bar-start" onclick="startRecording()">Start Recording</button>
-          <button class="danger" id="rec-bar-stop" onclick="stopRecording()" style="display:none">Stop Recording</button>
+        <!-- Mapping recorder -->
+        <div class="topic-picker card" id="topic-picker-mapping">
+          <div class="topic-picker-header">
+            <h2>Mapping Topics</h2>
+            <span class="topic-picker-hint" id="topic-picker-hint-mapping"></span>
+            <button class="primary" onclick="saveBagTopics('mapping')">Apply</button>
+          </div>
+          <div id="topic-groups-mapping"></div>
+          <div id="topic-msg-mapping" class="ctrl-msg"></div>
+          <div class="rec-bar-row" style="margin-top:12px">
+            <span class="rec-dot-lg" id="rec-dot-lg-mapping"></span>
+            <span class="rec-bar-label" id="rec-bar-label-mapping">Idle</span>
+            <span class="rec-bar-detail" id="rec-bar-time-mapping">--</span>
+            <span class="rec-bar-detail" id="rec-bar-frames-mapping">-- frames</span>
+            <button class="primary" id="rec-bar-start-mapping" onclick="startRecording('mapping')">Start</button>
+            <button class="danger" id="rec-bar-stop-mapping" onclick="stopRecording('mapping')" style="display:none">Stop</button>
+          </div>
         </div>
       </div>
 

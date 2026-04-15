@@ -25,6 +25,12 @@ wheel_driver_node:
     odrive_vel_limit: 100.0
     odrive_current_lim: 20.0
     odrive_vel_ramp_rate: 20.0
+    # Odometry — measure these for your robot!
+    wheel_radius: 0.075           # metres
+    wheel_separation: 0.40        # metres (centre-to-centre)
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+    publish_odom_tf: true
 
 lift_node:
   ros__parameters:
@@ -103,9 +109,21 @@ lidar_node:
     baud: 230400
     auto_start: false
     publish_hz: 5.0
+    frame_id: "laser"
+    range_min: 0.02
+    range_max: 12.0
+    scan_bins: 720
 
-bag_recorder_node:
+perception_recorder:
   ros__parameters:
     output_dir: "~/rosbags"
-    bag_prefix: "horseshitbot"
+    bag_prefix: "perception"
     storage_id: "mcap"
+    topics_config_name: "perception_bag_topics.json"
+
+mapping_recorder:
+  ros__parameters:
+    output_dir: "~/rosbags"
+    bag_prefix: "mapping"
+    storage_id: "mcap"
+    topics_config_name: "mapping_bag_topics.json"

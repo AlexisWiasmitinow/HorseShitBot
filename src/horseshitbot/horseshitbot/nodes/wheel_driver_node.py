@@ -1,19 +1,22 @@
 """
 Wheel Driver Node — subscribes to /cmd_vel, applies ramping, dispatches
-to the active wheel backend (MKS steppers or ODrive), and exposes a
-service to switch backends at runtime.
+to the active wheel backend (MKS steppers or ODrive), publishes
+nav_msgs/Odometry, and exposes a service to switch backends at runtime.
 """
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TransformStamped
+from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
+from tf2_ros import TransformBroadcaster
 
 from horseshitbot_interfaces.srv import MksSetSpeed, SwitchBackend
 
@@ -65,6 +68,12 @@ class WheelDriverNode(Node):
         self.declare_parameter("odrive_vel_limit", 100.0)
         self.declare_parameter("odrive_current_lim", 20.0)
         self.declare_parameter("odrive_vel_ramp_rate", 20.0)
+        # Odometry: differential-drive geometry
+        self.declare_parameter("wheel_radius", 0.075)
+        self.declare_parameter("wheel_separation", 0.40)
+        self.declare_parameter("odom_frame_id", "odom")
+        self.declare_parameter("base_frame_id", "base_link")
+        self.declare_parameter("publish_odom_tf", True)
 
         self._max_rpm = self._p_float("max_wheel_rpm")
         self._update_hz = self._p_float("update_hz")
@@ -81,6 +90,16 @@ class WheelDriverNode(Node):
         self._last_cmd_ts = 0.0
         self._stop_fast = False
         self._estopped = False
+
+        # Odometry state (integrated from commanded RPM)
+        self._wheel_radius = self._p_float("wheel_radius")
+        self._wheel_sep = self._p_float("wheel_separation")
+        self._odom_frame = self._p_str("odom_frame_id")
+        self._base_frame = self._p_str("base_frame_id")
+        self._publish_odom_tf = self._p_bool("publish_odom_tf")
+        self._odom_x = 0.0
+        self._odom_y = 0.0
+        self._odom_theta = 0.0
 
         # MKS bus service client (used when backend == mks)
         self._mks_cli = self.create_client(MksSetSpeed, "/mks/set_speed")
@@ -99,6 +118,8 @@ class WheelDriverNode(Node):
 
         # Status publisher
         self._status_pub = self.create_publisher(String, "/wheel_status", 10)
+        self._odom_pub = self.create_publisher(Odometry, "/odom", 50)
+        self._tf_broadcaster = TransformBroadcaster(self)
 
         # Activate initial backend
         backend_name = self.get_parameter("wheel_backend").get_parameter_value().string_value
@@ -288,6 +309,9 @@ class WheelDriverNode(Node):
             except Exception:
                 pass
 
+        # Odometry integration from actual (ramped) RPM
+        self._update_odometry(self._actual_left, self._actual_right, dt)
+
         if stop_fast and self._actual_left == 0.0 and self._actual_right == 0.0:
             with self._lock:
                 self._stop_fast = False
@@ -309,6 +333,49 @@ class WheelDriverNode(Node):
         msg = String()
         msg.data = status
         self._status_pub.publish(msg)
+
+
+    def _update_odometry(self, left_rpm: float, right_rpm: float, dt: float):
+        """Integrate wheel RPMs into odometry and publish."""
+        # RPM -> m/s at wheel contact
+        v_left = left_rpm * (2.0 * math.pi * self._wheel_radius) / 60.0
+        v_right = right_rpm * (2.0 * math.pi * self._wheel_radius) / 60.0
+
+        v_linear = (v_right + v_left) / 2.0
+        v_angular = (v_right - v_left) / self._wheel_sep
+
+        self._odom_theta += v_angular * dt
+        self._odom_x += v_linear * math.cos(self._odom_theta) * dt
+        self._odom_y += v_linear * math.sin(self._odom_theta) * dt
+
+        now = self.get_clock().now().to_msg()
+
+        # Quaternion from yaw
+        cy = math.cos(self._odom_theta * 0.5)
+        sy = math.sin(self._odom_theta * 0.5)
+
+        odom = Odometry()
+        odom.header.stamp = now
+        odom.header.frame_id = self._odom_frame
+        odom.child_frame_id = self._base_frame
+        odom.pose.pose.position.x = self._odom_x
+        odom.pose.pose.position.y = self._odom_y
+        odom.pose.pose.orientation.z = sy
+        odom.pose.pose.orientation.w = cy
+        odom.twist.twist.linear.x = v_linear
+        odom.twist.twist.angular.z = v_angular
+        self._odom_pub.publish(odom)
+
+        if self._publish_odom_tf:
+            tf = TransformStamped()
+            tf.header.stamp = now
+            tf.header.frame_id = self._odom_frame
+            tf.child_frame_id = self._base_frame
+            tf.transform.translation.x = self._odom_x
+            tf.transform.translation.y = self._odom_y
+            tf.transform.rotation.z = sy
+            tf.transform.rotation.w = cy
+            self._tf_broadcaster.sendTransform(tf)
 
 
 def main(args=None):

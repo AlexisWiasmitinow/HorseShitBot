@@ -111,9 +111,9 @@ DEFAULT_BUTTON_MAP = {
     "R3": "e_stop",
     "D-Pad Up": "lift_up",
     "D-Pad Down": "lift_down",
-    "D-Pad Left": "none",
+    "D-Pad Left": "mapping_bag_recording",
     "D-Pad Right": "none",
-    "Options": "camera_bag_recording",
+    "Options": "perception_bag_recording",
     "Menu": "reference_all",
     "Logo": "toggle_controls",
 }
@@ -127,9 +127,21 @@ AVAILABLE_ACTIONS = {
     "lift_up": "Lift up (hold)",
     "lift_down": "Lift down (hold)",
     "reference_all": "Reference all actuators",
-    "camera_bag_recording": "Camera bag recording",
+    "perception_bag_recording": "Perception bag recording",
+    "mapping_bag_recording": "Mapping bag recording",
     "toggle_controls": "Toggle TFT controls",
     "none": "Unassigned",
+}
+
+_RECORDER_PROFILES = {
+    "perception": {
+        "node_name": "perception_recorder",
+        "topics_file": "perception_bag_topics.json",
+    },
+    "mapping": {
+        "node_name": "mapping_recorder",
+        "topics_file": "mapping_bag_topics.json",
+    },
 }
 
 BUTTON_NAMES = [
@@ -214,7 +226,8 @@ class _RosBridge:
             "lift": {},
             "brush": {},
             "bin_door": {},
-            "bag_recorder": {},
+            "perception_recorder": {},
+            "mapping_recorder": {},
             "gamepad": {},
             "network": [],
             "thermals": [],
@@ -235,7 +248,10 @@ class _RosBridge:
         ros_node.create_subscription(ActuatorStateMsg, "/lift/state", lambda m: self._cb_actuator("lift", m), 10)
         ros_node.create_subscription(ActuatorStateMsg, "/brush/state", lambda m: self._cb_actuator("brush", m), 10)
         ros_node.create_subscription(ActuatorStateMsg, "/bin_door/state", lambda m: self._cb_actuator("bin_door", m), 10)
-        ros_node.create_subscription(String, "/bag_recorder_node/status", self._cb_bag_recorder, 10)
+        ros_node.create_subscription(String, "/perception_recorder/status",
+                                     lambda m: self._cb_bag_recorder("perception_recorder", m), 10)
+        ros_node.create_subscription(String, "/mapping_recorder/status",
+                                     lambda m: self._cb_bag_recorder("mapping_recorder", m), 10)
         ros_node.create_subscription(String, "/gamepad/status", self._cb_gamepad, 10)
         ros_node.create_subscription(String, "/lidar/status", self._cb_lidar_status, 10)
         ros_node.create_subscription(String, "/lidar/points", self._cb_lidar_points, 10)
@@ -308,13 +324,13 @@ class _RosBridge:
         with self._lock:
             self._state[name] = data
 
-    def _cb_bag_recorder(self, msg: String):
+    def _cb_bag_recorder(self, key: str, msg: String):
         try:
             data = json.loads(msg.data)
         except Exception:
             data = {"raw": msg.data}
         with self._lock:
-            self._state["bag_recorder"] = data
+            self._state[key] = data
 
     def _cb_gamepad(self, msg: String):
         try:
@@ -402,12 +418,17 @@ class WebDashboardNode(Node):
 
         self._bridge = _RosBridge(self)
 
-        self._rec_start_cli = self.create_client(Trigger, "/bag_recorder_node/start_recording")
-        self._rec_stop_cli = self.create_client(Trigger, "/bag_recorder_node/stop_recording")
+        self._rec_clients: dict[str, dict] = {}
+        for profile, info in _RECORDER_PROFILES.items():
+            node_name = info["node_name"]
+            self._rec_clients[profile] = {
+                "start": self.create_client(Trigger, f"/{node_name}/start_recording"),
+                "stop": self.create_client(Trigger, f"/{node_name}/stop_recording"),
+                "topics_file": _CONFIG_DIR / info["topics_file"],
+            }
         self._lidar_start_cli = self.create_client(Trigger, "/lidar_node/start_scan")
         self._lidar_stop_cli = self.create_client(Trigger, "/lidar_node/stop_scan")
         self._config_pub = self.create_publisher(String, "/gamepad/config", 10)
-        self._bag_topics_file = _CONFIG_DIR / "bag_topics.json"
 
         self._app = self._build_app()
 
@@ -540,19 +561,25 @@ class WebDashboardNode(Node):
                 return {"success": False, "message": f"unknown action: {action}"}
             return {"success": True, "message": f"called {srv_name}"}
 
-        @app.post("/api/recording/start")
-        async def start_recording():
-            if not ros_node._rec_start_cli.service_is_ready():
-                return {"success": False, "message": "bag_recorder_node not available"}
-            future = ros_node._rec_start_cli.call_async(Trigger.Request())
-            return {"success": True, "message": "start_recording called"}
+        @app.post("/api/recording/{profile}/start")
+        async def start_recording(profile: str):
+            clients = ros_node._rec_clients.get(profile)
+            if not clients:
+                return {"success": False, "message": f"unknown profile: {profile}"}
+            if not clients["start"].service_is_ready():
+                return {"success": False, "message": f"{profile} recorder not available"}
+            clients["start"].call_async(Trigger.Request())
+            return {"success": True, "message": f"{profile} start_recording called"}
 
-        @app.post("/api/recording/stop")
-        async def stop_recording():
-            if not ros_node._rec_stop_cli.service_is_ready():
-                return {"success": False, "message": "bag_recorder_node not available"}
-            future = ros_node._rec_stop_cli.call_async(Trigger.Request())
-            return {"success": True, "message": "stop_recording called"}
+        @app.post("/api/recording/{profile}/stop")
+        async def stop_recording(profile: str):
+            clients = ros_node._rec_clients.get(profile)
+            if not clients:
+                return {"success": False, "message": f"unknown profile: {profile}"}
+            if not clients["stop"].service_is_ready():
+                return {"success": False, "message": f"{profile} recorder not available"}
+            clients["stop"].call_async(Trigger.Request())
+            return {"success": True, "message": f"{profile} stop_recording called"}
 
         # ── Lidar ──────────────────────────────────────────────────
 
@@ -570,11 +597,12 @@ class WebDashboardNode(Node):
             ros_node._lidar_stop_cli.call_async(Trigger.Request())
             return {"success": True, "message": "stop_scan called"}
 
-        @app.get("/api/bag-topics")
-        async def get_bag_topics():
+        @app.get("/api/bag-topics/{profile}")
+        async def get_bag_topics(profile: str):
             """Return available/selected topics from the bag recorder status."""
+            state_key = _RECORDER_PROFILES.get(profile, {}).get("node_name", "")
             with bridge._lock:
-                rec = bridge._state.get("bag_recorder", {})
+                rec = bridge._state.get(state_key, {})
             return {
                 "available_topics": rec.get("available_topics", {}),
                 "selected_topics": rec.get("selected_topics", []),
@@ -582,16 +610,20 @@ class WebDashboardNode(Node):
                 "recording": rec.get("recording", False),
             }
 
-        @app.put("/api/bag-topics")
-        async def set_bag_topics(body: dict):
+        @app.put("/api/bag-topics/{profile}")
+        async def set_bag_topics(profile: str, body: dict):
             """Save selected topics to config file (bag recorder polls it)."""
+            clients = ros_node._rec_clients.get(profile)
+            if not clients:
+                return JSONResponse({"error": f"unknown profile: {profile}"}, status_code=400)
             topics = body.get("topics", [])
             if not isinstance(topics, list) or not topics:
                 return JSONResponse({"error": "topics must be a non-empty list"}, status_code=400)
             try:
-                ros_node._bag_topics_file.parent.mkdir(parents=True, exist_ok=True)
-                ros_node._bag_topics_file.write_text(json.dumps(topics, indent=2))
-                ros_node.get_logger().info(f"Bag topics saved: {topics}")
+                topics_file = clients["topics_file"]
+                topics_file.parent.mkdir(parents=True, exist_ok=True)
+                topics_file.write_text(json.dumps(topics, indent=2))
+                ros_node.get_logger().info(f"Bag topics [{profile}] saved: {topics}")
                 return {"success": True, "topics": topics}
             except Exception as e:
                 return JSONResponse({"error": str(e)}, status_code=500)

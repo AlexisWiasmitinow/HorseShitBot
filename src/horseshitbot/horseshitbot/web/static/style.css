@@ -444,10 +444,19 @@ button.primary:hover { background: #3db88a; }
   font-size: 0.78rem;
   margin-right: auto;
 }
-#topic-groups {
+[id^="topic-groups-"] {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
+}
+.rec-profiles-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+@media (max-width: 800px) {
+  .rec-profiles-row { grid-template-columns: 1fr; }
 }
 .topic-group {
   display: flex;
@@ -521,7 +530,7 @@ button.primary:hover { background: #3db88a; }
 
 /* ── Recordings / Bags ─── */
 .bags-wrap {
-  max-width: 900px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 16px;
 }

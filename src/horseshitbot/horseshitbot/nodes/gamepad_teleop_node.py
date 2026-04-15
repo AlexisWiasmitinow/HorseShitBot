@@ -81,9 +81,9 @@ DEFAULT_BUTTON_MAP: dict[str, str] = {
     "R3": "e_stop",
     "D-Pad Up": "lift_up",
     "D-Pad Down": "lift_down",
-    "D-Pad Left": "none",
+    "D-Pad Left": "mapping_bag_recording",
     "D-Pad Right": "none",
-    "Options": "camera_bag_recording",
+    "Options": "perception_bag_recording",
     "Menu": "reference_all",
     "Logo": "toggle_controls",
 }
@@ -97,7 +97,8 @@ AVAILABLE_ACTIONS: dict[str, str] = {
     "lift_up": "Lift up (hold)",
     "lift_down": "Lift down (hold)",
     "reference_all": "Reference all actuators",
-    "camera_bag_recording": "Camera bag recording",
+    "perception_bag_recording": "Perception bag recording",
+    "mapping_bag_recording": "Mapping bag recording",
     "toggle_controls": "Toggle TFT controls",
     "none": "Unassigned",
 }
@@ -207,8 +208,10 @@ class GamepadTeleopNode(Node):
         self._stop_fast_cli = self.create_client(Trigger, "/wheel_driver_node/stop_fast")
         self._stop_cli = self.create_client(Trigger, "/wheel_driver_node/stop")
         self._switch_cli = self.create_client(SwitchBackend, "/wheel_driver_node/switch_backend")
-        self._rec_start_cli = self.create_client(Trigger, "/bag_recorder_node/start_recording")
-        self._rec_stop_cli = self.create_client(Trigger, "/bag_recorder_node/stop_recording")
+        self._percep_start_cli = self.create_client(Trigger, "/perception_recorder/start_recording")
+        self._percep_stop_cli = self.create_client(Trigger, "/perception_recorder/stop_recording")
+        self._map_start_cli = self.create_client(Trigger, "/mapping_recorder/start_recording")
+        self._map_stop_cli = self.create_client(Trigger, "/mapping_recorder/stop_recording")
 
         # Internal state
         self._device: InputDevice | None = None
@@ -217,7 +220,8 @@ class GamepadTeleopNode(Node):
         self._raxis_x = 0.0
         self._raxis_y = 0.0
         self._connected = False
-        self._is_recording = False
+        self._is_percep_recording = False
+        self._is_map_recording = False
         self._active_inputs: set[str] = set()
         self._button_map: dict[str, str] = _load_config_file()
         self._lock = threading.Lock()
@@ -470,8 +474,10 @@ class GamepadTeleopNode(Node):
                 msg = String()
                 msg.data = "reference"
                 pub.publish(msg)
-        elif action == "camera_bag_recording":
-            self._toggle_recording()
+        elif action == "perception_bag_recording" or action == "camera_bag_recording":
+            self._toggle_recording("perception")
+        elif action == "mapping_bag_recording":
+            self._toggle_recording("mapping")
         elif action == "toggle_controls":
             msg = String()
             msg.data = "home"
@@ -540,15 +546,22 @@ class GamepadTeleopNode(Node):
         req.backend = "toggle"
         self._switch_cli.call_async(req)
 
-    def _toggle_recording(self):
-        if self._is_recording:
-            self._call_trigger(self._rec_stop_cli)
+    def _toggle_recording(self, profile: str = "perception"):
+        if profile == "mapping":
+            if self._is_map_recording:
+                self._call_trigger(self._map_stop_cli)
+            else:
+                self._call_trigger(self._map_start_cli)
+            self._is_map_recording = not self._is_map_recording
+            state = "started" if self._is_map_recording else "stopped"
         else:
-            self._call_trigger(self._rec_start_cli)
-        self._is_recording = not self._is_recording
-        self.get_logger().info(
-            f"Recording {'started' if self._is_recording else 'stopped'} (gamepad)"
-        )
+            if self._is_percep_recording:
+                self._call_trigger(self._percep_stop_cli)
+            else:
+                self._call_trigger(self._percep_start_cli)
+            self._is_percep_recording = not self._is_percep_recording
+            state = "started" if self._is_percep_recording else "stopped"
+        self.get_logger().info(f"{profile.title()} recording {state} (gamepad)")
 
 
 def main(args=None):

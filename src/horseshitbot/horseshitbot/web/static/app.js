@@ -197,56 +197,57 @@ function updateDashboard(data) {
     reconRow.style.display = (!gp.connected && mac) ? "" : "none";
   }
 
-  const rec = data.bag_recorder || {};
-  const dot = document.getElementById("rec-dot");
-  const label = document.getElementById("rec-label");
-  if (dot && label) {
-    if (rec.recording) {
-      dot.classList.add("recording");
-      label.textContent = "RECORDING";
-      label.style.color = "#e94560";
-    } else {
-      dot.classList.remove("recording");
-      label.textContent = "Idle";
-      label.style.color = "";
+  for (const profile of ["perception", "mapping"]) {
+    const rec = data[profile + "_recorder"] || {};
+    const dot = document.getElementById(`rec-dot-${profile}`);
+    const label = document.getElementById(`rec-label-${profile}`);
+    if (dot && label) {
+      if (rec.recording) {
+        dot.classList.add("recording");
+        label.textContent = "RECORDING";
+        label.style.color = "#e94560";
+      } else {
+        dot.classList.remove("recording");
+        label.textContent = "Idle";
+        label.style.color = "";
+      }
     }
-  }
-  if (rec.recording) {
-    const dur = rec.duration_sec || 0;
-    const m = Math.floor(dur / 60);
-    const s = Math.floor(dur % 60);
-    setText("rec-duration", `${m}:${s.toString().padStart(2, "0")}`);
-  } else {
-    setText("rec-duration", "--");
-  }
-  setText("rec-frames", rec.frame_count != null ? rec.frame_count : "--");
-  setText("rec-path", rec.bag_path || "--");
-
-  // Recordings tab controls
-  const dotLg = document.getElementById("rec-dot-lg");
-  const barLabel = document.getElementById("rec-bar-label");
-  const barStart = document.getElementById("rec-bar-start");
-  const barStop = document.getElementById("rec-bar-stop");
-  if (dotLg && barLabel) {
     if (rec.recording) {
-      dotLg.classList.add("recording");
       const dur = rec.duration_sec || 0;
       const m = Math.floor(dur / 60);
       const s = Math.floor(dur % 60);
-      barLabel.textContent = "RECORDING";
-      barLabel.style.color = "#e94560";
-      setText("rec-bar-time", `${m}:${s.toString().padStart(2, "0")}`);
-      setText("rec-bar-frames", `${rec.frame_count || 0} frames`);
-      if (barStart) barStart.style.display = "none";
-      if (barStop) barStop.style.display = "";
+      setText(`rec-duration-${profile}`, `${m}:${s.toString().padStart(2, "0")}`);
     } else {
-      dotLg.classList.remove("recording");
-      barLabel.textContent = "Idle";
-      barLabel.style.color = "";
-      setText("rec-bar-time", "--");
-      setText("rec-bar-frames", "-- frames");
-      if (barStart) barStart.style.display = "";
-      if (barStop) barStop.style.display = "none";
+      setText(`rec-duration-${profile}`, "--");
+    }
+    setText(`rec-frames-${profile}`, rec.frame_count != null ? rec.frame_count : "--");
+
+    // Recordings tab controls
+    const dotLg = document.getElementById(`rec-dot-lg-${profile}`);
+    const barLabel = document.getElementById(`rec-bar-label-${profile}`);
+    const barStart = document.getElementById(`rec-bar-start-${profile}`);
+    const barStop = document.getElementById(`rec-bar-stop-${profile}`);
+    if (dotLg && barLabel) {
+      if (rec.recording) {
+        dotLg.classList.add("recording");
+        const dur = rec.duration_sec || 0;
+        const m = Math.floor(dur / 60);
+        const s = Math.floor(dur % 60);
+        barLabel.textContent = "RECORDING";
+        barLabel.style.color = "#e94560";
+        setText(`rec-bar-time-${profile}`, `${m}:${s.toString().padStart(2, "0")}`);
+        setText(`rec-bar-frames-${profile}`, `${rec.frame_count || 0} frames`);
+        if (barStart) barStart.style.display = "none";
+        if (barStop) barStop.style.display = "";
+      } else {
+        dotLg.classList.remove("recording");
+        barLabel.textContent = "Idle";
+        barLabel.style.color = "";
+        setText(`rec-bar-time-${profile}`, "--");
+        setText(`rec-bar-frames-${profile}`, "-- frames");
+        if (barStart) barStart.style.display = "";
+        if (barStop) barStop.style.display = "none";
+      }
     }
   }
 
@@ -558,27 +559,31 @@ function toggleCamera() {
 
 // ─── Bag Topic Picker ────────────────────────────────────────────
 
-let bagTopicData = null;
+const _bagTopicData = {};
 
 async function loadBagTopics() {
-  try {
-    const resp = await fetch("/api/bag-topics");
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    bagTopicData = await resp.json();
-    renderTopicPicker();
-  } catch (e) {
-    console.error("Failed to load bag topics:", e);
+  for (const profile of ["perception", "mapping"]) {
+    try {
+      const resp = await fetch(`/api/bag-topics/${profile}`);
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      _bagTopicData[profile] = await resp.json();
+    } catch (e) {
+      console.error(`Failed to load ${profile} bag topics:`, e);
+    }
   }
+  renderTopicPicker("perception");
+  renderTopicPicker("mapping");
 }
 
-function renderTopicPicker() {
-  const container = document.getElementById("topic-groups");
-  const hint = document.getElementById("topic-picker-hint");
-  if (!container || !bagTopicData) return;
+function renderTopicPicker(profile) {
+  const container = document.getElementById(`topic-groups-${profile}`);
+  const hint = document.getElementById(`topic-picker-hint-${profile}`);
+  const data = _bagTopicData[profile];
+  if (!container || !data) return;
 
-  const groups = bagTopicData.topic_groups || {};
-  const selected = bagTopicData.selected_topics || [];
-  const recording = bagTopicData.recording;
+  const groups = data.topic_groups || {};
+  const selected = data.selected_topics || [];
+  const recording = data.recording;
 
   if (hint) {
     hint.textContent = recording ? "(locked while recording)" : "";
@@ -614,32 +619,32 @@ function renderTopicPicker() {
   }
 }
 
-async function saveBagTopics() {
-  const checkboxes = document.querySelectorAll("#topic-groups .topic-cb:checked");
+async function saveBagTopics(profile) {
+  const checkboxes = document.querySelectorAll(`#topic-groups-${profile} .topic-cb:checked`);
   const topics = Array.from(checkboxes).map(cb => cb.value);
   if (topics.length === 0) {
-    showTopicMsg("Select at least one topic.", "err");
+    showTopicMsg(profile, "Select at least one topic.", "err");
     return;
   }
   try {
-    const resp = await fetch("/api/bag-topics", {
+    const resp = await fetch(`/api/bag-topics/${profile}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ topics }),
     });
     const result = await resp.json();
     if (result.success) {
-      showTopicMsg(`Applied ${topics.length} topic(s). Takes effect on next recording.`, "ok");
+      showTopicMsg(profile, `Applied ${topics.length} topic(s). Takes effect on next recording.`, "ok");
     } else {
-      showTopicMsg(result.error || "Failed", "err");
+      showTopicMsg(profile, result.error || "Failed", "err");
     }
   } catch (e) {
-    showTopicMsg("Network error: " + e.message, "err");
+    showTopicMsg(profile, "Network error: " + e.message, "err");
   }
 }
 
-function showTopicMsg(text, type) {
-  const el = document.getElementById("topic-msg");
+function showTopicMsg(profile, text, type) {
+  const el = document.getElementById(`topic-msg-${profile}`);
   if (!el) return;
   el.textContent = text;
   el.className = "ctrl-msg " + (type || "");
@@ -1440,14 +1445,14 @@ async function switchBackend() {
   catch (e) { console.error("Switch failed:", e); }
 }
 
-async function startRecording() {
-  try { await fetch("/api/recording/start", { method: "POST" }); }
-  catch (e) { console.error("Start recording failed:", e); }
+async function startRecording(profile) {
+  try { await fetch(`/api/recording/${profile}/start`, { method: "POST" }); }
+  catch (e) { console.error(`Start ${profile} recording failed:`, e); }
 }
 
-async function stopRecording() {
-  try { await fetch("/api/recording/stop", { method: "POST" }); }
-  catch (e) { console.error("Stop recording failed:", e); }
+async function stopRecording(profile) {
+  try { await fetch(`/api/recording/${profile}/stop`, { method: "POST" }); }
+  catch (e) { console.error(`Stop ${profile} recording failed:`, e); }
 }
 
 // ─── Init ────────────────────────────────────────────────────────

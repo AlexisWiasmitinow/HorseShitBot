@@ -102,6 +102,33 @@ def _launch_setup(context):
             parameters=[params_file],
             output="screen",
         ))
+        # Static TF: base_link -> laser (adjust xyz for your lidar mount)
+        nodes.append(Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name="base_to_laser_tf",
+            arguments=["--x", "0.0", "--y", "0.0", "--z", "0.15",
+                        "--roll", "0.0", "--pitch", "0.0", "--yaw", "3.14159",
+                        "--frame-id", "base_link", "--child-frame-id", "laser"],
+        ))
+
+    # Bag recorders (always launched — topics are selectable via dashboard)
+    nodes += [
+        Node(
+            package="horseshitbot",
+            executable="bag_recorder_node",
+            name="perception_recorder",
+            parameters=[params_file],
+            output="screen",
+        ),
+        Node(
+            package="horseshitbot",
+            executable="bag_recorder_node",
+            name="mapping_recorder",
+            parameters=[params_file],
+            output="screen",
+        ),
+    ]
 
     if enable_camera:
         from launch.actions import IncludeLaunchDescription
@@ -124,13 +151,6 @@ def _launch_setup(context):
                 "rgb_camera.color_profile": "640x480x15",
                 "depth_module.depth_profile": "640x480x15",
             }.items(),
-        ))
-        nodes.append(Node(
-            package="horseshitbot",
-            executable="bag_recorder_node",
-            name="bag_recorder_node",
-            parameters=[params_file],
-            output="screen",
         ))
 
     return nodes

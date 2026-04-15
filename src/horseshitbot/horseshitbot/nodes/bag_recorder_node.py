@@ -44,6 +44,11 @@ _TOPIC_TYPE_MAP = {
     "/camera/depth/camera_info": "sensor_msgs/msg/CameraInfo",
     # Camera — point cloud (if enabled)
     "/camera/depth/color/points": "sensor_msgs/msg/PointCloud2",
+    # Mapping — lidar + odometry
+    "/scan": "sensor_msgs/msg/LaserScan",
+    "/odom": "nav_msgs/msg/Odometry",
+    "/tf": "tf2_msgs/msg/TFMessage",
+    "/tf_static": "tf2_msgs/msg/TFMessage",
     # Navigation
     "/cmd_vel": "geometry_msgs/msg/Twist",
     # Gamepad
@@ -67,6 +72,12 @@ _TOPIC_GROUPS = {
     "Camera — Point Cloud": [
         "/camera/depth/color/points",
     ],
+    "Mapping": [
+        "/scan",
+        "/odom",
+        "/tf",
+        "/tf_static",
+    ],
     "Navigation": [
         "/cmd_vel",
     ],
@@ -85,7 +96,6 @@ _DEFAULT_TOPICS = [
 
 
 _CONFIG_DIR = Path.home() / ".config" / "horseshitbot"
-_BAG_TOPICS_FILE = _CONFIG_DIR / "bag_topics.json"
 
 
 class BagRecorderNode(Node):
@@ -95,10 +105,14 @@ class BagRecorderNode(Node):
         self.declare_parameter("output_dir", "~/rosbags")
         self.declare_parameter("bag_prefix", "horseshitbot")
         self.declare_parameter("storage_id", "mcap")
+        self.declare_parameter("topics_config_name", "bag_topics.json")
 
         self._output_dir = self.get_parameter("output_dir").get_parameter_value().string_value
         self._bag_prefix = self.get_parameter("bag_prefix").get_parameter_value().string_value
         self._storage_id = self.get_parameter("storage_id").get_parameter_value().string_value
+        self._bag_topics_file = _CONFIG_DIR / self.get_parameter(
+            "topics_config_name"
+        ).get_parameter_value().string_value
 
         self._topics: list[str] = self._load_topics_from_file()
 
@@ -133,8 +147,8 @@ class BagRecorderNode(Node):
     def _load_topics_from_file(self) -> list[str]:
         """Load selected topics from the config file, or return defaults."""
         try:
-            if _BAG_TOPICS_FILE.is_file():
-                data = json.loads(_BAG_TOPICS_FILE.read_text())
+            if self._bag_topics_file.is_file():
+                data = json.loads(self._bag_topics_file.read_text())
                 topics = [t for t in data if t in _TOPIC_TYPE_MAP]
                 if topics:
                     return topics

@@ -1,17 +1,20 @@
 """
 Lidar Node — owns the YDLidar T-MINI Plus serial port, provides
-start/stop services, and publishes scan data for the web dashboard.
+start/stop services, and publishes scan data for the web dashboard
+and as standard sensor_msgs/LaserScan for SLAM / mapping.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import struct
 import threading
 import time
 
 import rclpy
 from rclpy.node import Node
+from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
@@ -190,11 +193,19 @@ class LidarNode(Node):
         self.declare_parameter("baud", 230400)
         self.declare_parameter("auto_start", False)
         self.declare_parameter("publish_hz", 5.0)
+        self.declare_parameter("frame_id", "laser")
+        self.declare_parameter("range_min", 0.02)
+        self.declare_parameter("range_max", 12.0)
+        self.declare_parameter("scan_bins", 720)
 
         port = self.get_parameter("port").get_parameter_value().string_value
         baud = self.get_parameter("baud").get_parameter_value().integer_value
         auto_start = self.get_parameter("auto_start").get_parameter_value().bool_value
         pub_hz = self.get_parameter("publish_hz").get_parameter_value().double_value
+        self._frame_id = self.get_parameter("frame_id").get_parameter_value().string_value
+        self._range_min = self.get_parameter("range_min").get_parameter_value().double_value
+        self._range_max = self.get_parameter("range_max").get_parameter_value().double_value
+        self._scan_bins = self.get_parameter("scan_bins").get_parameter_value().integer_value
 
         self._driver = _LidarDriver(port, baud)
         self._scanning = False
@@ -207,6 +218,7 @@ class LidarNode(Node):
 
         self._status_pub = self.create_publisher(String, "/lidar/status", 10)
         self._points_pub = self.create_publisher(String, "/lidar/points", 10)
+        self._scan_pub = self.create_publisher(LaserScan, "/scan", 10)
 
         self.create_service(Trigger, "~/start_scan", self._srv_start)
         self.create_service(Trigger, "~/stop_scan", self._srv_stop)
@@ -299,6 +311,42 @@ class LidarNode(Node):
             msg2 = String()
             msg2.data = json.dumps(compact)
             self._points_pub.publish(msg2)
+
+            self._publish_laser_scan(pts)
+
+    def _publish_laser_scan(self, pts: list[tuple[float, float, int]]):
+        """Convert raw (angle_deg, dist_mm, intensity) points into a LaserScan."""
+        n = self._scan_bins
+        angle_increment = 2.0 * math.pi / n
+
+        ranges = [0.0] * n
+        intensities = [0.0] * n
+
+        for angle_deg, dist_mm, intensity in pts:
+            rad = math.radians(angle_deg)
+            if rad < 0.0:
+                rad += 2.0 * math.pi
+            idx = int(rad / angle_increment)
+            if 0 <= idx < n:
+                dist_m = dist_mm / 1000.0
+                if self._range_min <= dist_m <= self._range_max:
+                    if ranges[idx] == 0.0 or dist_m < ranges[idx]:
+                        ranges[idx] = dist_m
+                        intensities[idx] = float(intensity)
+
+        scan = LaserScan()
+        scan.header.stamp = self.get_clock().now().to_msg()
+        scan.header.frame_id = self._frame_id
+        scan.angle_min = 0.0
+        scan.angle_max = 2.0 * math.pi
+        scan.angle_increment = angle_increment
+        scan.time_increment = 0.0
+        scan.scan_time = 1.0 / max(0.5, self.get_parameter("publish_hz").get_parameter_value().double_value)
+        scan.range_min = self._range_min
+        scan.range_max = self._range_max
+        scan.ranges = ranges
+        scan.intensities = intensities
+        self._scan_pub.publish(scan)
 
     def _srv_start(self, request, response):
         ok, msg = self._start_scanning()
