@@ -87,7 +87,7 @@ _TOPIC_GROUPS = {
     ],
 }
 
-_DEFAULT_TOPICS = [
+_FALLBACK_TOPICS = [
     "/camera/color/image_raw",
     "/camera/aligned_depth_to_color/image_raw",
     "/camera/color/camera_info",
@@ -106,6 +106,7 @@ class BagRecorderNode(Node):
         self.declare_parameter("bag_prefix", "horseshitbot")
         self.declare_parameter("storage_id", "mcap")
         self.declare_parameter("topics_config_name", "bag_topics.json")
+        self.declare_parameter("default_topics", _FALLBACK_TOPICS)
 
         self._output_dir = self.get_parameter("output_dir").get_parameter_value().string_value
         self._bag_prefix = self.get_parameter("bag_prefix").get_parameter_value().string_value
@@ -113,6 +114,9 @@ class BagRecorderNode(Node):
         self._bag_topics_file = _CONFIG_DIR / self.get_parameter(
             "topics_config_name"
         ).get_parameter_value().string_value
+        self._default_topics = list(
+            self.get_parameter("default_topics").get_parameter_value().string_array_value
+        )
 
         self._topics: list[str] = self._load_topics_from_file()
 
@@ -154,7 +158,7 @@ class BagRecorderNode(Node):
                     return topics
         except Exception:
             pass
-        return list(_DEFAULT_TOPICS)
+        return [t for t in self._default_topics if t in _TOPIC_TYPE_MAP] or list(_FALLBACK_TOPICS)
 
     def _reload_topics_if_changed(self):
         """Periodically check config file and update topics if changed."""

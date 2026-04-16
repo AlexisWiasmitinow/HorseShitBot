@@ -14,8 +14,8 @@ import serial
 
 MOTOR_DEFAULTS = {
     "pole_pairs": 7,
-    "current_lim": 20,
-    "calibration_current": 10,
+    "current_lim": 30,
+    "calibration_current": 20,
     "motor_type": 0,
     "pre_calibrated": 0,
 }
