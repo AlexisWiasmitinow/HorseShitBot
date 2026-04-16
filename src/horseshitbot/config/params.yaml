@@ -25,6 +25,7 @@ wheel_driver_node:
     odrive_vel_limit: 100.0
     odrive_current_lim: 30.0
     odrive_vel_ramp_rate: 20.0
+    odrive_vel_integrator_limit: 5.0  # max idle current from integrator windup (amps)
     # Drive train: 20T HTD3M → 90T HTD3M belt, 84T 5mm track sprocket
     # 1 motor turn = (20/90) × 84 × 5mm = 93.333mm
     meters_per_motor_turn: 0.093333

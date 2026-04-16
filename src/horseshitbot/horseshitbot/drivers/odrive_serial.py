@@ -268,6 +268,19 @@ class ODriveSerial:
         except (ValueError, TypeError):
             return 0.0
 
+    def get_current(self, axis: int) -> float | None:
+        """Read measured torque current Iq (amps) for the given axis."""
+        raw = self.read_property_fast(
+            f"axis{axis}.motor.current_control.Iq_measured"
+        )
+        try:
+            val = float(raw)
+            if -200.0 < val < 200.0:
+                return val
+        except (ValueError, TypeError):
+            pass
+        return None
+
     def get_vbus_voltage(self) -> float:
         raw = self.read_property("vbus_voltage")
         try:

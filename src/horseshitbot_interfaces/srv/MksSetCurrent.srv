@@ -1,0 +1,6 @@
+uint8 motor_id
+uint16 run_current_ma
+uint8 hold_current_pct
+---
+bool success
+string message

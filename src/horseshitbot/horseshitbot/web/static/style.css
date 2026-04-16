@@ -94,6 +94,28 @@ header h1 { font-size: 1.3rem; font-weight: 700; white-space: nowrap; }
 .state-error   { color: var(--err); }
 
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.jog-row {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06);
+}
+.jog-input {
+  width: 72px; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.15); background: var(--surface);
+  color: var(--text); font-size: 0.9rem; text-align: center;
+}
+.jog-input:focus { outline: none; border-color: var(--ok); }
+.jog-unit { color: var(--muted); font-size: 0.8rem; }
+.motor-block { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.06); }
+.motor-current-row {
+  display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;
+}
+.motor-current-row label { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 0.8rem; }
+.motor-cur-input {
+  width: 64px; padding: 4px 6px; border-radius: 5px;
+  border: 1px solid rgba(255,255,255,0.15); background: var(--surface);
+  color: var(--text); font-size: 0.85rem; text-align: center;
+}
+.motor-cur-input:focus { outline: none; border-color: var(--ok); }
 button {
   background: var(--surface);
   color: var(--text);
@@ -122,6 +144,15 @@ button.primary:hover { background: #3db88a; }
   border-radius: 4px;
   transition: width 0.15s;
   background: var(--ok);
+}
+.bar-fill.bar-current {
+  background: #5b8def;
+}
+.bar-fill.bar-current.warn {
+  background: var(--warn, #f0c929);
+}
+.bar-fill.bar-current.danger {
+  background: var(--err, #e94560);
 }
 
 .rec-dot {

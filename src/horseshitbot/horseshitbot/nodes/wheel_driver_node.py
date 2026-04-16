@@ -68,6 +68,7 @@ class WheelDriverNode(Node):
         self.declare_parameter("odrive_vel_limit", 100.0)
         self.declare_parameter("odrive_current_lim", 20.0)
         self.declare_parameter("odrive_vel_ramp_rate", 20.0)
+        self.declare_parameter("odrive_vel_integrator_limit", 5.0)
         # Odometry: differential-drive geometry
         self.declare_parameter("meters_per_motor_turn", 0.093333)
         self.declare_parameter("wheel_separation", 0.40)
@@ -110,6 +111,8 @@ class WheelDriverNode(Node):
         self._backend_name = ""
         self._backend_error = ""
         self._backend_diag: dict = {}
+        self._current_left: float | None = None
+        self._current_right: float | None = None
 
         # Subscriptions and services
         self.create_subscription(Twist, "/cmd_vel", self._cb_cmd_vel, 10)
@@ -133,6 +136,9 @@ class WheelDriverNode(Node):
 
         # Slower diagnostics timer (temps, voltages) — every 5 s
         self.create_timer(5.0, self._diag_tick)
+
+        # Motor current polling — every 1 s
+        self.create_timer(1.0, self._current_tick)
 
         self.get_logger().info(f"Wheel driver started (backend={self._backend_name})")
 
@@ -182,6 +188,7 @@ class WheelDriverNode(Node):
                     vel_limit=self._p_float("odrive_vel_limit"),
                     current_lim=self._p_float("odrive_current_lim"),
                     vel_ramp_rate=self._p_float("odrive_vel_ramp_rate"),
+                    vel_integrator_limit=self._p_float("odrive_vel_integrator_limit"),
                     invert_left=self._p_bool("invert_left_dir"),
                     invert_right=self._p_bool("invert_right_dir"),
                 )
@@ -275,6 +282,15 @@ class WheelDriverNode(Node):
 
     # ── diagnostics ────────────────────────────────────────────
 
+    def _current_tick(self):
+        if self._backend:
+            try:
+                self._current_left, self._current_right = self._backend.get_currents()
+            except Exception:
+                self._current_left = self._current_right = None
+        else:
+            self._current_left = self._current_right = None
+
     def _diag_tick(self):
         if self._backend:
             try:
@@ -328,6 +344,10 @@ class WheelDriverNode(Node):
             "estopped": estopped,
             "error": self._backend_error,
         }
+        if self._current_left is not None:
+            payload["current_left"] = round(self._current_left, 2)
+        if self._current_right is not None:
+            payload["current_right"] = round(self._current_right, 2)
         if self._backend_diag:
             payload["diag"] = self._backend_diag
         status = json.dumps(payload)

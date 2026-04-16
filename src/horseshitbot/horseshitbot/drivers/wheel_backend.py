@@ -35,6 +35,10 @@ class WheelBackend(ABC):
         """Re-enable motors after emergency stop. Returns True if successful."""
         return True
 
+    def get_currents(self) -> tuple[float | None, float | None]:
+        """Return (left_amps, right_amps). None if not available."""
+        return None, None
+
     def get_diagnostics(self) -> dict:
         """Return backend-specific diagnostics (temps, voltages, etc.)."""
         return {}

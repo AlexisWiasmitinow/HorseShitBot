@@ -18,6 +18,9 @@ from pymodbus.client import ModbusSerialClient
 _pymodbus_logger = logging.getLogger("pymodbus")
 
 REG_WORKMODE = 0x0082
+REG_RUN_CURRENT = 0x0083
+REG_MICROSTEPS = 0x0084
+REG_HOLD_CURRENT_PCT = 0x009B
 REG_ENABLE = 0x00F3
 REG_SPEED = 0x00F6
 REG_POS_ABS = 0x00F5
@@ -25,6 +28,7 @@ REG_AXIS_ZERO = 0x0092
 REG_RELEASE_PROTECT = 0x003D
 
 MODE_SR_OPEN = 3
+MODE_SR_CLOSE = 4
 MODE_SR_VFOC = 5
 
 COUNTS_PER_REV = 0x4000
@@ -175,6 +179,35 @@ class MksBus:
             self.client.retries = prev_retries
             _pymodbus_logger.setLevel(prev_level)
 
+    def get_run_current(self, unit_id: int) -> int | None:
+        """Read run current in mA. Returns None if firmware doesn't support readback."""
+        try:
+            regs = self.read_input_regs(unit_id, REG_RUN_CURRENT, 1)
+            if regs:
+                return regs[0]
+        except Exception:
+            pass
+        return None
+
+    def set_run_current(self, unit_id: int, ma: int):
+        """Set run current in mA (clamped to 10–5200)."""
+        self.write_reg(unit_id, REG_RUN_CURRENT, int(clamp(ma, 10, 5200)))
+
+    def get_hold_current_pct(self, unit_id: int) -> int | None:
+        """Read hold current as percentage (10–100). Returns None if firmware doesn't support readback."""
+        try:
+            regs = self.read_input_regs(unit_id, REG_HOLD_CURRENT_PCT, 1)
+            if regs:
+                return (regs[0] + 1) * 10
+        except Exception:
+            pass
+        return None
+
+    def set_hold_current_pct(self, unit_id: int, pct: int):
+        """Set hold current percentage (10–100, in steps of 10)."""
+        pct = int(clamp(pct, 10, 100))
+        self.write_reg(unit_id, REG_HOLD_CURRENT_PCT, (pct - 10) // 10)
+
     def init_servo(self, unit_id: int, mode: int = MODE_SR_VFOC, enable: bool = True):
         self.write_reg(unit_id, REG_WORKMODE, int(mode))
         if enable:
@@ -210,6 +243,18 @@ class MksBus:
         acc = int(clamp(acc, 0, 65535))
         hi, lo = _split_i32_to_u16s(int(abs_axis_i32))
         self.write_regs(unit_id, REG_POS_ABS, [acc, speed_rpm, hi, lo])
+
+    def move_turns(
+        self, unit_id: int, turns: float, speed_rpm: int = 300,
+        acc: int = 3, invert_dir: bool = False,
+    ):
+        """Relative move: zero the axis, then move to turns × COUNTS_PER_REV."""
+        self.axis_zero(unit_id)
+        time.sleep(0.05)
+        counts = int(round(turns * COUNTS_PER_REV))
+        if invert_dir:
+            counts = -counts
+        self.move_abs_axis(unit_id, counts, speed_rpm=speed_rpm, acc=acc)
 
     def clear_error_state(self, unit_id: int, mode: int | None = None):
         try:

@@ -43,6 +43,7 @@ class ODriveWheelBackend(WheelBackend):
         vel_limit: float = 100.0,
         current_lim: float = 20.0,
         vel_ramp_rate: float = 20.0,
+        vel_integrator_limit: float = 5.0,
         rpm_to_tps: float = 1.0 / 60.0,
         invert_left: bool = False,
         invert_right: bool = False,
@@ -51,6 +52,7 @@ class ODriveWheelBackend(WheelBackend):
         self._vel_limit = vel_limit
         self._current_lim = current_lim
         self._vel_ramp_rate = vel_ramp_rate
+        self._vel_integrator_limit = vel_integrator_limit
         self._rpm_to_tps = rpm_to_tps
         self._invert_left = invert_left
         self._invert_right = invert_right
@@ -84,6 +86,9 @@ class ODriveWheelBackend(WheelBackend):
             )
             self._odrv.write_property(
                 f"axis{ax}.controller.config.vel_ramp_rate", str(self._vel_ramp_rate)
+            )
+            self._odrv.write_property(
+                f"axis{ax}.controller.config.vel_integrator_limit", str(self._vel_integrator_limit)
             )
 
         for ax in (0, 1):
@@ -163,6 +168,13 @@ class ODriveWheelBackend(WheelBackend):
         except Exception as e:
             _log.error("Resume failed: %s", e)
             return False
+
+    def get_currents(self) -> tuple[float | None, float | None]:
+        if not self._connected:
+            return None, None
+        left = self._odrv.get_current(0)
+        right = self._odrv.get_current(1)
+        return left, right
 
     def get_diagnostics(self) -> dict:
         if not self._connected:
