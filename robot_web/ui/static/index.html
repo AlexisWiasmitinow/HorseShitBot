@@ -64,8 +64,8 @@
           <div id="pad"><div id="knob"></div></div>
 
           <div class="readouts">
-            <div class="kv"><b>Left RPM</b> <code id="lRpm">—</code></div>
-            <div class="kv"><b>Right RPM</b> <code id="rRpm">—</code></div>
+            <div class="kv"><b>Left m/s</b> <code id="lRpm">—</code></div>
+            <div class="kv"><b>Right m/s</b> <code id="rRpm">—</code></div>
             <div class="kv"><b>Status</b> <code id="status">ready</code></div>
 
             <div class="btn-row">
@@ -114,6 +114,8 @@
   </div>
 
   <script>
+    const METERS_PER_TURN = 0.093333;
+    function rpmToMs(rpm){ return (rpm * METERS_PER_TURN / 60.0).toFixed(2); }
     function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
     async function postJSON(url, obj){
       const r = await fetch(url, {method:"POST",headers:{"Content-Type":"application/json"},body:obj?JSON.stringify(obj):null});
@@ -157,8 +159,8 @@
       lastSend=now;
       try{
         const res=await postJSON("/api/drive",{x,y});
-        lRpm.textContent=(res.left_rpm??"—").toString();
-        rRpm.textContent=(res.right_rpm??"—").toString();
+        lRpm.textContent=res.left_rpm!=null ? rpmToMs(res.left_rpm) : "—";
+        rRpm.textContent=res.right_rpm!=null ? rpmToMs(res.right_rpm) : "—";
         status.textContent=res.stopping?"stopping (fast)":"ok";
       }catch(e){ status.textContent="ERR"; }
     }

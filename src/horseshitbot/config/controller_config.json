@@ -1,7 +1,7 @@
 {
   "buttons": {
-    "A": "camera_bag_recording",
-    "B": "stop_wheels",
+    "A": "perception_bag_recording",
+    "B": "mapping_bag_recording",
     "X": "stop_actuators",
     "Y": "stop_wheels",
     "LB": "lift_up",

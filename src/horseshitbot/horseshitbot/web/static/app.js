@@ -1,6 +1,8 @@
 const STATE_NAMES = ["IDLE", "REFERENCING", "REFERENCED", "MOVING_OPEN", "MOVING_CLOSE", "ERROR"];
 const STATE_CLASSES = ["state-idle", "state-ref", "state-ref", "state-moving", "state-moving", "state-error"];
-const MAX_RPM = 500;
+const METERS_PER_TURN = 0.093333;
+const MAX_SPEED_MS = 3.0;
+function rpmToMs(rpm) { return rpm * METERS_PER_TURN / 60.0; }
 
 let ws = null;
 let ctrlConfig = null;   // fetched from server
@@ -45,10 +47,12 @@ function connectWs() {
 function updateDashboard(data) {
   const w = data.wheel_status || {};
   setText("w-backend", w.backend || "--");
-  setText("w-left", (w.left_rpm || 0).toFixed(0));
-  setText("w-right", (w.right_rpm || 0).toFixed(0));
-  setBar("bar-left", Math.abs(w.left_rpm || 0), MAX_RPM);
-  setBar("bar-right", Math.abs(w.right_rpm || 0), MAX_RPM);
+  const leftMs = rpmToMs(w.left_rpm || 0);
+  const rightMs = rpmToMs(w.right_rpm || 0);
+  setText("w-left", leftMs.toFixed(2));
+  setText("w-right", rightMs.toFixed(2));
+  setBar("bar-left", Math.abs(leftMs), MAX_SPEED_MS);
+  setBar("bar-right", Math.abs(rightMs), MAX_SPEED_MS);
 
   const estopBanner = document.getElementById("estop-banner");
   if (estopBanner) estopBanner.style.display = w.estopped ? "block" : "none";
