@@ -31,7 +31,7 @@ from rclpy.qos import (
 from std_msgs.msg import String
 
 from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
-from horseshitbot_interfaces.srv import MksSetSpeed, ActuatorCommand, SwitchBackend
+from horseshitbot_interfaces.srv import MksSetSpeed, MksMoveTurns, MksSetCurrent, ActuatorCommand, SwitchBackend
 from std_srvs.srv import Trigger
 
 try:
@@ -428,6 +428,9 @@ class WebDashboardNode(Node):
             }
         self._lidar_start_cli = self.create_client(Trigger, "/lidar_node/start_scan")
         self._lidar_stop_cli = self.create_client(Trigger, "/lidar_node/stop_scan")
+        self._mks_move_cli = self.create_client(MksMoveTurns, "/mks/move_turns")
+        self._mks_current_cli = self.create_client(MksSetCurrent, "/mks/set_current")
+        self._mks_save_defaults_cli = self.create_client(Trigger, "/mks/save_current_defaults")
         self._config_pub = self.create_publisher(String, "/gamepad/config", 10)
 
         self._app = self._build_app()
@@ -596,6 +599,46 @@ class WebDashboardNode(Node):
                 return {"success": False, "message": "lidar_node not available"}
             ros_node._lidar_stop_cli.call_async(Trigger.Request())
             return {"success": True, "message": "stop_scan called"}
+
+        # ── Motor jog ──────────────────────────────────────────────
+
+        @app.post("/api/mks/move_turns")
+        async def mks_move_turns(body: dict):
+            motor_id = body.get("motor_id")
+            turns = body.get("turns")
+            if motor_id is None or turns is None:
+                return {"success": False, "message": "motor_id and turns required"}
+            if not ros_node._mks_move_cli.service_is_ready():
+                return {"success": False, "message": "MKS bus node not available"}
+            req = MksMoveTurns.Request()
+            req.motor_id = int(motor_id)
+            req.turns = float(turns)
+            req.speed_rpm = int(body.get("speed_rpm", 300))
+            req.accel = int(body.get("accel", 3))
+            req.invert_dir = bool(body.get("invert_dir", False))
+            ros_node._mks_move_cli.call_async(req)
+            return {"success": True, "message": f"motor {motor_id}: moving {turns} turns"}
+
+        @app.post("/api/mks/set_current")
+        async def mks_set_current(body: dict):
+            motor_id = body.get("motor_id")
+            if motor_id is None:
+                return {"success": False, "message": "motor_id required"}
+            if not ros_node._mks_current_cli.service_is_ready():
+                return {"success": False, "message": "MKS bus node not available"}
+            req = MksSetCurrent.Request()
+            req.motor_id = int(motor_id)
+            req.run_current_ma = int(body.get("run_current_ma", 0))
+            req.hold_current_pct = int(body.get("hold_current_pct", 0))
+            ros_node._mks_current_cli.call_async(req)
+            return {"success": True, "message": f"motor {motor_id}: current update sent"}
+
+        @app.post("/api/mks/save_current_defaults")
+        async def mks_save_defaults():
+            if not ros_node._mks_save_defaults_cli.service_is_ready():
+                return {"success": False, "message": "MKS bus node not available"}
+            ros_node._mks_save_defaults_cli.call_async(Trigger.Request())
+            return {"success": True, "message": "saving current values as defaults"}
 
         @app.get("/api/bag-topics/{profile}")
         async def get_bag_topics(profile: str):

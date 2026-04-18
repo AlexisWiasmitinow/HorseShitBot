@@ -12,7 +12,7 @@ wheel_driver_node:
     id_right: 2
     invert_left_dir: false
     invert_right_dir: true
-    max_wheel_rpm: 500.0
+    max_speed_ms: 3.0              # metres/sec — converted to motor RPM internally
     wheel_acc_reg: 3
     update_hz: 50.0
     accel_rpm_s: 120.0
@@ -23,11 +23,14 @@ wheel_driver_node:
     odrive_port: "/dev/odrive"
     odrive_baud: 115200
     odrive_vel_limit: 100.0
-    odrive_current_lim: 20.0
+    odrive_current_lim: 30.0
     odrive_vel_ramp_rate: 20.0
-    # Odometry — measure these for your robot!
-    wheel_radius: 0.075           # metres
-    wheel_separation: 0.40        # metres (centre-to-centre)
+    odrive_vel_integrator_limit: 5.0  # max idle current from integrator windup (amps)
+    # Drive train: 20T HTD3M → 90T HTD3M belt, 84T 5mm track sprocket
+    # 1 motor turn = (20/90) × 84 × 5mm = 93.333mm
+    meters_per_motor_turn: 0.093333
+    # Odometry — measure wheel_separation for your robot!
+    wheel_separation: 0.40        # metres (centre-to-centre of tracks)
     odom_frame_id: "odom"
     base_frame_id: "base_link"
     publish_odom_tf: true
@@ -120,6 +123,11 @@ perception_recorder:
     bag_prefix: "perception"
     storage_id: "mcap"
     topics_config_name: "perception_bag_topics.json"
+    default_topics:
+      - "/camera/color/image_raw"
+      - "/camera/color/camera_info"
+      - "/camera/aligned_depth_to_color/image_raw"
+      - "/camera/aligned_depth_to_color/camera_info"
 
 mapping_recorder:
   ros__parameters:
@@ -127,3 +135,8 @@ mapping_recorder:
     bag_prefix: "mapping"
     storage_id: "mcap"
     topics_config_name: "mapping_bag_topics.json"
+    default_topics:
+      - "/scan"
+      - "/odom"
+      - "/tf"
+      - "/tf_static"

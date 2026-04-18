@@ -30,10 +30,14 @@
       <div class="card" id="card-wheels">
         <h2>Wheels</h2>
         <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
-        <div class="kv"><span class="label">Left RPM</span><span class="value" id="w-left">0</span></div>
+        <div class="kv"><span class="label">Left m/s</span><span class="value" id="w-left">0</span></div>
         <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
-        <div class="kv"><span class="label">Right RPM</span><span class="value" id="w-right">0</span></div>
+        <div class="kv"><span class="label">Right m/s</span><span class="value" id="w-right">0</span></div>
         <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
+        <div class="kv"><span class="label">Left amps</span><span class="value" id="w-current-left">--</span></div>
+        <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-left" style="width:0%"></div></div>
+        <div class="kv"><span class="label">Right amps</span><span class="value" id="w-current-right">--</span></div>
+        <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-right" style="width:0%"></div></div>
         <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
         <div class="btn-row">
           <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
@@ -68,6 +72,11 @@
           <button onclick="cmd('brush_node','stop')">Stop</button>
           <button onclick="cmd('brush_node','reference')">Reference</button>
         </div>
+        <div class="jog-row">
+          <input type="number" id="jog-brush" step="0.1" value="1" class="jog-input">
+          <span class="jog-unit">turns</span>
+          <button class="primary" onclick="jogMotor(4, 'jog-brush')">Move</button>
+        </div>
       </div>
 
       <!-- Bin Door -->
@@ -81,6 +90,11 @@
           <button onclick="cmd('bin_door_node','close')">Close</button>
           <button onclick="cmd('bin_door_node','stop')">Stop</button>
           <button onclick="cmd('bin_door_node','reference')">Reference</button>
+        </div>
+        <div class="jog-row">
+          <input type="number" id="jog-door" step="0.1" value="1" class="jog-input">
+          <span class="jog-unit">turns</span>
+          <button class="primary" onclick="jogMotor(6, 'jog-door')">Move</button>
         </div>
       </div>
 
@@ -96,6 +110,10 @@
           <span class="value" id="hw-mks-bus">--</span>
         </div>
         <div id="hw-motors"></div>
+        <div class="btn-row" id="hw-save-defaults-row" style="margin-top:12px">
+          <button onclick="saveMotorDefaults()">Save as Default</button>
+          <span class="ctrl-msg" id="hw-save-msg"></span>
+        </div>
       </div>
 
       <!-- Gamepad -->

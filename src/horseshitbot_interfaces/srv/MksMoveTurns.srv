@@ -1,0 +1,8 @@
+uint8 motor_id
+float32 turns
+uint16 speed_rpm
+uint8 accel
+bool invert_dir
+---
+bool success
+string message

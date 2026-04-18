@@ -1,6 +1,30 @@
 const STATE_NAMES = ["IDLE", "REFERENCING", "REFERENCED", "MOVING_OPEN", "MOVING_CLOSE", "ERROR"];
 const STATE_CLASSES = ["state-idle", "state-ref", "state-ref", "state-moving", "state-moving", "state-error"];
-const MAX_RPM = 500;
+const METERS_PER_TURN = 0.093333;
+const MAX_SPEED_MS = 3.0;
+function rpmToMs(rpm) { return rpm * METERS_PER_TURN / 60.0; }
+
+function updateCurrent(side, amps, limit) {
+  const el = document.getElementById("w-current-" + side);
+  const bar = document.getElementById("bar-current-" + side);
+  if (!el) return;
+  if (amps == null) {
+    el.textContent = "--";
+    el.style.color = "";
+    if (bar) { bar.style.width = "0%"; bar.className = "bar-fill bar-current"; }
+    return;
+  }
+  const abs = Math.abs(amps);
+  el.textContent = abs.toFixed(2);
+  const pct = Math.min(100, (abs / limit) * 100);
+  const high = abs > limit * 0.8;
+  const crit = abs > limit * 0.95;
+  el.style.color = crit ? "var(--err)" : high ? "var(--warn, #f0c929)" : "";
+  if (bar) {
+    bar.style.width = pct.toFixed(1) + "%";
+    bar.className = "bar-fill bar-current" + (crit ? " danger" : high ? " warn" : "");
+  }
+}
 
 let ws = null;
 let ctrlConfig = null;   // fetched from server
@@ -45,10 +69,17 @@ function connectWs() {
 function updateDashboard(data) {
   const w = data.wheel_status || {};
   setText("w-backend", w.backend || "--");
-  setText("w-left", (w.left_rpm || 0).toFixed(0));
-  setText("w-right", (w.right_rpm || 0).toFixed(0));
-  setBar("bar-left", Math.abs(w.left_rpm || 0), MAX_RPM);
-  setBar("bar-right", Math.abs(w.right_rpm || 0), MAX_RPM);
+  const leftMs = rpmToMs(w.left_rpm || 0);
+  const rightMs = rpmToMs(w.right_rpm || 0);
+  setText("w-left", leftMs.toFixed(2));
+  setText("w-right", rightMs.toFixed(2));
+  setBar("bar-left", Math.abs(leftMs), MAX_SPEED_MS);
+  setBar("bar-right", Math.abs(rightMs), MAX_SPEED_MS);
+
+  // Motor currents
+  const currentLim = (w.diag && w.diag.current_lim) ? w.diag.current_lim : 20;
+  updateCurrent("left", w.current_left, currentLim);
+  updateCurrent("right", w.current_right, currentLim);
 
   const estopBanner = document.getElementById("estop-banner");
   if (estopBanner) estopBanner.style.display = w.estopped ? "block" : "none";
@@ -111,20 +142,36 @@ function updateDashboard(data) {
   const motorsEl = document.getElementById("hw-motors");
   if (motorsEl && hw.motors) {
     const motorNames = {"3": "Lift A", "4": "Brush", "5": "Lift B", "6": "Door"};
-    motorsEl.innerHTML = "";
+    const info = hw.motor_info || {};
     for (const [id, online] of Object.entries(hw.motors)) {
-      const row = document.createElement("div");
-      row.className = "kv";
-      const label = document.createElement("span");
-      label.className = "label";
-      label.textContent = `Motor ${id} (${motorNames[id] || "?"})`;
-      const value = document.createElement("span");
-      value.className = "value";
-      value.textContent = online ? "Online" : "Offline";
-      value.style.color = online ? "var(--ok, #4ecca3)" : "var(--err)";
-      row.appendChild(label);
-      row.appendChild(value);
-      motorsEl.appendChild(row);
+      const mi = info[id] || {};
+      let block = document.getElementById("hw-motor-" + id);
+      if (!block) {
+        block = document.createElement("div");
+        block.id = "hw-motor-" + id;
+        block.className = "motor-block";
+        block.innerHTML =
+          `<div class="kv"><span class="label">Motor ${id} (${motorNames[id] || "?"})</span><span class="value" id="hw-m${id}-status">--</span></div>` +
+          `<div class="motor-current-row">` +
+            `<label>Run<input type="number" id="hw-m${id}-run" class="motor-cur-input" min="10" max="5200" step="100"></label>` +
+            `<span class="jog-unit">mA</span>` +
+            `<label>Hold<input type="number" id="hw-m${id}-hold" class="motor-cur-input" min="10" max="100" step="10"></label>` +
+            `<span class="jog-unit">%</span>` +
+            `<button class="primary" onclick="setMotorCurrent(${id})">Set</button>` +
+          `</div>`;
+        motorsEl.appendChild(block);
+      }
+      const statusEl = document.getElementById("hw-m" + id + "-status");
+      if (statusEl) {
+        statusEl.textContent = online ? "Online" : "Offline";
+        statusEl.style.color = online ? "var(--ok, #4ecca3)" : "var(--err)";
+      }
+      const runInput = document.getElementById("hw-m" + id + "-run");
+      const holdInput = document.getElementById("hw-m" + id + "-hold");
+      if (runInput && document.activeElement !== runInput && mi.run_current_ma != null)
+        runInput.value = mi.run_current_ma;
+      if (holdInput && document.activeElement !== holdInput && mi.hold_current_pct != null)
+        holdInput.value = mi.hold_current_pct;
     }
   }
 
@@ -1343,16 +1390,34 @@ function drawLidar() {
     }
   }
 
-  // Forward direction indicator
+  // Forward arrow
+  ctx.save();
+  ctx.strokeStyle = "#4ecca3";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 8);
+  ctx.lineTo(cx, 24);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - 5, 30);
+  ctx.lineTo(cx, 22);
+  ctx.lineTo(cx + 5, 30);
+  ctx.fillStyle = "#4ecca3";
+  ctx.fill();
+  ctx.restore();
+
+  // Direction labels
+  ctx.fillStyle = "#4ecca3";
+  ctx.font = "bold 11px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("FWD", cx, 14);
   ctx.fillStyle = "#4ecca366";
   ctx.font = "11px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText("0\u00b0", cx, 14);
-  ctx.fillText("180\u00b0", cx, H - 6);
+  ctx.fillText("BACK", cx, H - 6);
   ctx.textAlign = "left";
-  ctx.fillText("270\u00b0", 2, cy - 3);
+  ctx.fillText("LEFT", 2, cy - 3);
   ctx.textAlign = "right";
-  ctx.fillText("90\u00b0", W - 2, cy - 3);
+  ctx.fillText("RIGHT", W - 2, cy - 3);
   ctx.textAlign = "left";
 
   if (lidarScanning) lidarAnimFrame = requestAnimationFrame(drawLidar);
@@ -1443,6 +1508,50 @@ async function cmd(node, action) {
 async function switchBackend() {
   try { await fetch("/api/command/wheel_driver_node/switch_backend", { method: "POST" }); }
   catch (e) { console.error("Switch failed:", e); }
+}
+
+async function saveMotorDefaults() {
+  const msg = document.getElementById("hw-save-msg");
+  try {
+    const resp = await fetch("/api/mks/save_current_defaults", { method: "POST" });
+    const r = await resp.json();
+    if (msg) {
+      msg.textContent = r.success ? "Saved" : (r.message || "Failed");
+      msg.style.color = r.success ? "var(--ok)" : "var(--err)";
+      setTimeout(() => { msg.textContent = ""; }, 3000);
+    }
+  } catch (e) {
+    if (msg) { msg.textContent = "Failed"; msg.style.color = "var(--err)"; }
+  }
+}
+
+async function setMotorCurrent(motorId) {
+  const runEl = document.getElementById("hw-m" + motorId + "-run");
+  const holdEl = document.getElementById("hw-m" + motorId + "-hold");
+  const run = runEl ? parseInt(runEl.value) : 0;
+  const hold = holdEl ? parseInt(holdEl.value) : 0;
+  if (!run && !hold) return;
+  try {
+    await fetch("/api/mks/set_current", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ motor_id: motorId, run_current_ma: run || 0, hold_current_pct: hold || 0 }),
+    });
+  } catch (e) { console.error("Set current failed:", e); }
+}
+
+async function jogMotor(motorId, inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const turns = parseFloat(input.value);
+  if (isNaN(turns) || turns === 0) return;
+  try {
+    await fetch("/api/mks/move_turns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ motor_id: motorId, turns: turns }),
+    });
+  } catch (e) { console.error("Jog failed:", e); }
 }
 
 async function startRecording(profile) {

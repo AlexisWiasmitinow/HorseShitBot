@@ -197,6 +197,7 @@ class LidarNode(Node):
         self.declare_parameter("range_min", 0.02)
         self.declare_parameter("range_max", 12.0)
         self.declare_parameter("scan_bins", 720)
+        self.declare_parameter("angle_offset", -90.0)
 
         port = self.get_parameter("port").get_parameter_value().string_value
         baud = self.get_parameter("baud").get_parameter_value().integer_value
@@ -206,6 +207,7 @@ class LidarNode(Node):
         self._range_min = self.get_parameter("range_min").get_parameter_value().double_value
         self._range_max = self.get_parameter("range_max").get_parameter_value().double_value
         self._scan_bins = self.get_parameter("scan_bins").get_parameter_value().integer_value
+        self._angle_offset = self.get_parameter("angle_offset").get_parameter_value().double_value
 
         self._driver = _LidarDriver(port, baud)
         self._scanning = False
@@ -307,7 +309,8 @@ class LidarNode(Node):
             step = max(1, len(pts) // 360)
             sampled = pts[::step]
             # Compact format: [[angle, dist, intensity], ...]
-            compact = [[round(a, 1), round(d, 0), q] for a, d, q in sampled]
+            off = self._angle_offset
+            compact = [[round((a + off) % 360.0, 1), round(d, 0), q] for a, d, q in sampled]
             msg2 = String()
             msg2.data = json.dumps(compact)
             self._points_pub.publish(msg2)
@@ -323,9 +326,8 @@ class LidarNode(Node):
         intensities = [0.0] * n
 
         for angle_deg, dist_mm, intensity in pts:
-            rad = math.radians(angle_deg)
-            if rad < 0.0:
-                rad += 2.0 * math.pi
+            rad = math.radians(angle_deg + self._angle_offset)
+            rad %= 2.0 * math.pi
             idx = int(rad / angle_increment)
             if 0 <= idx < n:
                 dist_m = dist_mm / 1000.0

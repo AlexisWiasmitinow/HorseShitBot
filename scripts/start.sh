@@ -24,6 +24,31 @@ else
   exit 1
 fi
 
+# ── Guard: check for existing instance ────────────────────────────
+EXISTING_PID=$(pgrep -f "ros2 launch horseshitbot|ros2 run horseshitbot" | grep -v "$$" || true)
+if [ -n "$EXISTING_PID" ]; then
+  echo "HorseShitBot is already running (PID: $EXISTING_PID)."
+  echo "  [k] Kill it and restart"
+  echo "  [q] Quit"
+  read -r -n1 -p "> " choice
+  echo ""
+  case "$choice" in
+    k|K)
+      echo "Killing existing instance..."
+      echo "$EXISTING_PID" | xargs kill 2>/dev/null || true
+      sleep 2
+      # Force-kill anything that survived
+      echo "$EXISTING_PID" | xargs kill -9 2>/dev/null || true
+      sleep 1
+      echo "Done."
+      ;;
+    *)
+      echo "Aborted."
+      exit 0
+      ;;
+  esac
+fi
+
 # ── Parse args ───────────────────────────────────────────────────
 ENABLE_CAMERA=true
 ENABLE_MKS=true

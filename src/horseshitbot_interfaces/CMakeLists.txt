@@ -8,6 +8,8 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ActuatorState.msg"
   "srv/MksSetSpeed.srv"
+  "srv/MksMoveTurns.srv"
+  "srv/MksSetCurrent.srv"
   "srv/ActuatorCommand.srv"
   "srv/SwitchBackend.srv"
   DEPENDENCIES std_msgs

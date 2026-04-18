@@ -56,7 +56,7 @@ class WheelDriverNode(Node):
         self.declare_parameter("id_right", 2)
         self.declare_parameter("invert_left_dir", False)
         self.declare_parameter("invert_right_dir", True)
-        self.declare_parameter("max_wheel_rpm", 500.0)
+        self.declare_parameter("max_speed_ms", 3.0)
         self.declare_parameter("wheel_acc_reg", 3)
         self.declare_parameter("update_hz", 50.0)
         self.declare_parameter("accel_rpm_s", 120.0)
@@ -68,14 +68,17 @@ class WheelDriverNode(Node):
         self.declare_parameter("odrive_vel_limit", 100.0)
         self.declare_parameter("odrive_current_lim", 20.0)
         self.declare_parameter("odrive_vel_ramp_rate", 20.0)
+        self.declare_parameter("odrive_vel_integrator_limit", 5.0)
         # Odometry: differential-drive geometry
-        self.declare_parameter("wheel_radius", 0.075)
+        self.declare_parameter("meters_per_motor_turn", 0.093333)
         self.declare_parameter("wheel_separation", 0.40)
         self.declare_parameter("odom_frame_id", "odom")
         self.declare_parameter("base_frame_id", "base_link")
         self.declare_parameter("publish_odom_tf", True)
 
-        self._max_rpm = self._p_float("max_wheel_rpm")
+        self._meters_per_turn = self._p_float("meters_per_motor_turn")
+        max_speed = self._p_float("max_speed_ms")
+        self._max_rpm = (max_speed / self._meters_per_turn) * 60.0
         self._update_hz = self._p_float("update_hz")
         self._accel = self._p_float("accel_rpm_s")
         self._decel = self._p_float("decel_rpm_s")
@@ -92,7 +95,6 @@ class WheelDriverNode(Node):
         self._estopped = False
 
         # Odometry state (integrated from commanded RPM)
-        self._wheel_radius = self._p_float("wheel_radius")
         self._wheel_sep = self._p_float("wheel_separation")
         self._odom_frame = self._p_str("odom_frame_id")
         self._base_frame = self._p_str("base_frame_id")
@@ -109,6 +111,8 @@ class WheelDriverNode(Node):
         self._backend_name = ""
         self._backend_error = ""
         self._backend_diag: dict = {}
+        self._current_left: float | None = None
+        self._current_right: float | None = None
 
         # Subscriptions and services
         self.create_subscription(Twist, "/cmd_vel", self._cb_cmd_vel, 10)
@@ -132,6 +136,9 @@ class WheelDriverNode(Node):
 
         # Slower diagnostics timer (temps, voltages) — every 5 s
         self.create_timer(5.0, self._diag_tick)
+
+        # Motor current polling — every 1 s
+        self.create_timer(1.0, self._current_tick)
 
         self.get_logger().info(f"Wheel driver started (backend={self._backend_name})")
 
@@ -181,6 +188,7 @@ class WheelDriverNode(Node):
                     vel_limit=self._p_float("odrive_vel_limit"),
                     current_lim=self._p_float("odrive_current_lim"),
                     vel_ramp_rate=self._p_float("odrive_vel_ramp_rate"),
+                    vel_integrator_limit=self._p_float("odrive_vel_integrator_limit"),
                     invert_left=self._p_bool("invert_left_dir"),
                     invert_right=self._p_bool("invert_right_dir"),
                 )
@@ -274,6 +282,15 @@ class WheelDriverNode(Node):
 
     # ── diagnostics ────────────────────────────────────────────
 
+    def _current_tick(self):
+        if self._backend:
+            try:
+                self._current_left, self._current_right = self._backend.get_currents()
+            except Exception:
+                self._current_left = self._current_right = None
+        else:
+            self._current_left = self._current_right = None
+
     def _diag_tick(self):
         if self._backend:
             try:
@@ -327,6 +344,10 @@ class WheelDriverNode(Node):
             "estopped": estopped,
             "error": self._backend_error,
         }
+        if self._current_left is not None:
+            payload["current_left"] = round(self._current_left, 2)
+        if self._current_right is not None:
+            payload["current_right"] = round(self._current_right, 2)
         if self._backend_diag:
             payload["diag"] = self._backend_diag
         status = json.dumps(payload)
@@ -337,9 +358,9 @@ class WheelDriverNode(Node):
 
     def _update_odometry(self, left_rpm: float, right_rpm: float, dt: float):
         """Integrate wheel RPMs into odometry and publish."""
-        # RPM -> m/s at wheel contact
-        v_left = left_rpm * (2.0 * math.pi * self._wheel_radius) / 60.0
-        v_right = right_rpm * (2.0 * math.pi * self._wheel_radius) / 60.0
+        # RPM -> m/s via drive-train ratio (meters_per_motor_turn)
+        v_left = left_rpm * self._meters_per_turn / 60.0
+        v_right = right_rpm * self._meters_per_turn / 60.0
 
         v_linear = (v_right + v_left) / 2.0
         v_angular = (v_right - v_left) / self._wheel_sep
