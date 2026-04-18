@@ -5,11 +5,12 @@ This script connects to ODrive via serial port (COM) using ASCII protocol.
 For better performance, use native USB with the main odriveTest.py script.
 """
 
-import serial
-import time
-import sys
 import argparse
+import os
 import re
+import serial
+import sys
+import time
 
 
 # =====================================================
@@ -203,7 +204,8 @@ def get_axis_info(odrv, axis_num=0):
         "2": "STARTUP_SEQUENCE",
         "3": "FULL_CALIBRATION_SEQUENCE",
         "4": "MOTOR_CALIBRATION",
-        "6": "ENCODER_OFFSET_CALIBRATION",
+        "6": "ENCODER_INDEX_SEARCH",
+        "7": "ENCODER_OFFSET_CALIBRATION",
         "8": "CLOSED_LOOP_CONTROL",
     }
 
@@ -307,9 +309,10 @@ def run_calibration(odrv, axis_num, state, name):
     # Wait for calibration to begin
     time.sleep(1)
 
-    # Monitor progress
+    # Monitor progress (full cal can pause in IDLE between motor and encoder phases — do not stop early)
     print("⟳ Calibration in progress...")
-    for i in range(30):
+    max_iter = 60 if int(state) == 3 else 30
+    for i in range(max_iter):
         time.sleep(1)
         current = odrv.read_property(f"axis{axis_num}.current_state")
 
@@ -318,15 +321,20 @@ def run_calibration(odrv, axis_num, state, name):
             "1": "IDLE",
             "3": "FULL_CALIBRATION",
             "4": "MOTOR_CALIBRATION",
-            "6": "ENCODER_OFFSET_CAL",
-            "7": "ENCODER_OFFSET_CAL",
+            "6": "ENCODER_INDEX_SEARCH",
+            "7": "ENCODER_OFFSET_CALIBRATION",
             "8": "CLOSED_LOOP",
         }
         state_name = state_names.get(current, f"UNKNOWN({current})")
         print(f"  State: {state_name} ({current})")
 
-        if current == "1":  # IDLE - done
-            break
+        if current == "1":
+            if int(state) == 3:
+                er = odrv.read_property(f"axis{axis_num}.encoder.is_ready")
+                if "".join(c for c in str(er) if c.isdigit()) == "1":
+                    break
+            else:
+                break
 
     # Check results
     time.sleep(0.5)
@@ -353,6 +361,9 @@ def run_calibration(odrv, axis_num, state, name):
     encoder_err_val = "".join(c for c in str(encoder_error) if c.isdigit())
 
     if error_val == "0" and motor_err_val == "0" and encoder_err_val == "0":
+        if not ensure_pre_calibrated_flags(odrv, axis_num):
+            print(f"\n✗ {name}: pre_calibrated flags not 1 after calibration")
+            return False
         print(f"\n✓ {name} successful!")
         return True
     else:
@@ -522,6 +533,286 @@ def set_closed_loop(odrv, axis_num=0):
         return False
 
 
+def read_axis_errors(odrv, axis_num=0, title="Status / errors"):
+    """Read-only snapshot: axis + subsystem errors and cal readiness (no writes)."""
+    print(f"\n--- {title} ---")
+    st = odrv.read_property(f"axis{axis_num}.current_state")
+    ae = odrv.read_property(f"axis{axis_num}.error")
+    me = odrv.read_property(f"axis{axis_num}.motor.error")
+    ee = odrv.read_property(f"axis{axis_num}.encoder.error")
+    ce = odrv.read_property(f"axis{axis_num}.controller.error")
+    mc = odrv.read_property(f"axis{axis_num}.motor.is_calibrated")
+    er = odrv.read_property(f"axis{axis_num}.encoder.is_ready")
+    pc_m = odrv.read_property(f"axis{axis_num}.motor.config.pre_calibrated")
+    pc_e = odrv.read_property(f"axis{axis_num}.encoder.config.pre_calibrated")
+    print(f"  current_state:  {st}")
+    print(f"  axis.error:     {ae}")
+    print(f"  motor.error:    {me}")
+    print(f"  encoder.error:  {ee}")
+    print(f"  controller.error: {ce}")
+    print(f"  motor.is_calibrated: {mc}")
+    print(f"  encoder.is_ready:    {er}")
+    print(f"  motor.config.pre_calibrated:   {pc_m}")
+    print(f"  encoder.config.pre_calibrated:  {pc_e}")
+
+
+def _dig_prop(s):
+    """Extract digits from ASCII property read (e.g. '0d' -> '0')."""
+    return "".join(c for c in str(s) if c.isdigit())
+
+
+def ensure_pre_calibrated_flags(odrv, axis_num=0) -> bool:
+    """
+    When motor.is_calibrated / encoder.is_ready, set matching *.config.pre_calibrated to 1
+    and verify readback (FW often leaves them 0 until explicitly set). Call before ss.
+    """
+    mc = _dig_prop(odrv.read_property(f"axis{axis_num}.motor.is_calibrated"))
+    er = _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.is_ready"))
+
+    if mc == "1":
+        ok = False
+        for _ in range(5):
+            odrv.write_property(f"axis{axis_num}.motor.config.pre_calibrated", "1")
+            time.sleep(0.1)
+            if _dig_prop(odrv.read_property(f"axis{axis_num}.motor.config.pre_calibrated")) == "1":
+                ok = True
+                break
+        if not ok:
+            print("  ✗ motor.config.pre_calibrated could not be set/read back as 1")
+            return False
+
+    if er == "1":
+        ok = False
+        for _ in range(5):
+            odrv.write_property(f"axis{axis_num}.encoder.config.pre_calibrated", "1")
+            time.sleep(0.1)
+            if _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.config.pre_calibrated")) == "1":
+                ok = True
+                break
+        if not ok:
+            print("  ✗ encoder.config.pre_calibrated could not be set/read back as 1")
+            return False
+
+    return True
+
+
+def try_encoder_index_search_for_ready(odrv, axis_num=0) -> bool:
+    """
+    With encoder.config.use_index True, encoder.is_ready is often 0 at cold boot until the
+    index (Z) pulse is found — even when encoder.config.pre_calibrated is 1 from NVM.
+    Request AXIS_STATE_ENCODER_INDEX_SEARCH (state 6 on ODrive 0.5.x) and wait for IDLE.
+    """
+    if _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.is_ready")) == "1":
+        return True
+
+    use_idx = _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.config.use_index"))
+    pc_e = _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.config.pre_calibrated"))
+    mc = _dig_prop(odrv.read_property(f"axis{axis_num}.motor.is_calibrated"))
+
+    if use_idx != "1" or pc_e != "1" or mc != "1":
+        return False
+
+    print("\nuse_index is enabled: running encoder **index search** (requested_state = 6).")
+    print("  Shaft may turn until the Z/index pulse is found …")
+
+    odrv.write_property(f"axis{axis_num}.error", "0")
+    odrv.write_property(f"axis{axis_num}.motor.error", "0")
+    odrv.write_property(f"axis{axis_num}.encoder.error", "0")
+    odrv.write_property(f"axis{axis_num}.controller.error", "0")
+    time.sleep(0.1)
+    odrv.write_property(f"axis{axis_num}.requested_state", "6")
+    time.sleep(0.5)
+
+    for i in range(90):
+        time.sleep(1.0)
+        cur = odrv.read_property(f"axis{axis_num}.current_state")
+        if cur == "1":
+            break
+        if i % 5 == 0:
+            print(f"  … current_state = {cur}")
+
+    time.sleep(0.3)
+    ok = _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.is_ready")) == "1"
+    if ok:
+        print("  ✓ encoder.is_ready is 1 after index search")
+    else:
+        ee = odrv.read_property(f"axis{axis_num}.encoder.error")
+        ae = odrv.read_property(f"axis{axis_num}.error")
+        print(f"  ✗ encoder.is_ready still 0 after index search. encoder.error={ee} axis.error={ae}")
+    return ok
+
+
+def _parse_float_serial(val):
+    """Best-effort parse of ODrive ASCII float (strips trailing unit garbage)."""
+    m = re.search(r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?", str(val))
+    return float(m.group(0)) if m else None
+
+
+def calibration_lockin_show(odrv, axis_num=0):
+    """Print encoder.config.calibration_lockin — sets index search / offset-cal motion (FW 0.5.x)."""
+    b = f"axis{axis_num}.encoder.config.calibration_lockin"
+    print(f"\nencoder.config.calibration_lockin (axis {axis_num}) — rad/s, rad/s², rad:")
+    for k in ("vel", "accel", "ramp_distance"):
+        v = odrv.read_property(f"{b}.{k}")
+        print(f"  {k:14s} = {v}")
+
+
+def calibration_lockin_negate_all(odrv, axis_num=0) -> bool:
+    """Negate vel, accel, ramp_distance together — reverses index search / lock-in direction."""
+    b = f"axis{axis_num}.encoder.config.calibration_lockin"
+    for k in ("vel", "accel", "ramp_distance"):
+        raw = odrv.read_property(f"{b}.{k}")
+        x = _parse_float_serial(raw)
+        if x is None:
+            print(f"  ✗ Could not parse {k}: {raw!r}")
+            return False
+        odrv.write_property(f"{b}.{k}", repr(x * -1.0))
+        time.sleep(0.05)
+    print("  ✓ Negated vel, accel, ramp_distance (opposite direction)")
+    return True
+
+
+def calibration_lockin_interactive(odrv, axis_num=0):
+    """Show lock-in params; optionally flip direction; optionally ss."""
+    print(f"\n{'='*50}")
+    print("INDEX SEARCH / CAL LOCK-IN DIRECTION (calibration_lockin)")
+    print(f"{'='*50}")
+    print(
+        "Index search (Z) and encoder offset cal use these. To reverse direction without "
+        "swapping motor wires, negate vel, accel, and ramp_distance together (all same sign)."
+    )
+    calibration_lockin_show(odrv, axis_num)
+    flip = input("\n  Negate all three (flip direction)? [y/N]: ").strip().lower()
+    if flip in ("y", "yes"):
+        if calibration_lockin_negate_all(odrv, axis_num):
+            calibration_lockin_show(odrv, axis_num)
+    save = input("\n  Save to NVM (ss)? [y/N]: ").strip().lower()
+    if save == "y":
+        odrv.send_command("ss")
+        time.sleep(1.0)
+        print("  ✓ ss done")
+
+
+def reconnect_odrive(odrv, attempts=30, delay_sec=1.0):
+    """Close serial and reconnect (e.g. if USB stayed up after soft reboot)."""
+    print("\nReconnecting serial …")
+    odrv.disconnect()
+    time.sleep(delay_sec)
+    for i in range(attempts):
+        if odrv.connect():
+            print("✓ Serial connected again.")
+            return True
+        print(f"  Attempt {i + 1}/{attempts} failed; retrying …")
+        time.sleep(delay_sec)
+    print("✗ Could not reconnect.")
+    return False
+
+
+def _powercycle_resume_cli_hint(axis_num: int) -> str:
+    script = os.path.normpath(os.path.abspath(__file__))
+    py = sys.executable
+    return f'"{py}" "{script}" -p <PORT> --powercycle-resume -a {axis_num}'
+
+
+def cal_save_powercycle_step1(
+    odrv, axis_num=0, calibration_state=4, calibration_name="Motor Calibration"
+):
+    """
+    Step 1 — run before power cycle: calibration + save, then exit this script.
+    After the ODrive boots again (serial port may change), rerun with --powercycle-resume.
+    """
+    print(f"\n{'='*50}")
+    print("TEST step 1: CAL + SAVE (then power cycle & restart script)")
+    print(f"Axis {axis_num}  |  calibration = state {calibration_state} ({calibration_name})")
+    print(f"{'='*50}")
+    print(
+        "Closed loop needs encoder.is_ready. Motor-only cal (4) does **not** run encoder "
+        "offset cal — use full cal (3) unless this axis already had a saved encoder offset."
+    )
+    if calibration_state == 4:
+        print(
+            "  Note: you chose motor-only (4). After step 2, encoder.is_ready will stay 0 "
+            "until you run full cal or encoder offset cal (state 7) + save."
+        )
+
+    if not run_calibration(odrv, axis_num, calibration_state, calibration_name):
+        print("✗ Calibration failed; stopping.")
+        return False
+
+    print("\nVerifying pre_calibrated flags before save …")
+    if not ensure_pre_calibrated_flags(odrv, axis_num):
+        print("✗ Aborting save until motor/encoder pre_calibrated read back as 1.")
+        return False
+
+    print("\nSaving configuration to NVM (ss) …")
+    odrv.send_command("ss")
+    time.sleep(1.5)
+    read_axis_errors(odrv, axis_num, "After save (power off when ready)")
+
+    print("\n" + "─" * 50)
+    print("Power-cycle the ODrive. The USB serial device usually disappears — that is normal.")
+    print(
+        "If encoder.use_index is 1, step 2 will run **index search** (shaft moves until Z is found), "
+        "then closed loop."
+    )
+    print("After it boots, start this script again with the **current** COM port, then run step 2:")
+    print(f"\n  {_powercycle_resume_cli_hint(axis_num)}\n")
+    print("Replace <PORT> (e.g. COM7). Or use interactive menu option 20 after reconnecting.")
+    print("─" * 50)
+    return True
+
+
+def resume_powercycle_closedloop(odrv, axis_num=0):
+    """
+    Step 2 — after power cycle: connect with -p, then this.
+    If use_index: may run index search (state 6) so encoder becomes ready, then requested_state 8.
+    No full calibration and no NVM save.
+    """
+    print(f"\n{'='*50}")
+    print("TEST step 2: AFTER POWER CYCLE → CLOSED LOOP (index search if use_index, then state 8)")
+    print(f"Axis {axis_num}")
+    print(f"{'='*50}")
+
+    read_axis_errors(odrv, axis_num, "Boot snapshot")
+
+    enc_raw = odrv.read_property(f"axis{axis_num}.encoder.is_ready")
+    enc_ok = "".join(c for c in str(enc_raw) if c.isdigit()) == "1"
+    if not enc_ok and try_encoder_index_search_for_ready(odrv, axis_num):
+        enc_ok = True
+        read_axis_errors(odrv, axis_num, "After index search")
+
+    if not enc_ok:
+        use_idx = _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.config.use_index"))
+        pc_e = _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.config.pre_calibrated"))
+        print("\n✗ encoder.is_ready is 0 — ODrive will refuse closed loop.")
+        if use_idx == "1" and pc_e == "1":
+            print("  With use_index, you need a successful **index search** (state 6) after each boot so Z is found.")
+            print("  Check Z wiring, calib_range / lock-in direction, or temporarily set use_index=0 for testing.")
+        elif pc_e == "0":
+            print("  encoder.config.pre_calibrated is 0 — run full cal + ss, or fix NVM save.")
+        else:
+            print("  Run full calibration or encoder offset (state 7), ensure pre_calibrated + ss, reboot.")
+        return False
+
+    print(
+        "\nRequesting closed loop: axis{}.requested_state = 8 (no error clear).".format(axis_num)
+    )
+    odrv.write_property(f"axis{axis_num}.requested_state", "8")
+    time.sleep(0.8)
+    read_axis_errors(odrv, axis_num, "After requested_state = 8")
+
+    state = odrv.read_property(f"axis{axis_num}.current_state")
+    sv = "".join(c for c in str(state) if c.isdigit())
+    ok = sv == "8"
+    if ok:
+        print("\n✓ Axis in CLOSED_LOOP_CONTROL (state 8). Test complete.")
+    else:
+        ae = odrv.read_property(f"axis{axis_num}.error")
+        print("\n✗ Did not reach closed loop.")
+        print(f"  axis.error was: {ae}  (clear errors and check DRV/encoder if stuck)")
+    return ok
+
+
 def start_motor(odrv, axis_num=0):
     """
     Full start-up routine for Hall sensor motor:
@@ -648,6 +939,10 @@ def start_motor(odrv, axis_num=0):
 
     offset = odrv.read_property(f"axis{axis_num}.encoder.config.offset")
     print(f"  ✓ Encoder offset calibrated (offset: {offset})")
+
+    if not ensure_pre_calibrated_flags(odrv, axis_num):
+        print("  ✗ pre_calibrated flags not verified; save with ss after fixing.")
+        return False
 
     # Step 6: Enter closed loop
     print("\nStep 6: Entering closed loop control...")
@@ -1180,6 +1475,9 @@ def dump_diagnostics(odrv, axis_num=0):
         ("Encoder CPR", f"axis{axis_num}.encoder.config.cpr"),
         ("Encoder Use Index", f"axis{axis_num}.encoder.config.use_index"),
         ("Encoder Calib Range", f"axis{axis_num}.encoder.config.calib_range"),
+        ("Calib lock-in vel", f"axis{axis_num}.encoder.config.calibration_lockin.vel"),
+        ("Calib lock-in accel", f"axis{axis_num}.encoder.config.calibration_lockin.accel"),
+        ("Calib lock-in ramp_dist", f"axis{axis_num}.encoder.config.calibration_lockin.ramp_distance"),
         ("Encoder SPI CS Pin", f"axis{axis_num}.encoder.config.abs_spi_cs_gpio_pin"),
         ("Encoder Bandwidth", f"axis{axis_num}.encoder.config.bandwidth"),
         ("Encoder Hall State", f"axis{axis_num}.encoder.hall_state"),
@@ -1234,6 +1532,9 @@ def print_menu():
     print("  16. Manual position control")
     print("  17. Full diagnostic dump")
     print("  18. Send raw command")
+    print("  19. Test step 1: cal + save (then power cycle; restart script for step 2)")
+    print("  20. Test step 2: after power cycle → closed loop (read errors)")
+    print("  21. Index search direction (calibration_lockin: flip / save)")
     print("  a. Switch axis (currently axis {})".format(_current_axis))
     print("  0. Exit")
     print(f"{'─'*50}")
@@ -1247,8 +1548,7 @@ def interactive_mode(odrv, axis_num):
     print(f"\n{'='*50}")
     print(f"INTERACTIVE MODE - AXIS {_current_axis}")
     print(f"{'='*50}")
-
-    apply_defaults(odrv)
+    # Not applying MOTOR/ENCODER defaults on start (use `apply_defaults(odrv)` manually if needed).
 
     try:
         while True:
@@ -1438,6 +1738,17 @@ def interactive_mode(odrv, axis_num):
                 except KeyboardInterrupt:
                     print("\nExited raw command mode.")
 
+            elif choice == "19":
+                sub = input("  [1] Motor cal only (4)  [2] Full cal (3)  [Enter]=1: ").strip()
+                st, name = (3, "Full Calibration") if sub == "2" else (4, "Motor Calibration")
+                cal_save_powercycle_step1(odrv, axis_num, st, name)
+
+            elif choice == "20":
+                resume_powercycle_closedloop(odrv, axis_num)
+
+            elif choice == "21":
+                calibration_lockin_interactive(odrv, axis_num)
+
             elif choice == "a":
                 _current_axis = 1 - _current_axis
                 axis_num = _current_axis
@@ -1472,6 +1783,22 @@ def main():
     parser.add_argument("--calibrate", action="store_true", help="Run calibration sequence")
     parser.add_argument("--test-velocity", action="store_true", help="Run velocity control test")
     parser.add_argument("--test-position", action="store_true", help="Run position control test")
+    cal_pc = parser.add_mutually_exclusive_group()
+    cal_pc.add_argument(
+        "--motor-cal-powercycle",
+        action="store_true",
+        help="Step 1: motor cal (4) + save — encoder usually still not ready; prefer --full-cal-powercycle for ABZ",
+    )
+    cal_pc.add_argument(
+        "--full-cal-powercycle",
+        action="store_true",
+        help="Step 1: full cal (3) + save; then power cycle and rerun with --powercycle-resume",
+    )
+    cal_pc.add_argument(
+        "--powercycle-resume",
+        action="store_true",
+        help="Step 2: after power cycle, connect with -p then run this (read errors, closed loop)",
+    )
     args = parser.parse_args()
 
     # Create ODrive serial connection
@@ -1500,8 +1827,28 @@ def main():
             test_position_control(odrv, args.axis)
             set_idle(odrv, args.axis)
 
+        if args.powercycle_resume:
+            ok = resume_powercycle_closedloop(odrv, args.axis)
+            return 0 if ok else 1
+
+        if args.motor_cal_powercycle:
+            ok = cal_save_powercycle_step1(odrv, args.axis, 4, "Motor Calibration")
+            return 0 if ok else 1
+
+        if args.full_cal_powercycle:
+            ok = cal_save_powercycle_step1(odrv, args.axis, 3, "Full Calibration")
+            return 0 if ok else 1
+
         # If no specific command, start interactive mode
-        if not (args.info or args.calibrate or args.test_velocity or args.test_position):
+        if not (
+            args.info
+            or args.calibrate
+            or args.test_velocity
+            or args.test_position
+            or args.motor_cal_powercycle
+            or args.full_cal_powercycle
+            or args.powercycle_resume
+        ):
             interactive_mode(odrv, args.axis)
 
     except KeyboardInterrupt:

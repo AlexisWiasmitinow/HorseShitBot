@@ -244,16 +244,17 @@ pip install pyserial
 **Usage:**
 
 ```bash
-# Interactive mode (default port COM18 / 115200 baud)
+# Interactive mode (default port /dev/odrive on Linux; use -p COMx on Windows)
 python3 odriveSerialTest.py
 
 # Specify port and axis
 python3 odriveSerialTest.py -p /dev/ttyACM0 -a 0
+python3 odriveSerialTest.py -p COM22 -a 1
 
 # Quick info dump and exit
 python3 odriveSerialTest.py -p /dev/ttyACM0 --info
 
-# Run calibration non-interactively
+# Run calibration non-interactively (interactive calibration menu)
 python3 odriveSerialTest.py -p /dev/ttyACM0 --calibrate
 
 # Automated velocity or position test
@@ -261,23 +262,53 @@ python3 odriveSerialTest.py -p /dev/ttyACM0 --test-velocity
 python3 odriveSerialTest.py -p /dev/ttyACM0 --test-position
 ```
 
+**Power-cycle persistence test (two-step workflow):**  
+After a full power loss, Windows often assigns a **new COM port**. Step 1 saves configuration; you **restart the script** with the new port for step 2.
+
+```bash
+# Step 1: full calibration + verify pre_calibrated flags + save (ss), then exit
+python3 odriveSerialTest.py -p COM22 --full-cal-powercycle -a 1
+
+# Power-cycle the ODrive. Then (adjust COM port if it changed):
+
+# Step 2: after boot — optional index search if use_index=1, then closed loop
+python3 odriveSerialTest.py -p COM22 --powercycle-resume -a 1
+```
+
+Motor-only calibration does **not** run encoder offset calibration; use **`--full-cal-powercycle`** for incremental/ABZ encoders unless the encoder was already calibrated and saved.
+
+```bash
+# Step 1 with motor cal only (state 4) — encoder usually not ready for closed loop
+python3 odriveSerialTest.py -p COM22 --motor-cal-powercycle -a 0
+```
+
 **Interactive menu highlights:**
 | Option | What it does |
 |--------|-------------|
-| 4 | Setup incremental encoder (MT6816 ABZ) |
+| 4 | Setup incremental encoder (ABZ): CPR, optional **Z index** (`use_index`), pole pairs |
 | 5 | Setup SPI absolute encoder (MT6816 SPI) |
 | 6 | Live encoder readout (verify counts change when shaft rotates) |
 | 7 | Measure actual CPR by hand-turning one revolution |
 | 10 | **Start motor** — full routine: calibrate → encoder offset → closed loop |
 | 15 | Manual velocity control (type speeds, see measured feedback) |
-| 17 | Full diagnostic dump (copy-paste for troubleshooting) |
+| 17 | Full diagnostic dump (`calibration_lockin` included) |
+| 19 | Power-cycle test **step 1**: cal + save (choose motor-only or full), then power-cycle |
+| 20 | Power-cycle test **step 2**: after reboot, index search if needed, then closed loop |
+| 21 | **Index search direction**: show `encoder.config.calibration_lockin` (vel / accel / ramp_distance), optional negate all three (flip direction), optional `ss` |
 | a | Switch between axis 0 and axis 1 |
+
+**Behavior notes:**
+- **Startup:** The script does **not** push `MOTOR_DEFAULTS` / `ENCODER_DEFAULTS` when the menu opens (so saved encoder settings such as `use_index` are not overwritten). Call `apply_defaults(odrv)` from a Python shell if you want the in-file defaults applied.
+- **Encoder offset + NVM:** After a successful calibration, the script sets **`motor.config.pre_calibrated`** and **`encoder.config.pre_calibrated`** to **1** when appropriate and verifies them before **`ss`**, so offsets can survive reboot when saved.
+- **`encoder.use_index`:** After a cold boot, **`encoder.is_ready`** may stay **0** until an **index search** (state 6) finds the Z pulse — even with **`encoder.config.pre_calibrated`** loaded. Option **20** / **`--powercycle-resume`** runs index search automatically when **`use_index`** is on.
+- **Index search direction (ODrive 0.5.x):** Reverse motion by negating **`encoder.config.calibration_lockin.vel`**, **`.accel`**, and **`.ramp_distance`** together (menu **21** or raw `w` commands). Same setting affects encoder offset calibration lock-in.
 
 **What to look for:**
 - VBus voltage reads ~24V (or whatever your PSU provides)
 - Motor calibration completes without errors (phase resistance/inductance printed)
 - Encoder shows changing position when shaft is rotated
 - Velocity test: measured velocity tracks commanded velocity within ~10%
+- After **`--full-cal-powercycle`**, “After save” should show **`encoder.config.pre_calibrated: 1`** before you power-cycle
 
 ---
 
