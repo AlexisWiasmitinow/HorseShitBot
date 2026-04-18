@@ -939,21 +939,31 @@ def setup_incremental_encoder(odrv, axis_num=0):
         print("Cancelled.")
         return False
 
+    print("\nZ / index (optional):")
+    print("  If the Z wire is connected to the axis index input and you want index-based")
+    print("  calibration, enable this. Otherwise choose no (A/B only).")
+    use_idx_in = input("Use Z index (encoder.config.use_index)? [y/N]: ").strip().lower()
+    use_index = "1" if use_idx_in in ("y", "yes") else "0"
+
     pole_pairs = input("Enter motor pole pairs (e.g. 7, 14, 20): ").strip()
     if not pole_pairs:
         print("Pole pairs required!")
         return False
 
-    print(f"\nConfiguring: mode=INCREMENTAL, CPR={cpr}, pole_pairs={pole_pairs}")
+    print(
+        f"\nConfiguring: mode=INCREMENTAL, CPR={cpr}, use_index={use_index}, pole_pairs={pole_pairs}"
+    )
 
     odrv.write_property(f"axis{axis_num}.encoder.config.mode", "0")
     odrv.write_property(f"axis{axis_num}.encoder.config.cpr", str(cpr))
+    odrv.write_property(f"axis{axis_num}.encoder.config.use_index", use_index)
     odrv.write_property(f"axis{axis_num}.motor.config.pole_pairs", pole_pairs)
     odrv.write_property(f"axis{axis_num}.encoder.config.bandwidth", "1000")
     time.sleep(0.2)
 
     print("  ✓ Encoder mode: INCREMENTAL (0)")
     print(f"  ✓ CPR: {cpr}")
+    print(f"  ✓ Use index (Z): {use_index}")
     print(f"  ✓ Pole pairs: {pole_pairs}")
     print(f"  ✓ Bandwidth: 1000")
 
@@ -965,6 +975,8 @@ def setup_incremental_encoder(odrv, axis_num=0):
 
     print("\nNext steps:")
     print("  - Use 'Live encoder test' to verify the encoder counts when you rotate the shaft")
+    if use_index == "1":
+        print("  - With use_index: wire Z to the axis index pin per your ODrive/board docs, then calibrate")
     print("  - Use 'Start motor' to calibrate and enter closed loop")
     return True
 
