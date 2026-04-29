@@ -31,17 +31,21 @@ echo ""
 echo "--- APT packages ---"
 apt-get update -qq
 
+# Base packages — must succeed
 apt-get install -y --no-install-recommends \
-  python3-colcon-common-extensions \
-  python3-rosdep \
   python3-pip \
   python3-spidev \
   dos2unix \
   hostapd \
-  dnsmasq \
+  dnsmasq
+
+# ROS packages — require the ROS apt repo; skip gracefully if not configured
+apt-get install -y --no-install-recommends \
+  python3-colcon-common-extensions \
+  python3-rosdep \
   ros-humble-ros-base \
   ros-humble-realsense2-camera \
-  2>/dev/null || true
+  2>/dev/null || echo "  (ROS packages skipped — add the ROS apt repo first if needed)"
 
 # hostapd is managed by NM — keep the service disabled
 systemctl disable --now hostapd 2>/dev/null || true
@@ -56,17 +60,22 @@ if [ "$ROS_ONLY" = false ]; then
   echo ""
   echo "--- pip packages ---"
 
+  # Ensure pip is available (may not be installed yet)
+  if ! python3 -m pip --version &>/dev/null; then
+    apt-get install -y --no-install-recommends python3-pip
+  fi
+
   # Remove stale apt pymodbus (too old for our codebase)
   apt-get remove -y python3-pymodbus 2>/dev/null || true
 
-  pip3 install --break-system-packages \
+  python3 -m pip install --break-system-packages \
     luma.lcd \
     Pillow \
     "pymodbus>=3.10" \
     pyserial \
     evdev \
     2>/dev/null \
-  || pip3 install \
+  || python3 -m pip install \
     luma.lcd \
     Pillow \
     "pymodbus>=3.10" \
