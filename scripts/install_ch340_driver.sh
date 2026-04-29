@@ -90,10 +90,10 @@ cat > "$BUILD_DIR/Makefile" << EOF
 obj-m += ch341.o
 
 all:
-	make -C $KHEADERS M=\$(PWD) modules
+	make -C $KHEADERS M=\$(CURDIR) modules
 
 clean:
-	make -C $KHEADERS M=\$(PWD) clean
+	make -C $KHEADERS M=\$(CURDIR) clean
 EOF
 
 # ── 4. Build ──────────────────────────────────────────────────────
