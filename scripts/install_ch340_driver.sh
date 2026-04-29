@@ -34,19 +34,36 @@ echo "  ch341 not available — will build from source."
 echo ""
 echo "--- Installing kernel headers ---"
 sudo apt-get install -y --no-install-recommends \
-  linux-headers-"$KVER" \
   build-essential \
   bc \
   libssl-dev \
   flex \
   bison
 
+# Jetson (L4T) ships headers via nvidia-l4t-kernel-headers, not linux-headers-*
+if [ ! -d "$KHEADERS" ]; then
+  echo "  Standard headers not found — installing nvidia-l4t-kernel-headers ..."
+  # Bypass TLS verification (same proxy issue as ROS repo)
+  echo 'Acquire::https::repo.download.nvidia.com::Verify-Peer "false";' \
+    > /etc/apt/apt.conf.d/99-nvidia-no-verify
+  apt-get update -qq
+  sudo apt-get install -y --no-install-recommends nvidia-l4t-kernel-headers
+
+  # L4T installs headers under /usr/src/linux-headers-<kver>; symlink into /lib/modules
+  L4T_HDR="$(find /usr/src -maxdepth 1 -name "linux-headers-${KVER}" -type d 2>/dev/null | head -1)"
+  if [ -n "$L4T_HDR" ] && [ ! -e "$KHEADERS" ]; then
+    sudo ln -sf "$L4T_HDR" "$KHEADERS"
+    echo "  Linked $L4T_HDR → $KHEADERS"
+  fi
+fi
+
 if [ ! -d "$KHEADERS" ]; then
   echo "ERROR: Kernel headers not found at $KHEADERS"
-  echo "  On Jetson you may need to install the L4T kernel headers manually."
-  echo "  See: https://developer.nvidia.com/embedded/linux-tegra"
+  echo "  Tried: linux-headers-$KVER and nvidia-l4t-kernel-headers"
+  echo "  Check: apt-cache search linux-headers"
   exit 1
 fi
+echo "  Headers found at $KHEADERS"
 
 # ── 2. Fetch ch341.c from upstream kernel matching running version ─
 echo ""
