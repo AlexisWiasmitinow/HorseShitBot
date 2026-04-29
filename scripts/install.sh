@@ -42,7 +42,8 @@ apt-get install -y --no-install-recommends \
 # ── ROS 2 Humble apt repo ────────────────────────────────────────
 if ! apt-cache show ros-humble-ros-base &>/dev/null; then
   echo "--- Adding ROS 2 Humble apt repository ---"
-  apt-get install -y --no-install-recommends curl gnupg lsb-release
+  apt-get install -y --no-install-recommends curl gnupg lsb-release ca-certificates
+  update-ca-certificates
   curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
     | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
