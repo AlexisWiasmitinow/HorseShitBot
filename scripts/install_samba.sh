@@ -23,6 +23,9 @@ echo "--- Deploying smb.conf ---"
 sudo cp "$SCRIPT_DIR/smb.conf" /etc/samba/smb.conf
 echo "  Installed /etc/samba/smb.conf"
 
+# Verify config before trying to start
+sudo testparm -s /etc/samba/smb.conf 2>&1 | grep -E "^(Loaded|ERROR|WARNING)" || true
+
 echo ""
 echo "--- Enabling and starting smbd / nmbd ---"
 sudo systemctl enable smbd nmbd
