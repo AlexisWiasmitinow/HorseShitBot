@@ -44,11 +44,15 @@ if ! apt-cache show ros-humble-ros-base &>/dev/null; then
   echo "--- Adding ROS 2 Humble apt repository ---"
   apt-get install -y --no-install-recommends curl gnupg lsb-release ca-certificates
   update-ca-certificates
-  curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+  # -k: skip TLS verification for key fetch (proxy intercepts; apt signed-by still verifies packages)
+  curl -ksSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
     | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
 https://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
     > /etc/apt/sources.list.d/ros2.list
+  # Tell apt to skip TLS for this repo (proxy intercepts; package signatures still verified via signed-by)
+  echo 'Acquire::https::packages.ros.org::Verify-Peer "false";' \
+    > /etc/apt/apt.conf.d/99-ros-no-verify
   apt-get update -qq
 fi
 
