@@ -51,6 +51,12 @@ apt-get install -y --no-install-recommends \
 systemctl disable --now hostapd 2>/dev/null || true
 systemctl unmask hostapd 2>/dev/null || true
 
+# systemd-resolved occupies port 53 and conflicts with dnsmasq.
+# Disable it and point resolv.conf at 127.0.0.1 (dnsmasq).
+systemctl disable --now systemd-resolved 2>/dev/null || true
+rm -f /etc/resolv.conf
+echo "nameserver 127.0.0.1" > /etc/resolv.conf
+
 # dnsmasq runs as a systemd service for DHCP + DNS forwarding.
 # Per-interface hsb-*.conf files control DHCP ranges.
 systemctl enable dnsmasq 2>/dev/null || true
