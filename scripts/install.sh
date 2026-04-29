@@ -39,13 +39,24 @@ apt-get install -y --no-install-recommends \
   hostapd \
   dnsmasq
 
-# ROS packages — require the ROS apt repo; skip gracefully if not configured
+# ── ROS 2 Humble apt repo ────────────────────────────────────────
+if ! apt-cache show ros-humble-ros-base &>/dev/null; then
+  echo "--- Adding ROS 2 Humble apt repository ---"
+  apt-get install -y --no-install-recommends curl gnupg lsb-release
+  curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+    | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+https://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+    > /etc/apt/sources.list.d/ros2.list
+  apt-get update -qq
+fi
+
+# ROS packages
 apt-get install -y --no-install-recommends \
   python3-colcon-common-extensions \
   python3-rosdep \
   ros-humble-ros-base \
-  ros-humble-realsense2-camera \
-  2>/dev/null || echo "  (ROS packages skipped — add the ROS apt repo first if needed)"
+  ros-humble-realsense2-camera
 
 # hostapd is managed by NM — keep the service disabled
 systemctl disable --now hostapd 2>/dev/null || true
