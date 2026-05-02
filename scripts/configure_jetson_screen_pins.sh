@@ -26,17 +26,29 @@ if [ ! -f "$JETSON_IO" ]; then
   exit 1
 fi
 
-# ── Check if already configured ───────────────────────────────────
+# ── Check current pin state ───────────────────────────────────────
 echo ""
-echo "--- Current SPI devices ---"
+echo "--- Current pin state ---"
 SPI_DEVS=$(ls /dev/spidev* 2>/dev/null || true)
 if [ -n "$SPI_DEVS" ]; then
-  echo "  Found: $SPI_DEVS"
-  read -rp "  SPI already present. Re-apply config anyway? [y/N] " REPLY
-  [[ "$REPLY" =~ ^[Yy]$ ]] || { echo "  Nothing to do."; exit 0; }
+  echo "  SPI devices : $SPI_DEVS"
 else
-  echo "  None found — proceeding."
+  echo "  SPI devices : none"
 fi
+
+# Check if spi3/i2s2 pins are already exported as GPIO
+# Jetson GPIO sysfs: /sys/class/gpio/  — we probe by reading the pinmux state
+PINMUX_BASE="/sys/kernel/debug/pinctrl"
+if [ -d "$PINMUX_BASE" ]; then
+  for PIN in 12 18 22; do
+    STATE=$(grep -r "pin $PIN\b" "$PINMUX_BASE"/*/pinmux-pins 2>/dev/null | head -1 || true)
+    echo "  Pin $PIN state : ${STATE:-unknown (run as root to read pinmux)}"
+  done
+fi
+
+echo ""
+echo "  Note: spidev present does NOT mean DC/RST/LED pins are muxed as GPIO."
+echo "  Applying full config regardless..."
 
 # ── Write jetson-io config file ───────────────────────────────────
 # jetson-io.py reads this file when --config is passed (JetPack 5+/6).
@@ -58,19 +70,19 @@ echo "  Written."
 # ── Apply via jetson-io ───────────────────────────────────────────
 echo ""
 echo "--- Applying config via jetson-io.py ---"
+echo "  jetson-io.py supports:"
+sudo python3 "$JETSON_IO" --help 2>&1 | grep -E '^\s*--' | head -20 || true
+echo ""
+
+APPLIED=0
 
 # Try --config flag (JetPack 5.1+ / 6.x non-interactive mode)
-if sudo python3 "$JETSON_IO" --config "$CFG_FILE" 2>/dev/null; then
+if sudo python3 "$JETSON_IO" --config "$CFG_FILE" 2>&1; then
   echo "  Config applied successfully."
   APPLIED=1
-else
-  # Some builds use --no-ui flag instead
-  if sudo python3 "$JETSON_IO" --no-ui --config "$CFG_FILE" 2>/dev/null; then
-    echo "  Config applied successfully (--no-ui)."
-    APPLIED=1
-  else
-    APPLIED=0
-  fi
+elif sudo python3 "$JETSON_IO" --no-ui --config "$CFG_FILE" 2>&1; then
+  echo "  Config applied successfully (--no-ui)."
+  APPLIED=1
 fi
 
 # ── Fallback: manual instructions ────────────────────────────────
