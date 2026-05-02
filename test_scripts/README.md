@@ -118,7 +118,13 @@ python3 test_scripts/jetson_gpio_wiggle.py 22
 python3 test_scripts/jetson_gpio_wiggle.py 18
 ```
 
-**Jetson Nano (40-pin header)** — enable **SPI1** in `sudo /opt/nvidia/jetson-io/jetson-io.py` (pins 19/21/23/24/26). For the defaults below, set **`spi3` (13,16,18,22,37)** and **`i2s2` (12,35,38,40)** groups to **GPIO** so pins 12, 18, and 22 are usable. Reboot after saving.
+**Jetson (40-pin header)** — run the pin setup script first (reboot required):
+
+```bash
+./scripts/configure_jetson_screen_pins.sh
+```
+
+This enables **SPI1** (pins 19/21/23/24/26) and muxes the **`spi3`** (13,16,18,22,37) and **`i2s2`** (12,35,38,40) groups to **GPIO** so pins 12 (LED), 18 (RST), and 22 (DC) are usable. If the script can't apply the overlay automatically it prints the equivalent manual steps for `jetson-io.py`.
 
 ```
 ILI9341 Pin    Jetson physical pin   Notes
