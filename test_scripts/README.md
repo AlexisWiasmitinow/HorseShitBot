@@ -118,13 +118,29 @@ python3 test_scripts/jetson_gpio_wiggle.py 22
 python3 test_scripts/jetson_gpio_wiggle.py 18
 ```
 
-**Jetson (40-pin header)** — run the pin setup script first (reboot required):
+**Jetson (40-pin header)** — pin mux must be configured once via `jetson-io.py` (reboot required). Run the helper to see the exact steps:
 
 ```bash
 ./scripts/configure_jetson_screen_pins.sh
 ```
 
-This enables **SPI1** (pins 19/21/23/24/26) and muxes the **`spi3`** (13,16,18,22,37) and **`i2s2`** (12,35,38,40) groups to **GPIO** so pins 12 (LED), 18 (RST), and 22 (DC) are usable. If the script can't apply the overlay automatically it prints the equivalent manual steps for `jetson-io.py`.
+Or do it directly:
+
+```bash
+sudo /opt/nvidia/jetson-io/jetson-io.py
+# → Configure Jetson 40pin Header
+# → Select desired functions for pins
+```
+
+Set these three rows (arrow keys to move, Space to select), then **Save pin changes → Save and reboot**:
+
+```
+[ ] unused [*] gpio [ ] i2s2   (12,35,38,40)    ← pin 12 = LED backlight
+[ ] unused [ ] gpio [*] spi1   (19,21,23,24,26)  ← SPI bus
+[ ] unused [*] gpio [ ] spi3   (13,16,18,22,37)  ← pin 18 = RST, pin 22 = DC
+```
+
+After reboot, `ls /dev/spidev*` should show `/dev/spidev0.0`, `0.1`, `1.0`, `1.1`.
 
 ```
 ILI9341 Pin    Jetson physical pin   Notes
