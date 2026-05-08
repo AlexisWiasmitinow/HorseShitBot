@@ -33,9 +33,9 @@ MOTOR_DEFAULTS = {
 
 ENCODER_DEFAULTS = {
     "mode": 0,
-    "cpr": 2400,
-    "use_index": 0,
-    "calib_range": 0.05,
+    "cpr": 4096,
+    "use_index": 1,
+    "calib_range": 0.5,
     "bandwidth": 500,
 }
 

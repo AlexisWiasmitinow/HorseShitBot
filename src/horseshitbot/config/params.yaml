@@ -4,6 +4,7 @@ mks_bus_node:
     baud: 115200
     timeout: 0.35
     retries: 3
+    microsteps: 16
 
 wheel_driver_node:
   ros__parameters:

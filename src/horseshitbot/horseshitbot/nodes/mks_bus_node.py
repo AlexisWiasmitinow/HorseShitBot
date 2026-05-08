@@ -30,6 +30,7 @@ class MksBusNode(Node):
         self.declare_parameter("retries", 3)
         self.declare_parameter("motor_ids", [3, 4, 5, 6])
         self.declare_parameter("health_hz", 0.5)
+        self.declare_parameter("microsteps", 16)
 
         port = self.get_parameter("port").get_parameter_value().string_value
         baud = self.get_parameter("baud").get_parameter_value().integer_value
@@ -39,6 +40,7 @@ class MksBusNode(Node):
             self.get_parameter("motor_ids").get_parameter_value().integer_array_value
         )
         health_hz = self.get_parameter("health_hz").get_parameter_value().double_value
+        self._microsteps = self.get_parameter("microsteps").get_parameter_value().integer_value
 
         self._bus = MksBus(BusCfg(port=port, baud=baud, timeout=timeout, retries=retries))
         self._bus_connected = False
@@ -61,9 +63,10 @@ class MksBusNode(Node):
 
             for mid in self._motor_ids:
                 try:
-                    self._bus.init_servo(mid, mode=MODE_SR_CLOSE, enable=True)
+                    self._bus.init_servo(mid, mode=MODE_SR_CLOSE,
+                                        microsteps=self._microsteps, enable=True)
                     self._motor_online[mid] = True
-                    self.get_logger().info(f"Motor {mid}: init + enabled")
+                    self.get_logger().info(f"Motor {mid}: init mode=4 subdiv={self._microsteps}")
                 except Exception as e:
                     self.get_logger().warning(f"Motor {mid}: init failed: {e}")
 
@@ -92,7 +95,9 @@ class MksBusNode(Node):
 
     def _apply_saved_defaults(self, motor_ids: list[int] | None = None):
         defaults = self._load_defaults()
+        self.get_logger().info(f"Defaults file: {_DEFAULTS_FILE} (exists={_DEFAULTS_FILE.exists()})")
         if not defaults:
+            self.get_logger().info("No saved defaults found")
             return
         for mid in (motor_ids or self._motor_ids):
             cfg = defaults.get(str(mid))
@@ -161,18 +166,26 @@ class MksBusNode(Node):
         return response
 
     def _srv_move_turns(self, request, response):
+        mid = int(request.motor_id)
+        turns = float(request.turns)
+        self.get_logger().info(
+            f"move_turns: motor={mid} turns={turns} speed={request.speed_rpm} acc={request.accel}"
+        )
         try:
             self._bus.move_turns(
-                unit_id=int(request.motor_id),
-                turns=float(request.turns),
+                unit_id=mid,
+                turns=turns,
                 speed_rpm=int(request.speed_rpm) if request.speed_rpm > 0 else 300,
                 acc=int(request.accel) if request.accel > 0 else 3,
                 invert_dir=bool(request.invert_dir),
+                closed_loop=True,
+                microsteps=self._microsteps,
             )
             response.success = True
-            response.message = f"moving {request.turns} turns"
+            response.message = f"moving {turns} turns"
+            self.get_logger().info(f"move_turns: motor={mid} command sent")
         except Exception as e:
-            self.get_logger().warning(f"move_turns failed motor={request.motor_id}: {e}")
+            self.get_logger().warning(f"move_turns failed motor={mid}: {e}")
             response.success = False
             response.message = str(e)
         return response
@@ -201,7 +214,8 @@ class MksBusNode(Node):
         try:
             for mid in range(1, 7):
                 try:
-                    self._bus.init_servo(mid, mode=MODE_SR_CLOSE, enable=True)
+                    self._bus.init_servo(mid, mode=MODE_SR_CLOSE,
+                                        microsteps=self._microsteps, enable=True)
                 except Exception:
                     pass
             response.success = True

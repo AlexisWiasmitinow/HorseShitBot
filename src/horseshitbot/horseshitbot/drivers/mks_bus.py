@@ -22,8 +22,9 @@ REG_RUN_CURRENT = 0x0083
 REG_MICROSTEPS = 0x0084
 REG_HOLD_CURRENT_PCT = 0x009B
 REG_ENABLE = 0x00F3
+REG_POS_REL = 0x00F4   # mode 2: relative move by encoder coordinate
+REG_POS_ABS = 0x00F5   # mode 3: absolute move by encoder coordinate
 REG_SPEED = 0x00F6
-REG_POS_ABS = 0x00F5
 REG_AXIS_ZERO = 0x0092
 REG_RELEASE_PROTECT = 0x003D
 
@@ -31,7 +32,9 @@ MODE_SR_OPEN = 3
 MODE_SR_CLOSE = 4
 MODE_SR_VFOC = 5
 
-COUNTS_PER_REV = 0x4000
+FULL_STEPS_PER_REV = 200
+DEFAULT_MICROSTEPS = 16
+ENCODER_CPR = 0x4000  # 14-bit encoder = 16384 counts/rev
 
 
 def _split_i32_to_u16s(val: int):
@@ -208,8 +211,10 @@ class MksBus:
         pct = int(clamp(pct, 10, 100))
         self.write_reg(unit_id, REG_HOLD_CURRENT_PCT, (pct - 10) // 10)
 
-    def init_servo(self, unit_id: int, mode: int = MODE_SR_VFOC, enable: bool = True):
+    def init_servo(self, unit_id: int, mode: int = MODE_SR_VFOC,
+                   microsteps: int = DEFAULT_MICROSTEPS, enable: bool = True):
         self.write_reg(unit_id, REG_WORKMODE, int(mode))
+        self.write_reg(unit_id, REG_MICROSTEPS, int(microsteps))
         if enable:
             self.write_reg(unit_id, REG_ENABLE, 1)
 
@@ -240,21 +245,34 @@ class MksBus:
         self, unit_id: int, abs_axis_i32: int, speed_rpm: int = 600, acc: int = 2
     ):
         speed_rpm = int(clamp(speed_rpm, 0, 3000))
-        acc = int(clamp(acc, 0, 65535))
+        acc = int(clamp(acc, 0, 255))
         hi, lo = _split_i32_to_u16s(int(abs_axis_i32))
         self.write_regs(unit_id, REG_POS_ABS, [acc, speed_rpm, hi, lo])
+
+    def move_rel_axis(
+        self, unit_id: int, offset_i32: int, speed_rpm: int = 600, acc: int = 2
+    ):
+        """Relative move by encoder coordinate offset (16384 counts/rev)."""
+        speed_rpm = int(clamp(speed_rpm, 0, 3000))
+        acc = int(clamp(acc, 0, 255))
+        hi, lo = _split_i32_to_u16s(int(offset_i32))
+        self.write_regs(unit_id, REG_POS_REL, [acc, speed_rpm, hi, lo])
 
     def move_turns(
         self, unit_id: int, turns: float, speed_rpm: int = 300,
         acc: int = 3, invert_dir: bool = False,
+        closed_loop: bool = True,
+        microsteps: int = DEFAULT_MICROSTEPS,
     ):
-        """Relative move: zero the axis, then move to turns × COUNTS_PER_REV."""
-        self.axis_zero(unit_id)
-        time.sleep(0.05)
-        counts = int(round(turns * COUNTS_PER_REV))
+        """Relative move using encoder coordinate offset (mode 2, reg 0xF4)."""
+        if closed_loop:
+            counts_per_rev = ENCODER_CPR
+        else:
+            counts_per_rev = FULL_STEPS_PER_REV * microsteps
+        offset = int(round(turns * counts_per_rev))
         if invert_dir:
-            counts = -counts
-        self.move_abs_axis(unit_id, counts, speed_rpm=speed_rpm, acc=acc)
+            offset = -offset
+        self.move_rel_axis(unit_id, offset, speed_rpm=speed_rpm, acc=acc)
 
     def clear_error_state(self, unit_id: int, mode: int | None = None):
         try:
