@@ -2,23 +2,48 @@ mks_bus_node:
   ros__parameters:
     port: "/dev/mksbus"
     baud: 115200
-    timeout: 0.35
-    retries: 3
+    # Per-call Modbus timeout. A normal write/read at 115200 baud is ~3 ms
+    # round-trip, so 0.1 s gives ~30× slack. The old 0.35 s value meant
+    # every Modbus retry against a missing motor would block the
+    # single-threaded executor for >1 s, starving /mks/set_speed.
+    timeout: 0.1
+    retries: 2
     microsteps: 16
+    # 1, 2 = left/right tracks; 3, 5 = lift (dual); 4 = brush; 6 = bin door.
+    # Listed motors get init'd (MODE_SR_CLOSE, microsteps, enable) at startup,
+    # are probed by the health timer, and show up in the web UI Hardware card.
+    motor_ids: [1, 2, 3, 4, 5, 6]
 
 wheel_driver_node:
   ros__parameters:
-    wheel_backend: "odrive"     # "mks" or "odrive"
+    wheel_backend: "mks"        # "mks" or "odrive"
     id_left: 1
     id_right: 2
     invert_left_dir: false
     invert_right_dir: true
-    max_speed_ms: 3.0              # metres/sec — converted to motor RPM internally
-    wheel_acc_reg: 3
+    # Top speed at full stick. With meters_per_motor_turn=0.084 below,
+    # 1.5 m/s ≈ 1071 RPM at the motor. Keep this comfortably below the
+    # MKS hardware limit of 3000 RPM.
+    max_speed_ms: 1.5              # metres/sec — converted to motor RPM internally
+    # Ramp ownership — IMPORTANT:
+    #   The MKS REG_SPEED (0xF6) acc field is its OWN ramp. Per the manual,
+    #   each RPM step takes (256 - acc) * 50 µs. With acc=255 that's 50 µs
+    #   per step → 0..1928 RPM in ~96 ms. With acc=0 the motor jumps with no
+    #   smoothing at all. So the motor itself already provides a fast, smooth
+    #   ramp; we let it do most of the work and use the ROS-side ramp to
+    #   shape the higher-level feel (and to drive watchdog / e-stop).
+    wheel_acc_reg: 255
     update_hz: 50.0
-    accel_rpm_s: 120.0
-    decel_rpm_s: 120.0
-    stop_decel_rpm_s: 500.0
+    # ROS ramp rates in motor RPM/s.
+    #   accel_rpm_s = 2000 → 0..max (~1071 RPM) in ~0.54 s
+    #   accel_rpm_s = 4000 → 0..max in ~0.27 s (snappier)
+    # The motor's internal acc=255 adds another ~50 ms of smoothing.
+    accel_rpm_s: 2000.0
+    decel_rpm_s: 2000.0
+    # stop_decel_rpm_s is unused by the e-stop path (it now bypasses the
+    # ramp entirely — see _srv_stop_fast / _control_loop in
+    # wheel_driver_node.py), but is kept for backwards compatibility.
+    stop_decel_rpm_s: 99999.0
     watchdog_sec: 0.8
     # ODrive-specific
     odrive_port: "/dev/odrive"
@@ -27,9 +52,12 @@ wheel_driver_node:
     odrive_current_lim: 30.0
     odrive_vel_ramp_rate: 20.0
     odrive_vel_integrator_limit: 5.0  # max idle current from integrator windup (amps)
-    # Drive train: 20T HTD3M → 90T HTD3M belt, 84T 5mm track sprocket
-    # 1 motor turn = (20/90) × 84 × 5mm = 93.333mm
-    meters_per_motor_turn: 0.093333
+    # Drive train: 18T HTD3M motor pulley → 90T HTD3M driven, then 84T
+    # 5 mm-pitch track sprocket.
+    #   1 motor turn = (18/90) × 84 × 5 mm = 84.0 mm
+    # (Was 20T motor → 93.33 mm before the swap.)
+    # Re-measure with a tape after any mechanical change and update this.
+    meters_per_motor_turn: 0.084
     # Odometry — measure wheel_separation for your robot!
     wheel_separation: 0.40        # metres (centre-to-centre of tracks)
     odom_frame_id: "odom"
@@ -83,7 +111,9 @@ gamepad_teleop_node:
   ros__parameters:
     device_path: ""             # auto-detect
     deadzone: 0.08
-    publish_rate: 20.0
+    # 50 Hz matches wheel_driver_node.update_hz so joystick changes never
+    # sit a tick-and-a-half before reaching the control loop.
+    publish_rate: 50.0
     max_linear_speed: 1.0
     max_angular_speed: 1.0
     invert_y: true

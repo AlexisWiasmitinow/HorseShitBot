@@ -25,6 +25,7 @@ REG_ENABLE = 0x00F3
 REG_POS_REL = 0x00F4   # mode 2: relative move by encoder coordinate
 REG_POS_ABS = 0x00F5   # mode 3: absolute move by encoder coordinate
 REG_SPEED = 0x00F6
+REG_EMERGENCY_STOP = 0x00F7  # MKS manual 8.3.1: write 1 to stop the motor instantly
 REG_AXIS_ZERO = 0x0092
 REG_RELEASE_PROTECT = 0x003D
 
@@ -53,6 +54,10 @@ class BusCfg:
     timeout: float = 0.35
     retries: int = 3
     inter_delay: float = 0.002
+    # Used by probe() only — keep this small so health checks against
+    # missing motors don't stall the whole bus. A typical successful
+    # round-trip at 115200 baud is ~3 ms, so 60 ms gives 20× slack.
+    probe_timeout: float = 0.06
 
 
 class MksBus:
@@ -164,13 +169,18 @@ class MksBus:
 
     def probe(self, unit_id: int) -> bool:
         """Quick single-attempt connectivity check (no retries, no reconnect).
+        Uses a short probe-specific timeout so missing motors don't stall the
+        single-threaded executor — a normal probe round-trip is ~3 ms, so the
+        default 60 ms is plenty for a healthy bus.
         Suppresses pymodbus log noise for expected timeouts."""
         self._ensure_connected()
         prev_level = _pymodbus_logger.level
         prev_retries = getattr(self.client, "retries", 0)
+        prev_timeout = self._get_client_timeout()
         _pymodbus_logger.setLevel(logging.CRITICAL)
         try:
             self.client.retries = 0
+            self._set_client_timeout(self.cfg.probe_timeout)
             with self.lock:
                 rr = self.client.read_input_registers(
                     address=0x3A, count=1, device_id=unit_id,
@@ -180,7 +190,42 @@ class MksBus:
             return False
         finally:
             self.client.retries = prev_retries
+            if prev_timeout is not None:
+                self._set_client_timeout(prev_timeout)
             _pymodbus_logger.setLevel(prev_level)
+
+    # ── pymodbus version-tolerant timeout helpers ───────────────────
+    # The timeout attribute moved around between pymodbus 2.x, 3.x and
+    # 3.6+, so look in a few places.
+
+    def _get_client_timeout(self) -> float | None:
+        try:
+            cp = getattr(self.client, "comm_params", None)
+            if cp is not None and hasattr(cp, "timeout_connect"):
+                return cp.timeout_connect
+        except Exception:
+            pass
+        for attr in ("timeout", "_timeout"):
+            if hasattr(self.client, attr):
+                try:
+                    return getattr(self.client, attr)
+                except Exception:
+                    pass
+        return None
+
+    def _set_client_timeout(self, value: float) -> None:
+        try:
+            cp = getattr(self.client, "comm_params", None)
+            if cp is not None and hasattr(cp, "timeout_connect"):
+                cp.timeout_connect = float(value)
+        except Exception:
+            pass
+        for attr in ("timeout", "_timeout"):
+            if hasattr(self.client, attr):
+                try:
+                    setattr(self.client, attr, float(value))
+                except Exception:
+                    pass
 
     def get_run_current(self, unit_id: int) -> int | None:
         """Read run current in mA. Returns None if firmware doesn't support readback."""
@@ -220,6 +265,13 @@ class MksBus:
 
     def set_enable(self, unit_id: int, enable: bool):
         self.write_reg(unit_id, REG_ENABLE, 1 if enable else 0)
+
+    def emergency_stop(self, unit_id: int):
+        """Slam the motor to a halt instantly. Per MKS manual 8.3.1, this
+        bypasses the acc ramp — the motor stops regardless of current RPM.
+        The manual warns that doing this above 1000 RPM is mechanically
+        stressful, but for e-stop that's the price we pay."""
+        self.write_reg(unit_id, REG_EMERGENCY_STOP, 1)
 
     def axis_zero(self, unit_id: int):
         self.write_reg(unit_id, REG_AXIS_ZERO, 1)

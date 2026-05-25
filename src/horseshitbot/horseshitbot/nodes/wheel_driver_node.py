@@ -103,8 +103,15 @@ class WheelDriverNode(Node):
         self._odom_y = 0.0
         self._odom_theta = 0.0
 
-        # MKS bus service client (used when backend == mks)
+        # MKS bus service client (used when backend == mks). Calls are
+        # issued fire-and-forget from the 50 Hz control loop — see _mks_set_speed.
         self._mks_cli = self.create_client(MksSetSpeed, "/mks/set_speed")
+        # Hardware-level emergency stop on the wheel motors. Bypasses the
+        # MKS acc ramp — see mks_bus.emergency_stop / REG_EMERGENCY_STOP.
+        self._mks_estop_cli = self.create_client(Trigger, "/mks/emergency_stop_wheels")
+        # Last command sent per (motor_id, invert) so we can skip duplicate writes
+        # and keep the Modbus bus available for appendage motors and health probes.
+        self._last_sent_rpm: dict[tuple[int, bool], int] = {}
 
         # Active backend
         self._backend: WheelBackend | None = None
@@ -157,16 +164,32 @@ class WheelDriverNode(Node):
         return self.get_parameter(name).get_parameter_value().string_value
 
     def _mks_set_speed(self, motor_id: int, rpm: float, acc: int, invert: bool) -> bool:
+        """
+        Fire-and-forget speed command for the MKS backend.
+
+        Called from the 50 Hz control loop, so this MUST NOT block — never
+        spin_until_future_complete here, that would re-enter the executor and
+        stall the timer callback well past watchdog_sec, zeroing the command.
+
+        Skips the write if the rounded RPM hasn't changed since last send, so
+        steady-state cruise doesn't hammer the Modbus bus.
+        """
+        if not self._mks_cli.service_is_ready():
+            return False
+        rpm_i = int(round(float(rpm)))
+        key = (int(motor_id), bool(invert))
+        last = self._last_sent_rpm.get(key)
+        if last is not None and last == rpm_i:
+            return True
+        self._last_sent_rpm[key] = rpm_i
+
         req = MksSetSpeed.Request()
-        req.motor_id = motor_id
-        req.rpm = float(rpm)
-        req.accel = acc
-        req.invert_dir = invert
-        future = self._mks_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=0.5)
-        if future.result() is not None:
-            return future.result().success
-        return False
+        req.motor_id = int(motor_id)
+        req.rpm = float(rpm_i)
+        req.accel = int(acc)
+        req.invert_dir = bool(invert)
+        self._mks_cli.call_async(req)
+        return True
 
     # ── backend management ───────────────────────────────────────
 
@@ -267,18 +290,51 @@ class WheelDriverNode(Node):
         return response
 
     def _srv_stop_fast(self, request, response):
+        # Hard e-stop sequence:
+        #  1. Fire the hardware-level MKS REG_EMERGENCY_STOP (0xF7) on both
+        #     wheel motors before anything else — this is the lowest-latency
+        #     way to halt them, independent of any ROS ramp.
+        #  2. Zero both desired AND actual so the next control-loop tick
+        #     can't ramp from the old value and overwrite the 0.
+        #  3. Have the backend re-send 0 via the normal path as a belt-and-
+        #     suspenders measure.
+        if self._mks_estop_cli.service_is_ready():
+            self._mks_estop_cli.call_async(Trigger.Request())
         with self._lock:
             self._desired_left = 0.0
             self._desired_right = 0.0
+            self._actual_left = 0.0
+            self._actual_right = 0.0
             self._last_cmd_ts = time.monotonic()
             self._stop_fast = True
             self._estopped = True
+            # Force the next steady-state 0 to be transmitted (avoid dedup
+            # swallowing it on the next control-loop tick).
+            self._last_sent_rpm.clear()
         if self._backend:
             self._backend.emergency_stop()
-        self.get_logger().warn("E-STOP activated. Press B to resume.")
+        resume_btn = self._resume_button_hint()
+        self.get_logger().warn(
+            f"E-STOP activated. Press '{resume_btn}' on gamepad or click Resume in the web UI."
+        )
         response.success = True
         response.message = "emergency stop"
         return response
+
+    def _resume_button_hint(self) -> str:
+        """Best-effort hint of which gamepad button currently clears the e-stop."""
+        try:
+            from pathlib import Path
+            import json
+            cfg_path = Path.home() / ".config" / "horseshitbot" / "controller_config.json"
+            if cfg_path.exists():
+                cfg = json.loads(cfg_path.read_text())
+                for btn, action in (cfg.get("buttons") or {}).items():
+                    if action == "stop_wheels":
+                        return btn
+        except Exception:
+            pass
+        return "B"
 
     # ── diagnostics ────────────────────────────────────────────
 
@@ -316,9 +372,16 @@ class WheelDriverNode(Node):
         if not stop_fast and age > self._watchdog:
             dl, dr = 0.0, 0.0
 
-        decel = self._stop_decel if stop_fast else self._decel
-        self._actual_left = _ramp_toward(self._actual_left, dl, self._accel if abs(dl) >= abs(self._actual_left) else decel, dt)
-        self._actual_right = _ramp_toward(self._actual_right, dr, self._accel if abs(dr) >= abs(self._actual_right) else decel, dt)
+        if stop_fast:
+            # E-stop: bypass the ramp entirely so we don't gradually decelerate.
+            # _actual was already zeroed in _srv_stop_fast; keep it pinned at 0
+            # until the e-stop is cleared via _srv_stop.
+            self._actual_left = 0.0
+            self._actual_right = 0.0
+        else:
+            decel = self._decel
+            self._actual_left = _ramp_toward(self._actual_left, dl, self._accel if abs(dl) >= abs(self._actual_left) else decel, dt)
+            self._actual_right = _ramp_toward(self._actual_right, dr, self._accel if abs(dr) >= abs(self._actual_right) else decel, dt)
 
         if self._backend:
             try:

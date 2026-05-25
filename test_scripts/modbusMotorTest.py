@@ -480,10 +480,10 @@ def main():
 
     microsteps = 16
     enableMotor()
-    setWorkMode(5)
+    setWorkMode(4)
     setZero()
     setMicrosteps(microsteps)
-    setRunCurrent(3000)
+    setRunCurrent(5000)
     readEncoderCarry()
     moveMotorPosition(direction=0, acceleration=1, speed=50, steps=200 * microsteps)
     # moveMotorRelative(direction=1, acceleration=1, speed=100, distance=300 * microsteps)

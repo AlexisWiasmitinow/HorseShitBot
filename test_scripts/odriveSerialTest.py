@@ -561,10 +561,41 @@ def _dig_prop(s):
     return "".join(c for c in str(s) if c.isdigit())
 
 
+def _encoder_supports_pre_calibrated(odrv, axis_num=0) -> bool:
+    """
+    Whether the current encoder configuration is allowed to set
+    encoder.config.pre_calibrated = 1 in FW 0.5.x.
+
+    Allowed:
+      - mode 1 (HALL)               — no index needed, alignment is intrinsic
+      - mode 256+ (SPI absolute)    — absolute, no index needed
+      - mode 0 (INCREMENTAL) with use_index = 1
+    Not allowed (FW silently keeps it 0):
+      - mode 0 (INCREMENTAL) with use_index = 0
+      - mode 2 (SINCOS) without index (treat as not allowed)
+    """
+    mode = _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.config.mode"))
+    use_idx = _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.config.use_index"))
+    try:
+        mode_i = int(mode)
+    except ValueError:
+        return False
+    if mode_i == 1:
+        return True
+    if mode_i >= 256:
+        return True
+    if mode_i == 0 and use_idx == "1":
+        return True
+    return False
+
+
 def ensure_pre_calibrated_flags(odrv, axis_num=0) -> bool:
     """
     When motor.is_calibrated / encoder.is_ready, set matching *.config.pre_calibrated to 1
     and verify readback (FW often leaves them 0 until explicitly set). Call before ss.
+
+    Encoder side is skipped (and treated as success) for incremental-without-index, since
+    FW 0.5.x silently refuses to set pre_calibrated for that config.
     """
     mc = _dig_prop(odrv.read_property(f"axis{axis_num}.motor.is_calibrated"))
     er = _dig_prop(odrv.read_property(f"axis{axis_num}.encoder.is_ready"))
@@ -582,6 +613,12 @@ def ensure_pre_calibrated_flags(odrv, axis_num=0) -> bool:
             return False
 
     if er == "1":
+        if not _encoder_supports_pre_calibrated(odrv, axis_num):
+            print(
+                "  ⓘ Skipping encoder.config.pre_calibrated (incremental without index — "
+                "FW does not persist encoder calibration; redo state 7 after each power cycle)."
+            )
+            return True
         ok = False
         for _ in range(5):
             odrv.write_property(f"axis{axis_num}.encoder.config.pre_calibrated", "1")
@@ -648,18 +685,27 @@ def _parse_float_serial(val):
     return float(m.group(0)) if m else None
 
 
+CAL_LOCKIN_BASE = lambda n: f"axis{n}.config.calibration_lockin"
+
+
 def calibration_lockin_show(odrv, axis_num=0):
-    """Print encoder.config.calibration_lockin — sets index search / offset-cal motion (FW 0.5.x)."""
-    b = f"axis{axis_num}.encoder.config.calibration_lockin"
-    print(f"\nencoder.config.calibration_lockin (axis {axis_num}) — rad/s, rad/s², rad:")
-    for k in ("vel", "accel", "ramp_distance"):
+    """Print axis.config.calibration_lockin — sets index search / offset-cal motion (FW 0.5.x)."""
+    b = CAL_LOCKIN_BASE(axis_num)
+    print(f"\naxis.config.calibration_lockin (axis {axis_num}):")
+    for k, units in (
+        ("current", "A"),
+        ("ramp_time", "s"),
+        ("ramp_distance", "rad"),
+        ("accel", "rad/s²"),
+        ("vel", "rad/s"),
+    ):
         v = odrv.read_property(f"{b}.{k}")
-        print(f"  {k:14s} = {v}")
+        print(f"  {k:14s} = {v}  ({units})")
 
 
 def calibration_lockin_negate_all(odrv, axis_num=0) -> bool:
     """Negate vel, accel, ramp_distance together — reverses index search / lock-in direction."""
-    b = f"axis{axis_num}.encoder.config.calibration_lockin"
+    b = CAL_LOCKIN_BASE(axis_num)
     for k in ("vel", "accel", "ramp_distance"):
         raw = odrv.read_property(f"{b}.{k}")
         x = _parse_float_serial(raw)
@@ -670,6 +716,271 @@ def calibration_lockin_negate_all(odrv, axis_num=0) -> bool:
         time.sleep(0.05)
     print("  ✓ Negated vel, accel, ramp_distance (opposite direction)")
     return True
+
+
+# =====================================================
+# Robust calibration for high-friction / geared drives
+# =====================================================
+#
+# Defaults (ODrive FW 0.5.x): current=10 A, ramp_time=0.4 s,
+# ramp_distance=π rad (~0.5 rev), accel=20 rad/s², vel=40 rad/s.
+# These are tuned for direct-drive low-friction motors. On geared
+# or sticky drives the rotor either can't break loose or loses sync
+# with the rotating field, which shows up as ENCODER_ERROR_INDEX_NOT_FOUND_YET (0x20)
+# or CPR_POLEPAIRS_MISMATCH (0x02) during state 3/7.
+#
+# The presets below trade speed for torque headroom and rotor sync:
+#   - more current  → break static friction
+#   - lower accel   → keep rotor in step with the lock-in field
+#   - lower vel     → allow time to follow under load
+#   - longer ramp_distance → guarantee ≥1 full rev so the Z pulse is crossed
+LOCKIN_PRESETS = {
+    "normal": {
+        "current": 10.0,
+        "ramp_time": 0.4,
+        "ramp_distance": 3.1416,
+        "accel": 20.0,
+        "vel": 40.0,
+    },
+    "geared": {
+        "current": 20.0,
+        "ramp_time": 1.0,
+        "ramp_distance": 6.2832,
+        "accel": 5.0,
+        "vel": 20.0,
+    },
+    "extreme": {
+        "current": 30.0,
+        "ramp_time": 1.5,
+        "ramp_distance": 12.5664,
+        "accel": 3.0,
+        "vel": 15.0,
+    },
+}
+
+
+def _apply_lockin_preset(odrv, axis_num, preset_name) -> bool:
+    preset = LOCKIN_PRESETS.get(preset_name)
+    if not preset:
+        return False
+    b = CAL_LOCKIN_BASE(axis_num)
+    print(f"\nApplying lock-in preset '{preset_name}':")
+    for k, v in preset.items():
+        odrv.write_property(f"{b}.{k}", repr(float(v)))
+        time.sleep(0.05)
+        rb = odrv.read_property(f"{b}.{k}")
+        print(f"  {k:14s} = {rb}")
+    return True
+
+
+def _snapshot_lockin(odrv, axis_num):
+    """Read current lockin values as a dict (for restoring later)."""
+    b = CAL_LOCKIN_BASE(axis_num)
+    snap = {}
+    for k in ("current", "ramp_time", "ramp_distance", "accel", "vel"):
+        raw = odrv.read_property(f"{b}.{k}")
+        x = _parse_float_serial(raw)
+        if x is None:
+            return None
+        snap[k] = x
+    return snap
+
+
+def _restore_lockin(odrv, axis_num, snap):
+    if not snap:
+        return
+    b = CAL_LOCKIN_BASE(axis_num)
+    for k, v in snap.items():
+        odrv.write_property(f"{b}.{k}", repr(float(v)))
+        time.sleep(0.05)
+
+
+def _bump_lockin_current(odrv, axis_num, factor=1.5, cap=None):
+    """Multiply lockin current and (gently) lengthen ramp_distance. Returns new current."""
+    b = CAL_LOCKIN_BASE(axis_num)
+    raw = odrv.read_property(f"{b}.current")
+    x = _parse_float_serial(raw) or 10.0
+    new = x * factor
+    if cap is not None:
+        new = min(new, cap)
+    odrv.write_property(f"{b}.current", repr(new))
+    # also stretch ramp_distance so Z is guaranteed crossed
+    raw_rd = odrv.read_property(f"{b}.ramp_distance")
+    rd = _parse_float_serial(raw_rd) or 3.1416
+    odrv.write_property(f"{b}.ramp_distance", repr(max(rd, 12.5664)))
+    time.sleep(0.05)
+    return new
+
+
+def robust_calibration(odrv, axis_num=0):
+    """
+    High-friction-friendly calibration sequence.
+
+    Workflow:
+      1. Snapshot current lockin params.
+      2. Apply user-selected preset (geared / extreme / custom).
+      3. Optionally raise motor.config.calibration_current (R/L sweep current).
+      4. Optionally loosen encoder.config.calib_range.
+      5. Reset pre_calibrated flags and clear all errors.
+      6. Run FULL_CALIBRATION_SEQUENCE (state 3).
+      7. On INDEX_NOT_FOUND_YET / CPR_POLEPAIRS_MISMATCH: bump lockin current
+         (capped by motor.config.current_lim) and retry once.
+      8. On success ensure pre_calibrated flags, optionally ss, optionally restore.
+    """
+    print(f"\n{'='*50}")
+    print(f"ROBUST CALIBRATION (high friction) - AXIS {axis_num}")
+    print(f"{'='*50}")
+    print("Use this when the drive is geared, sticky, or has high static friction")
+    print("and normal full calibration (option 9 → 1) fails with encoder.error 32")
+    print("(INDEX_NOT_FOUND_YET) or 2 (CPR_POLEPAIRS_MISMATCH).")
+
+    current_lim_raw = odrv.read_property(f"axis{axis_num}.motor.config.current_lim")
+    cur_lim = _parse_float_serial(current_lim_raw) or 30.0
+    cal_cur_raw = odrv.read_property(f"axis{axis_num}.motor.config.calibration_current")
+    motor_cal_cur = _parse_float_serial(cal_cur_raw) or 20.0
+    calib_range_raw = odrv.read_property(f"axis{axis_num}.encoder.config.calib_range")
+
+    print(f"\nCurrent limits: motor.current_lim = {cur_lim} A, calibration_current = {motor_cal_cur} A")
+    print(f"Encoder calib_range = {calib_range_raw}")
+
+    calibration_lockin_show(odrv, axis_num)
+
+    print("\nLock-in presets:")
+    print("  1. Geared   (current=20A, vel=20, accel=5,  ramp_dist=1 rev)")
+    print("  2. Extreme  (current=30A, vel=15, accel=3,  ramp_dist=2 rev)")
+    print("  3. Custom (enter your own values)")
+    print("  4. Restore Normal defaults and exit")
+    print("  [Enter] Cancel")
+
+    choice = input("\nSelect preset: ").strip()
+    if choice == "":
+        print("Cancelled.")
+        return False
+
+    snap = _snapshot_lockin(odrv, axis_num)
+
+    if choice == "4":
+        _apply_lockin_preset(odrv, axis_num, "normal")
+        save = input("\nSave (ss)? [y/N]: ").strip().lower()
+        if save == "y":
+            odrv.send_command("ss")
+            time.sleep(1.0)
+            print("✓ Saved")
+        return True
+
+    if choice == "1":
+        _apply_lockin_preset(odrv, axis_num, "geared")
+    elif choice == "2":
+        _apply_lockin_preset(odrv, axis_num, "extreme")
+    elif choice == "3":
+        b = CAL_LOCKIN_BASE(axis_num)
+        for k, units, default in (
+            ("current", "A", 20.0),
+            ("ramp_time", "s", 1.0),
+            ("ramp_distance", "rad (2π = 1 rev)", 6.2832),
+            ("accel", "rad/s²", 5.0),
+            ("vel", "rad/s", 20.0),
+        ):
+            cur = odrv.read_property(f"{b}.{k}")
+            v_in = input(f"  {k} [{cur}] ({units}, default {default}): ").strip()
+            if v_in:
+                odrv.write_property(f"{b}.{k}", v_in)
+        calibration_lockin_show(odrv, axis_num)
+    else:
+        print("Cancelled.")
+        return False
+
+    # Sanity-clamp lockin.current against motor.current_lim
+    lk_cur_raw = odrv.read_property(f"{CAL_LOCKIN_BASE(axis_num)}.current")
+    lk_cur = _parse_float_serial(lk_cur_raw) or 10.0
+    if lk_cur > cur_lim:
+        print(f"\n⚠ lockin.current ({lk_cur} A) > motor.current_lim ({cur_lim} A). Clamping.")
+        odrv.write_property(f"{CAL_LOCKIN_BASE(axis_num)}.current", repr(cur_lim))
+        lk_cur = cur_lim
+
+    # Offer to bump motor calibration_current (R/L sweep)
+    bump_cal_cur = input(
+        f"\nRaise motor.config.calibration_current from {motor_cal_cur} A? [Enter=keep, or new value]: "
+    ).strip()
+    if bump_cal_cur:
+        try:
+            new_v = float(bump_cal_cur)
+            new_v = min(new_v, cur_lim)
+            odrv.write_property(f"axis{axis_num}.motor.config.calibration_current", repr(new_v))
+            print(f"  ✓ calibration_current = {new_v} A")
+        except ValueError:
+            print("  ✗ Invalid number, kept old value.")
+
+    # Offer to loosen calib_range
+    loose = input(
+        f"Loosen encoder.config.calib_range from {calib_range_raw}? [Enter=keep, or new value e.g. 1.0]: "
+    ).strip()
+    if loose:
+        try:
+            float(loose)
+            odrv.write_property(f"axis{axis_num}.encoder.config.calib_range", loose)
+            print(f"  ✓ calib_range = {loose}")
+        except ValueError:
+            print("  ✗ Invalid number, kept old value.")
+
+    # Reset pre_calibrated and clear errors so full cal actually runs
+    print("\nResetting pre_calibrated flags and clearing errors …")
+    odrv.write_property(f"axis{axis_num}.motor.config.pre_calibrated", "0")
+    odrv.write_property(f"axis{axis_num}.encoder.config.pre_calibrated", "0")
+    odrv.write_property(f"axis{axis_num}.error", "0")
+    odrv.write_property(f"axis{axis_num}.motor.error", "0")
+    odrv.write_property(f"axis{axis_num}.encoder.error", "0")
+    odrv.write_property(f"axis{axis_num}.controller.error", "0")
+    time.sleep(0.2)
+
+    # First attempt
+    print("\n--- Attempt 1: full calibration ---")
+    ok = run_calibration(odrv, axis_num, state=3, name="Full Calibration")
+
+    # Inspect encoder error before deciding to retry
+    enc_err_raw = odrv.read_property(f"axis{axis_num}.encoder.error")
+    enc_err = int(_dig_prop(enc_err_raw) or "0")
+
+    # 0x20 INDEX_NOT_FOUND_YET, 0x02 CPR_POLEPAIRS_MISMATCH, 0x10 ILLEGAL_HALL_STATE
+    retry_mask = 0x20 | 0x02 | 0x10
+    if not ok and (enc_err & retry_mask):
+        print(f"\nEncoder error {enc_err_raw} suggests friction/sync loss. Retrying with higher lockin current …")
+        new_cur = _bump_lockin_current(odrv, axis_num, factor=1.5, cap=cur_lim)
+        print(f"  lockin.current → {new_cur:.2f} A (cap {cur_lim} A)")
+
+        odrv.write_property(f"axis{axis_num}.motor.config.pre_calibrated", "0")
+        odrv.write_property(f"axis{axis_num}.encoder.config.pre_calibrated", "0")
+        odrv.write_property(f"axis{axis_num}.error", "0")
+        odrv.write_property(f"axis{axis_num}.motor.error", "0")
+        odrv.write_property(f"axis{axis_num}.encoder.error", "0")
+        time.sleep(0.2)
+        print("\n--- Attempt 2: full calibration (boosted lockin) ---")
+        ok = run_calibration(odrv, axis_num, state=3, name="Full Calibration")
+
+    if ok:
+        print("\n✓ Robust calibration succeeded!")
+        save = input("Save to NVM (ss)? [Y/n]: ").strip().lower()
+        if save in ("", "y", "yes"):
+            if ensure_pre_calibrated_flags(odrv, axis_num):
+                odrv.send_command("ss")
+                time.sleep(1.0)
+                print("✓ Saved")
+            else:
+                print("✗ pre_calibrated flags not 1; not saved.")
+        return True
+
+    # Failure path — offer to restore
+    print("\n✗ Robust calibration failed.")
+    print("  Tips:")
+    print("   • If encoder.error & 0x20 (INDEX_NOT_FOUND_YET): try option 21 to flip lockin direction,")
+    print("     verify the Z wire is connected and not floating, or temporarily set use_index=0.")
+    print("   • If encoder.error & 0x02 (CPR_POLEPAIRS_MISMATCH): double-check CPR and pole_pairs.")
+    print("   • If encoder.error & 0x10 (ILLEGAL_HALL_STATE): check Hall wiring/pull-ups; nudge shaft.")
+    restore = input("\nRestore previous lock-in values? [Y/n]: ").strip().lower()
+    if restore in ("", "y", "yes"):
+        _restore_lockin(odrv, axis_num, snap)
+        print("✓ Lock-in values restored")
+    return False
 
 
 def calibration_lockin_interactive(odrv, axis_num=0):
@@ -1475,9 +1786,11 @@ def dump_diagnostics(odrv, axis_num=0):
         ("Encoder CPR", f"axis{axis_num}.encoder.config.cpr"),
         ("Encoder Use Index", f"axis{axis_num}.encoder.config.use_index"),
         ("Encoder Calib Range", f"axis{axis_num}.encoder.config.calib_range"),
-        ("Calib lock-in vel", f"axis{axis_num}.encoder.config.calibration_lockin.vel"),
-        ("Calib lock-in accel", f"axis{axis_num}.encoder.config.calibration_lockin.accel"),
-        ("Calib lock-in ramp_dist", f"axis{axis_num}.encoder.config.calibration_lockin.ramp_distance"),
+        ("Calib lock-in current", f"axis{axis_num}.config.calibration_lockin.current"),
+        ("Calib lock-in ramp_time", f"axis{axis_num}.config.calibration_lockin.ramp_time"),
+        ("Calib lock-in ramp_dist", f"axis{axis_num}.config.calibration_lockin.ramp_distance"),
+        ("Calib lock-in accel", f"axis{axis_num}.config.calibration_lockin.accel"),
+        ("Calib lock-in vel", f"axis{axis_num}.config.calibration_lockin.vel"),
         ("Encoder SPI CS Pin", f"axis{axis_num}.encoder.config.abs_spi_cs_gpio_pin"),
         ("Encoder Bandwidth", f"axis{axis_num}.encoder.config.bandwidth"),
         ("Encoder Hall State", f"axis{axis_num}.encoder.hall_state"),
@@ -1535,6 +1848,7 @@ def print_menu():
     print("  19. Test step 1: cal + save (then power cycle; restart script for step 2)")
     print("  20. Test step 2: after power cycle → closed loop (read errors)")
     print("  21. Index search direction (calibration_lockin: flip / save)")
+    print("  22. ★ Robust calibration (high-friction / geared drives)")
     print("  a. Switch axis (currently axis {})".format(_current_axis))
     print("  0. Exit")
     print(f"{'─'*50}")
@@ -1748,6 +2062,9 @@ def interactive_mode(odrv, axis_num):
 
             elif choice == "21":
                 calibration_lockin_interactive(odrv, axis_num)
+
+            elif choice == "22":
+                robust_calibration(odrv, axis_num)
 
             elif choice == "a":
                 _current_axis = 1 - _current_axis

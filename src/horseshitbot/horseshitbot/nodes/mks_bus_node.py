@@ -51,6 +51,14 @@ class MksBusNode(Node):
         self.create_service(Trigger, "/mks/save_current_defaults", self._srv_save_defaults)
         self.create_service(Trigger, "/mks/init_servo", self._srv_init_servo)
         self.create_service(Trigger, "/mks/clear_errors", self._srv_clear_errors)
+        # Triggers the MKS REG_EMERGENCY_STOP (0xF7) on the wheel motors for
+        # an instant hardware-level halt, independent of any ROS-side ramp.
+        self.create_service(Trigger, "/mks/emergency_stop_wheels",
+                            self._srv_emergency_stop_wheels)
+        self.declare_parameter("wheel_motor_ids", [1, 2])
+        self._wheel_motor_ids = list(
+            self.get_parameter("wheel_motor_ids").get_parameter_value().integer_array_value
+        )
 
         self._status_pub = self.create_publisher(String, "/mks_bus/status", 10)
         self._motor_online: dict[int, bool] = {m: False for m in self._motor_ids}
@@ -60,26 +68,79 @@ class MksBusNode(Node):
             self._bus.connect()
             self._bus_connected = True
             self.get_logger().info(f"MKS bus connected on {port} @ {baud}")
-
-            for mid in self._motor_ids:
-                try:
-                    self._bus.init_servo(mid, mode=MODE_SR_CLOSE,
-                                        microsteps=self._microsteps, enable=True)
-                    self._motor_online[mid] = True
-                    self.get_logger().info(f"Motor {mid}: init mode=4 subdiv={self._microsteps}")
-                except Exception as e:
-                    self.get_logger().warning(f"Motor {mid}: init failed: {e}")
-
-            online_ids = [m for m in self._motor_ids if self._motor_online[m]]
-            if online_ids:
-                import time
-                time.sleep(0.1)
-                self._apply_saved_defaults(online_ids)
+            self._scan_motors(reinit_new=True)
         except Exception as e:
             self.get_logger().error(f"MKS bus connection failed: {e}")
 
+        # No periodic probing — the bus is otherwise idle when the robot
+        # isn't moving, so polling just burns CPU and adds latency to
+        # /mks/set_speed calls on the single-threaded executor. We still
+        # republish the last known status periodically so newly-connected
+        # WebSocket clients in the dashboard don't have to wait for the
+        # next manual scan to see anything.
         period = 1.0 / max(0.1, health_hz)
-        self.create_timer(period, self._health_tick)
+        self.create_timer(period, self._publish_status)
+        self.create_service(Trigger, "/mks/scan", self._srv_scan)
+
+    def _scan_motors(self, reinit_new: bool = False):
+        """Probe every motor_id and update _motor_online. If reinit_new is
+        True, run init_servo for motors that have just come online (or that
+        were online at start-up and we're scanning for the first time)."""
+        for mid in self._motor_ids:
+            was_online = self._motor_online.get(mid, False)
+            try:
+                online = self._bus.probe(mid)
+            except Exception:
+                online = False
+            self._motor_online[mid] = online
+
+            if not online:
+                if was_online:
+                    self.get_logger().warning(f"Motor {mid}: went offline")
+                else:
+                    self.get_logger().info(f"Motor {mid}: not detected (skipping init)")
+                continue
+
+            if not was_online or reinit_new:
+                try:
+                    self._bus.init_servo(
+                        mid, mode=MODE_SR_CLOSE,
+                        microsteps=self._microsteps, enable=True,
+                    )
+                    if was_online:
+                        self.get_logger().info(f"Motor {mid}: re-initialised")
+                    else:
+                        self.get_logger().info(
+                            f"Motor {mid}: detected, init mode=4 subdiv={self._microsteps}"
+                        )
+                except Exception as e:
+                    self.get_logger().warning(f"Motor {mid}: init failed: {e}")
+                    self._motor_online[mid] = False
+
+        online_ids = [m for m in self._motor_ids if self._motor_online[m]]
+        if online_ids:
+            import time
+            time.sleep(0.05)
+            self._apply_saved_defaults(online_ids)
+        self._publish_status()
+
+    def _srv_scan(self, request, response):
+        """Manually re-probe every motor on the bus. Use this from the web UI
+        (or via `ros2 service call /mks/scan std_srvs/srv/Trigger`) after
+        plugging in a previously-missing motor — no need to restart the
+        stack."""
+        try:
+            self._scan_motors(reinit_new=True)
+            online = [m for m in self._motor_ids if self._motor_online[m]]
+            offline = [m for m in self._motor_ids if not self._motor_online[m]]
+            response.success = True
+            response.message = f"scan complete — online={online} offline={offline}"
+            self.get_logger().info(response.message)
+        except Exception as e:
+            response.success = False
+            response.message = f"scan failed: {e}"
+            self.get_logger().warning(response.message)
+        return response
 
     def _load_defaults(self) -> dict:
         try:
@@ -132,12 +193,13 @@ class MksBusNode(Node):
             response.message = str(e)
         return response
 
-    def _health_tick(self):
+    def _publish_status(self):
+        """Republish the last-known motor status. Does NOT touch the Modbus
+        bus — call _scan_motors first if you want fresh data. Runs on the
+        ROS timer so that late WebSocket subscribers still see something."""
         motor_info = {}
         for mid in self._motor_ids:
-            online = self._bus.probe(mid)
-            self._motor_online[mid] = online
-            info = {"online": online}
+            info = {"online": self._motor_online.get(mid, False)}
             cached = self._motor_current.get(mid, {})
             if cached:
                 info.update(cached)
@@ -223,6 +285,26 @@ class MksBusNode(Node):
         except Exception as e:
             response.success = False
             response.message = str(e)
+        return response
+
+    def _srv_emergency_stop_wheels(self, request, response):
+        """Slam the wheel motors via MKS REG_EMERGENCY_STOP. Returns success
+        even if some motors didn't acknowledge — at e-stop time we'd rather
+        send the command on the others than abort the whole thing."""
+        failed = []
+        for mid in self._wheel_motor_ids:
+            try:
+                self._bus.emergency_stop(mid)
+            except Exception as exc:
+                failed.append(f"{mid}:{exc}")
+        response.success = not failed
+        response.message = (
+            "wheel e-stop sent"
+            if not failed
+            else f"wheel e-stop partial fail: {', '.join(failed)}"
+        )
+        if failed:
+            self.get_logger().warning(response.message)
         return response
 
     def _srv_clear_errors(self, request, response):

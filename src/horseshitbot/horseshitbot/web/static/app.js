@@ -82,7 +82,7 @@ function updateDashboard(data) {
   updateCurrent("right", w.current_right, currentLim);
 
   const estopBanner = document.getElementById("estop-banner");
-  if (estopBanner) estopBanner.style.display = w.estopped ? "block" : "none";
+  if (estopBanner) estopBanner.style.display = w.estopped ? "flex" : "none";
   const card = document.getElementById("card-wheels");
   if (card) card.classList.toggle("estopped", !!w.estopped);
   const wErr = document.getElementById("w-error");
@@ -141,7 +141,14 @@ function updateDashboard(data) {
   }
   const motorsEl = document.getElementById("hw-motors");
   if (motorsEl && hw.motors) {
-    const motorNames = {"3": "Lift A", "4": "Brush", "5": "Lift B", "6": "Door"};
+    const motorNames = {
+      "1": "Left Track",
+      "2": "Right Track",
+      "3": "Lift A",
+      "4": "Brush",
+      "5": "Lift B",
+      "6": "Door",
+    };
     const info = hw.motor_info || {};
     for (const [id, online] of Object.entries(hw.motors)) {
       const mi = info[id] || {};
@@ -1507,6 +1514,12 @@ async function cmd(node, action) {
   catch (e) { console.error("Command failed:", e); }
 }
 
+async function resumeEstop() {
+  // /wheel_driver_node/stop is the action that clears the e-stop flag
+  // (gentle stop + recovery, see _srv_stop in wheel_driver_node.py).
+  await cmd("wheel_driver_node", "stop");
+}
+
 async function switchBackend() {
   try { await fetch("/api/command/wheel_driver_node/switch_backend", { method: "POST" }); }
   catch (e) { console.error("Switch failed:", e); }
@@ -1519,6 +1532,23 @@ async function saveMotorDefaults() {
     const r = await resp.json();
     if (msg) {
       msg.textContent = r.success ? "Saved" : (r.message || "Failed");
+      msg.style.color = r.success ? "var(--ok)" : "var(--err)";
+      setTimeout(() => { msg.textContent = ""; }, 3000);
+    }
+  } catch (e) {
+    if (msg) { msg.textContent = "Failed"; msg.style.color = "var(--err)"; }
+  }
+}
+
+async function scanMotors() {
+  // Fire the manual MKS bus scan. Status is published asynchronously on
+  // /mks_bus/status and will refresh the motor list within a second.
+  const msg = document.getElementById("hw-save-msg");
+  try {
+    const resp = await fetch("/api/mks/scan", { method: "POST" });
+    const r = await resp.json();
+    if (msg) {
+      msg.textContent = r.success ? "Scanning…" : (r.message || "Failed");
       msg.style.color = r.success ? "var(--ok)" : "var(--err)";
       setTimeout(() => { msg.textContent = ""; }, 3000);
     }
