@@ -55,6 +55,11 @@ class MksBusNode(Node):
         # an instant hardware-level halt, independent of any ROS-side ramp.
         self.create_service(Trigger, "/mks/emergency_stop_wheels",
                             self._srv_emergency_stop_wheels)
+        # Clears the latch left behind by emergency_stop_wheels — required
+        # to actually drive again after an e-stop. Wheel driver calls this
+        # on resume; can also be invoked manually for recovery.
+        self.create_service(Trigger, "/mks/release_emergency_stop_wheels",
+                            self._srv_release_emergency_stop_wheels)
         self.declare_parameter("wheel_motor_ids", [1, 2])
         self._wheel_motor_ids = list(
             self.get_parameter("wheel_motor_ids").get_parameter_value().integer_array_value
@@ -305,6 +310,28 @@ class MksBusNode(Node):
         )
         if failed:
             self.get_logger().warning(response.message)
+        return response
+
+    def _srv_release_emergency_stop_wheels(self, request, response):
+        """Release the e-stop latch on the wheel motors so they accept
+        set_speed commands again. Without this, REG_SPEED writes are
+        silently ignored even though they return success."""
+        failed = []
+        for mid in self._wheel_motor_ids:
+            try:
+                self._bus.release_emergency_stop(mid)
+            except Exception as exc:
+                failed.append(f"{mid}:{exc}")
+        response.success = not failed
+        response.message = (
+            "wheel e-stop released"
+            if not failed
+            else f"wheel e-stop release partial fail: {', '.join(failed)}"
+        )
+        if failed:
+            self.get_logger().warning(response.message)
+        else:
+            self.get_logger().info(response.message)
         return response
 
     def _srv_clear_errors(self, request, response):

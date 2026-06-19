@@ -34,15 +34,11 @@ wheel_driver_node:
     #   shape the higher-level feel (and to drive watchdog / e-stop).
     wheel_acc_reg: 255
     update_hz: 50.0
-    # ROS ramp rates in motor RPM/s.
-    #   accel_rpm_s = 2000 → 0..max (~1071 RPM) in ~0.54 s
-    #   accel_rpm_s = 4000 → 0..max in ~0.27 s (snappier)
-    # The motor's internal acc=255 adds another ~50 ms of smoothing.
+    # accel/decel_rpm_s are no longer used — wheel_driver passes cmd_vel
+    # straight through and the MKS acc field (wheel_acc_reg) shapes motion.
+    # Kept for tuning experiments / future use.
     accel_rpm_s: 2000.0
     decel_rpm_s: 2000.0
-    # stop_decel_rpm_s is unused by the e-stop path (it now bypasses the
-    # ramp entirely — see _srv_stop_fast / _control_loop in
-    # wheel_driver_node.py), but is kept for backwards compatibility.
     stop_decel_rpm_s: 99999.0
     watchdog_sec: 0.8
     # ODrive-specific
@@ -116,7 +112,14 @@ gamepad_teleop_node:
     publish_rate: 50.0
     max_linear_speed: 1.0
     max_angular_speed: 1.0
+    # Forward stick (up) should drive forward. Xbox-style ABS_Y is negative
+    # when stick is up, so invert_y=true makes "up" → positive linear.x.
     invert_y: true
+    # Stick right should turn right. Xbox-style ABS_X is positive to the
+    # right, but ROS convention has positive angular.z = CCW = turn LEFT,
+    # so invert_turn=true makes "stick right" → negative angular.z = right
+    # turn at the wheels.
+    invert_turn: true
 
 web_dashboard_node:
   ros__parameters:

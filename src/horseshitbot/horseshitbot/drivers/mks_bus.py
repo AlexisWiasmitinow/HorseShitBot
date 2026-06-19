@@ -270,8 +270,28 @@ class MksBus:
         """Slam the motor to a halt instantly. Per MKS manual 8.3.1, this
         bypasses the acc ramp — the motor stops regardless of current RPM.
         The manual warns that doing this above 1000 RPM is mechanically
-        stressful, but for e-stop that's the price we pay."""
+        stressful, but for e-stop that's the price we pay.
+
+        IMPORTANT: writing REG_EMERGENCY_STOP=1 latches the motor in a
+        stopped state. The controller will keep ACKing Modbus writes but
+        will ignore further set_speed commands until the latch is cleared
+        — see release_emergency_stop()."""
         self.write_reg(unit_id, REG_EMERGENCY_STOP, 1)
+
+    def release_emergency_stop(self, unit_id: int):
+        """Clear the latch left behind by emergency_stop(). The MKS
+        controller doesn't react to a fresh REG_SPEED write after F7 was
+        triggered, so we explicitly toggle REG_ENABLE off → on. We also
+        opportunistically write 0 to F7 in case some firmware revisions
+        accept that as a release. The encoder zero is preserved (unlike
+        clear_error_state which also calls axis_zero)."""
+        try:
+            self.write_reg(unit_id, REG_EMERGENCY_STOP, 0)
+        except Exception:
+            pass
+        self.set_enable(unit_id, False)
+        time.sleep(0.05)
+        self.set_enable(unit_id, True)
 
     def axis_zero(self, unit_id: int):
         self.write_reg(unit_id, REG_AXIS_ZERO, 1)

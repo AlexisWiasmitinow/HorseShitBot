@@ -109,6 +109,11 @@ class WheelDriverNode(Node):
         # Hardware-level emergency stop on the wheel motors. Bypasses the
         # MKS acc ramp — see mks_bus.emergency_stop / REG_EMERGENCY_STOP.
         self._mks_estop_cli = self.create_client(Trigger, "/mks/emergency_stop_wheels")
+        # Clears the latch left by emergency_stop so motors accept set_speed
+        # again. Called by _srv_stop on resume.
+        self._mks_release_estop_cli = self.create_client(
+            Trigger, "/mks/release_emergency_stop_wheels"
+        )
         # Last command sent per (motor_id, invert) so we can skip duplicate writes
         # and keep the Modbus bus available for appendage motors and health probes.
         self._last_sent_rpm: dict[tuple[int, bool], int] = {}
@@ -186,7 +191,10 @@ class WheelDriverNode(Node):
         req = MksSetSpeed.Request()
         req.motor_id = int(motor_id)
         req.rpm = float(rpm_i)
-        req.accel = int(acc)
+        # MKS manual §6.5: acc=0 → immediate stop; acc>0 → decelerate. Use 0
+        # when commanding 0 RPM so pivot/linear release stops both wheels
+        # without the motor chewing through a queued ramp tail.
+        req.accel = 0 if rpm_i == 0 else int(acc)
         req.invert_dir = bool(invert)
         self._mks_cli.call_async(req)
         return True
@@ -270,6 +278,18 @@ class WheelDriverNode(Node):
             was_estopped = self._estopped
 
         if was_estopped:
+            # Clear the MKS controller's hardware e-stop latch FIRST. The F7
+            # register left over from _srv_stop_fast keeps the motors deaf
+            # to set_speed even though set_speed itself returns success.
+            # Fire-and-forget — must not block the executor here.
+            if self._mks_release_estop_cli.service_is_ready():
+                self._mks_release_estop_cli.call_async(Trigger.Request())
+            # Forget the last sent RPM so the first post-resume set_speed is
+            # guaranteed to go out (otherwise dedup might swallow it if the
+            # value happens to match the pre-estop cruise value).
+            with self._lock:
+                self._last_sent_rpm.clear()
+
             if self._backend:
                 ok = self._backend.resume()
                 if ok:
@@ -378,10 +398,19 @@ class WheelDriverNode(Node):
             # until the e-stop is cleared via _srv_stop.
             self._actual_left = 0.0
             self._actual_right = 0.0
+        elif dl == 0.0 and dr == 0.0:
+            # Joystick released (or watchdog tripped): snap _actual to 0 in
+            # one tick. _mks_set_speed sends acc=0 with rpm=0 so the MKS
+            # controller stops immediately (see MKS manual §6.5 stop command).
+            self._actual_left = 0.0
+            self._actual_right = 0.0
         else:
-            decel = self._decel
-            self._actual_left = _ramp_toward(self._actual_left, dl, self._accel if abs(dl) >= abs(self._actual_left) else decel, dt)
-            self._actual_right = _ramp_toward(self._actual_right, dr, self._accel if abs(dr) >= abs(self._actual_right) else decel, dt)
+            # Passthrough: no ROS-side ramp. During spot rotation both wheels
+            # were stepping every 20 ms (2×50 Hz Modbus writes), flooding the
+            # single-threaded mks_bus_node and causing multi-second lag. The
+            # motor's wheel_acc_reg (255) already smooths each step in ~96 ms.
+            self._actual_left = dl
+            self._actual_right = dr
 
         if self._backend:
             try:
