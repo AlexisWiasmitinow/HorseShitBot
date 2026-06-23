@@ -14,7 +14,10 @@
   <depend>std_srvs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>tf2_ros</depend>
   <depend>horseshitbot_interfaces</depend>
+  <depend>cv_bridge</depend>
 
   <exec_depend>realsense2_camera</exec_depend>
   <exec_depend>rosbag2_py</exec_depend>
