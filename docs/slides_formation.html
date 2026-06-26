@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Formation Perception &amp; Navigation Autonome ROS 2 — Reebot</title>
+  <title>Training Perception &amp; Autonomous Navigation ROS 2 — Reebot</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/reveal.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.6.1/dist/theme/black.css">
   <style>
@@ -89,10 +89,10 @@
   <div class="reveal">
     <div class="slides">
 
-      <!-- 1. TITRE -->
+      <!-- 1. TITLE -->
       <section>
-        <h1>Perception &amp; Navigation Autonome</h1>
-        <h3>avec ROS 2 Jazzy &amp; NVIDIA Jetson</h3>
+        <h1>Perception &amp; Autonomous Navigation</h1>
+        <h3>with ROS 2 Jazzy &amp; NVIDIA Jetson</h3>
         <p style="margin-top:1.5em;">
           <span class="badge">HorseShitBot</span>
           <span class="badge" style="background:rgba(255,77,77,0.15);color:#ff4d4d;">YOLO</span>
@@ -100,35 +100,35 @@
           <span class="badge" style="background:rgba(255,165,0,0.15);color:#ffa500;">SLAM Toolbox</span>
         </p>
         <p class="small" style="margin-top:2em;">
-          Par <strong>Thomas Simon</strong><br>
+          By <strong>Thomas Simon</strong><br>
           <a href="https://www.reebot.tech" target="_blank">www.reebot.tech</a> —
           <a href="https://www.linkedin.com/in/thomas-simon-reebot/" target="_blank">LinkedIn</a>
         </p>
         <footer class="slide-footer">
-          <span>Formation interne</span>
-          <span>Matin 9h-12h / Après-midi 13h-17h</span>
+          <span>Internal Training</span>
+          <span>Morning 9am-12pm / Afternoon 1pm-5pm</span>
         </footer>
       </section>
 
-      <!-- 2. OBJECTIFS -->
+      <!-- 2. OBJECTIVES -->
       <section>
-        <h2>🎯 Objectifs de la journée</h2>
+        <h2>🎯 Today's Objectives</h2>
         <ul>
-          <li>Maîtriser le <strong>workflow complet</strong> robotique autonome</li>
-          <li>Téléopérer le robot et <strong>enregistrer des rosbags</strong> qualité</li>
-          <li>Passer du rosbag à un <strong>dataset YOLO annoté</strong></li>
-          <li>Générer une <strong>carte SLAM</strong> et naviguer avec <strong>Nav2</strong></li>
-          <li>Intégrer la <strong>détection d’objets temps réel</strong> dans la navigation</li>
-          <li>Déployer sur <strong>Jetson</strong> avec TensorRT</li>
+          <li>Master the <strong>complete autonomous robotics workflow</strong></li>
+          <li>Teleoperate the robot and <strong>record quality rosbags</strong></li>
+          <li>Go from rosbag to a <strong>annotated YOLO dataset</strong></li>
+          <li>Generate a <strong>SLAM map</strong> and navigate with <strong>Nav2</strong></li>
+          <li>Integrate <strong>real-time object detection</strong> into navigation</li>
+          <li>Deploy on <strong>Jetson</strong> with TensorRT</li>
         </ul>
         <blockquote>
-          “On ne fait pas juste tourner des nodes : on comprend la chaîne de bout en bout.”
+          “We're not just running nodes: we understand the end-to-end chain.”
         </blockquote>
       </section>
 
-      <!-- 3. ARCHITECTURE REPO -->
+      <!-- 3. REPO ARCHITECTURE -->
       <section>
-        <h2>🤖 Architecture du repo</h2>
+        <h2>🤖 Repo Architecture</h2>
         <pre><code class="language-plaintext">┌─────────────────────────────────────────┐
 │  horseshitbot  (ament_python)             │
 │  • wheel_driver_node  → /cmd_vel, odom  │
@@ -139,128 +139,128 @@
 │  • bag_recorder_node  (MCAP)            │
 │  • lidar_node                           │
 └─────────────────────────────────────────┘</code></pre>
-        <p class="small">Topics clés : <code>/camera/color/image_raw</code>, <code>/scan</code>, <code>/odom</code>, <code>/tf</code></p>
+        <p class="small">Key topics : <code>/camera/color/image_raw</code>, <code>/scan</code>, <code>/odom</code>, <code>/tf</code></p>
       </section>
 
-      <!-- 4. AGENDA MATIN -->
+      <!-- 4. MORNING AGENDA -->
       <section>
-        <h2>☀️ Matin — Collecte &amp; Perception (9h-12h)</h2>
+        <h2>☀️ Morning — Data Collection &amp; Perception (9am-12pm)</h2>
         <table style="font-size:0.75em; width:100%;">
           <tr style="color:#00f0ff;">
-            <th>Horaire</th>
-            <th>Activité</th>
-            <th>Livrable</th>
+            <th>Time</th>
+            <th>Activity</th>
+            <th>Deliverable</th>
           </tr>
           <tr>
-            <td>09h00 – 09h30</td>
-            <td>Intro &amp; exploration du repo</td>
-            <td>Schéma topics/nœuds</td>
+            <td>09:00 – 09:30</td>
+            <td>Intro &amp; repo exploration</td>
+            <td>Topic/node diagram</td>
           </tr>
           <tr>
-            <td>09h30 – 10h30</td>
-            <td>Téléop &amp; rosbags perception + mapping</td>
-            <td>2 rosbags MCAP</td>
+            <td>09:30 – 10:30</td>
+            <td>Teleop &amp; rosbags perception + mapping</td>
+            <td>2 MCAP rosbags</td>
           </tr>
           <tr>
-            <td>10h30 – 10h45</td>
-            <td>Pause</td>
+            <td>10:30 – 10:45</td>
+            <td>Break</td>
             <td>—</td>
           </tr>
           <tr>
-            <td>10h45 – 11h30</td>
-            <td>Extraction images → dataset YOLO</td>
-            <td>Dossier <code>dataset/images/</code></td>
+            <td>10:45 – 11:30</td>
+            <td>Image extraction → YOLO dataset</td>
+            <td><code>dataset/images/</code> folder</td>
           </tr>
           <tr>
-            <td>11h30 – 12h00</td>
-            <td>Annotation &amp; entraînement (démo)</td>
-            <td>Modèle validé (5-10 epochs)</td>
+            <td>11:30 – 12:00</td>
+            <td>Annotation &amp; training (demo)</td>
+            <td>Validated model (5-10 epochs)</td>
           </tr>
         </table>
       </section>
 
       <!-- 5. TELEOP & ROSBAGS -->
       <section>
-        <h2>🎮 Téléopération &amp; Rosbags</h2>
+        <h2>🎮 Teleoperation &amp; Rosbags</h2>
         <div class="grid-two">
           <div>
-            <h3>Manette Data Frog</h3>
+            <h3>Data Frog Controller</h3>
             <ul>
-              <li>Left stick : conduite</li>
+              <li>Left stick : driving</li>
               <li>D-Pad : lift up/down</li>
               <li>RB / LB : brush / bin door</li>
-              <li>Select : toggle bag <span class="cyan">perception</span></li>
-              <li>D-Pad Left : toggle bag <span class="cyan">mapping</span></li>
-              <li>A = E-STOP / B = reprise</li>
+              <li>Select : toggle <span class="cyan">perception</span> bag</li>
+              <li>D-Pad Left : toggle <span class="cyan">mapping</span> bag</li>
+              <li>A = E-STOP / B = resume</li>
             </ul>
           </div>
           <div>
-            <h3>Enregistrement</h3>
+            <h3>Recording</h3>
             <ul>
-              <li><strong>perception_recorder</strong> : caméra couleur + profondeur</li>
+              <li><strong>perception_recorder</strong> : colour + depth camera</li>
               <li><strong>mapping_recorder</strong> : LiDAR + odom + TF</li>
-              <li>Format <span class="accent">MCAP</span> dans <code>~/rosbags/</code></li>
-              <li>Commande : <code>ros2 bag info ...</code></li>
+              <li><span class="accent">MCAP</span> format in <code>~/rosbags/</code></li>
+              <li>Command : <code>ros2 bag info ...</code></li>
             </ul>
           </div>
         </div>
         <p class="small" style="margin-top:0.8em;">
-          Dashboard disponible sur <code>http://&lt;IP_ROBOT&gt;:8080</code>
+          Dashboard available at <code>http://&lt;ROBOT_IP&gt;:8080</code>
         </p>
       </section>
 
       <!-- 6. YOLO PIPELINE -->
       <section>
-        <h2>🧠 Pipeline YOLO</h2>
+        <h2>🧠 YOLO Pipeline</h2>
         <ol>
           <li><span class="cyan">Extraction</span> : <code>scripts/extract_images_from_bag.py</code></li>
-          <li><span class="cyan">Annotation</span> : LabelImg / Roboflow → format txt YOLO</li>
-          <li><span class="cyan">Entraînement</span> :
+          <li><span class="cyan">Annotation</span> : LabelImg / Roboflow → YOLO txt format</li>
+          <li><span class="cyan">Training</span> :
             <pre style="width:80%;margin:auto;"><code class="language-python">from ultralytics import YOLO
 model = YOLO("yolov8n.pt")
 model.train(data="dataset.yaml", epochs=10, imgsz=640)</code></pre>
           </li>
         </ol>
-        <p class="small">Métriques clés : <strong>mAP50</strong>, precision, recall. On valide la chaîne, pas le modèle final.</p>
+        <p class="small">Key metrics : <strong>mAP50</strong>, precision, recall. We validate the pipeline, not the final model.</p>
       </section>
 
-      <!-- 7. AGENDA APRES-MIDI -->
+      <!-- 7. AFTERNOON AGENDA -->
       <section>
-        <h2>🌙 Après-midi — SLAM &amp; Navigation (13h-17h)</h2>
+        <h2>🌙 Afternoon — SLAM &amp; Navigation (1pm-5pm)</h2>
         <table style="font-size:0.75em; width:100%;">
           <tr style="color:#00f0ff;">
-            <th>Horaire</th>
-            <th>Activité</th>
-            <th>Livrable</th>
+            <th>Time</th>
+            <th>Activity</th>
+            <th>Deliverable</th>
           </tr>
           <tr>
-            <td>13h00 – 14h00</td>
+            <td>13:00 – 14:00</td>
             <td>SLAM Toolbox (offline mapping)</td>
             <td><code>salle_test.pgm/.yaml</code></td>
           </tr>
           <tr>
-            <td>14h00 – 14h15</td>
-            <td>Pause</td>
+            <td>14:00 – 14:15</td>
+            <td>Break</td>
             <td>—</td>
           </tr>
           <tr>
-            <td>14h15 – 15h15</td>
+            <td>14:15 – 15:15</td>
             <td>Nav2 : AMCL, planner, controller, costmap</td>
-            <td>Robot autonome en salle</td>
+            <td>Autonomous in-room robot</td>
           </tr>
           <tr>
-            <td>15h15 – 16h00</td>
-            <td>Intégration YOLO → Nav2 (obstacle_layer)</td>
-            <td>Obstacles virtuels en temps réel</td>
+            <td>15:15 – 16:00</td>
+            <td>YOLO → Nav2 (obstacle_layer)</td>
+            <td>Real-time virtual obstacles</td>
           </tr>
           <tr>
-            <td>16h00 – 16h15</td>
-            <td>Pause</td>
+            <td>16:00 – 16:15</td>
+            <td>Break</td>
             <td>—</td>
           </tr>
           <tr>
-            <td>16h15 – 17h00</td>
-            <td>Déploiement Jetson + TensorRT</td>
+            <td>16:15 – 17:00</td>
+            <td>Jetson deployment + TensorRT</td>
             <td>Launch <code>autonomy_launch.py</code></td>
           </tr>
         </table>
@@ -268,25 +268,25 @@ model.train(data="dataset.yaml", epochs=10, imgsz=640)</code></pre>
 
       <!-- 8. SLAM -->
       <section>
-        <h2>🗺️ SLAM Toolbox &amp; Cartographie</h2>
+        <h2>🗺️ SLAM Toolbox &amp; Mapping</h2>
         <ul>
-          <li>Jouer le <strong>rosbag mapping</strong> avec <code>--clock</code></li>
-          <li>Lancer SLAM Toolbox en mode <code>use_sim_time:=true</code></li>
-          <li>Visualiser <code>/map</code> et <code>/scan</code> dans RViz2</li>
-          <li>Sauvegarder : <code>/slam_toolbox/save_map</code></li>
+          <li>Play the <strong>mapping rosbag</strong> with <code>--clock</code></li>
+          <li>Launch SLAM Toolbox in <code>use_sim_time:=true</code> mode</li>
+          <li>Visualize <code>/map</code> and <code>/scan</code> in RViz2</li>
+          <li>Save : <code>/slam_toolbox/save_map</code></li>
         </ul>
-        <p class="small"><strong>SLAM Toolbox</strong> (Steve Macenski) — natif ROS 2, offline mapping via rosbag, parfait pour le <strong>YDLidar T-MINI Plus</strong>.</p>
-        <p class="small">Voir <code>docs/slam_guide.md</code> et <code>config/slam_toolbox_config.yaml</code></p>
+        <p class="small"><strong>SLAM Toolbox</strong> (Steve Macenski) — native ROS 2, offline mapping via rosbag, perfect for the <strong>YDLidar T-MINI Plus</strong>.</p>
+        <p class="small">See <code>docs/slam_guide.md</code> and <code>config/slam_toolbox_config.yaml</code></p>
       </section>
 
       <!-- 9. NAV2 -->
       <section>
-        <h2>🧭 Nav2 — Navigation Autonome</h2>
+        <h2>🧭 Nav2 — Autonomous Navigation</h2>
         <div class="grid-two">
           <div>
             <h3>Stack</h3>
             <ul>
-              <li><strong>AMCL</strong> : localisation sur carte statique</li>
+              <li><strong>AMCL</strong> : localization on static map</li>
               <li><strong>Planner</strong> : NavFn (A* / Dijkstra)</li>
               <li><strong>Controller</strong> : Regulated Pure Pursuit</li>
               <li><strong>Costmap</strong> : global + local</li>
@@ -298,14 +298,14 @@ model.train(data="dataset.yaml", epochs=10, imgsz=640)</code></pre>
             <pre><code class="language-bash">ros2 launch horseshitbot \
   nav2_bringup_launch.py \
   map:=maps/salle_test.yaml</code></pre>
-            <p class="small">Fichier clef : <code>config/nav2_params.yaml</code></p>
+            <p class="small">Key file : <code>config/nav2_params.yaml</code></p>
           </div>
         </div>
       </section>
 
       <!-- 10. YOLO + NAV2 -->
       <section>
-        <h2>👁️ YOLO injecté dans Nav2</h2>
+        <h2>👁️ YOLO Injected into Nav2</h2>
         <p class="small" style="text-align:center; margin-bottom:1em;">
           <span class="badge">camera color</span> →
           <span class="badge">yolo_detector_node</span> →
@@ -314,10 +314,10 @@ model.train(data="dataset.yaml", epochs=10, imgsz=640)</code></pre>
           <span class="badge">local_costmap</span>
         </p>
         <ul>
-          <li><code>yolo_detector_node</code> lit <code>color</code> + <code>aligned_depth</code> + <code>camera_info</code></li>
-          <li>Pour chaque bbox YOLO : projection 3D via matrice intrinsèque <strong>K</strong></li>
-          <li>Publie <code>/yolo/obstacles</code> (PointCloud2)</li>
-          <li><code>nav2_params.yaml</code> a la source <strong>yolo_obstacles</strong> déjà configurée</li>
+          <li><code>yolo_detector_node</code> reads <code>color</code> + <code>aligned_depth</code> + <code>camera_info</code></li>
+          <li>For each YOLO bbox : 3D projection via intrinsic matrix <strong>K</strong></li>
+          <li>Publishes <code>/yolo/obstacles</code> (PointCloud2)</li>
+          <li><code>nav2_params.yaml</code> already has the <strong>yolo_obstacles</strong> source configured</li>
         </ul>
         <pre style="width:90%;margin:auto;font-size:0.7em;"><code class="language-yaml">local_costmap:
   obstacle_layer:
@@ -328,47 +328,114 @@ model.train(data="dataset.yaml", epochs=10, imgsz=640)</code></pre>
       marking: true</code></pre>
       </section>
 
-      <!-- 11. DEPLOIEMENT JETSON -->
+      <!-- 11. JETSON DEPLOYMENT -->
       <section>
-        <h2>🚀 Déploiement Jetson</h2>
+        <h2>🚀 Jetson Deployment</h2>
         <ul>
           <li><strong>TensorRT</strong> : <code>scripts/convert_yolo_tensorrt.sh</code>
             <br><span class="small cyan">.pt → ONNX → .engine (FP16)</span>
           </li>
-          <li><strong>Launch terrain unique</strong> :
+          <li><strong>Single field launch</strong> :
             <pre style="width:80%;margin:auto;"><code class="language-bash">ros2 launch horseshitbot \
   autonomy_launch.py \
   map:=~/maps/salle_test.yaml</code></pre>
           </li>
-          <li>Démarre <strong>toute la stack</strong> : base robot + YOLO + Nav2</li>
-          <li>Goal Pose depuis RViz2 (Wi-Fi)</li>
+          <li>Starts <strong>the full stack</strong> : robot base + YOLO + Nav2</li>
+          <li>Goal Pose from RViz2 (Wi-Fi)</li>
         </ul>
       </section>
 
       <!-- 12. RECAP -->
       <section>
-        <h2>📋 Récapitulatif</h2>
+        <h2>📋 Summary</h2>
         <table style="font-size:0.72em; width:100%;">
           <tr style="color:#00f0ff;">
             <th>Phase</th>
-            <th>Compétence</th>
-            <th>Livrable</th>
+            <th>Skill</th>
+            <th>Deliverable</th>
           </tr>
-          <tr><td>Matin</td><td>Téléop, rosbags, dataset</td><td>2 rosbags + images</td></tr>
-          <tr><td>Matin</td><td>Annotation YOLO, Ultralytics</td><td>Modèle validé</td></tr>
-          <tr><td>Aprem</td><td>SLAM Toolbox offline</td><td>Carte .pgm/.yaml</td></tr>
-          <tr><td>Aprem</td><td>Nav2 (AMCL, planner, BT)</td><td>Navigation autonome</td></tr>
-          <tr><td>Aprem</td><td>YOLO → PointCloud2 obstacle_layer</td><td>Obstacles temps réel</td></tr>
-          <tr><td>Aprem</td><td>TensorRT + launch intégré</td><td>Déploiement Jetson</td></tr>
+          <tr><td>Morning</td><td>Teleop, rosbags, dataset</td><td>2 rosbags + images</td></tr>
+          <tr><td>Morning</td><td>YOLO annotation, Ultralytics</td><td>Validated model</td></tr>
+          <tr><td>Afternoon</td><td>SLAM Toolbox offline</td><td><code>.pgm/.yaml</code> map</td></tr>
+          <tr><td>Afternoon</td><td>Nav2 (AMCL, planner, BT)</td><td>Autonomous navigation</td></tr>
+          <tr><td>Afternoon</td><td>YOLO → PointCloud2 obstacle_layer</td><td>Real-time obstacles</td></tr>
+          <tr><td>Afternoon</td><td>TensorRT + integrated launch</td><td>Jetson deployment</td></tr>
         </table>
       </section>
 
-      <!-- 13. CONTACT -->
+      <!-- 13. BETTER PACKAGES ORGANISATION -->
       <section>
-        <h2>🙏 Questions ?</h2>
+        <h2>📦 Better Package Organisation</h2>
+        <div class="grid-two">
+          <div>
+            <h3>Recommended Structure</h3>
+            <ul>
+              <li><code>hbs_description</code> — URDFs, meshes, robot model</li>
+              <li><code>hbs_control</code> — Hardware drivers and control nodes</li>
+              <li><code>hbs_bringup</code> — Launch files, orchestration</li>
+              <li><code>hbs_moveit2</code> — Motion planning integration</li>
+              <li><code>hbs_vision</code> — YOLO and vision/perception</li>
+              <li><code>hbs_simulation</code> — Gazebo simulation assets</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Supporting Files</h3>
+            <ul>
+              <li><code>docs/</code> — Documentation, guides, training</li>
+              <li><code>.devcontainer/</code> — Development environment</li>
+              <li><code>.gitlab/</code> — CI/CD pipelines</li>
+              <li><code>.gitignore</code> — VCS exclusions</li>
+              <li><code>.dockerignore</code> — Docker build exclusions</li>
+            </ul>
+          </div>
+        </div>
+        <p class="small" style="margin-top:0.8em;">
+          Each package has a clear responsibility — modular, testable, reusable.
+        </p>
+      </section>
+
+      <!-- 14. THECONSTRUCT.AI COURSES -->
+      <section>
+        <h2>🎓 Recommended Courses — The Construct</h2>
+        <ul>
+          <li><strong>ROS2 Basics in 5 Days (C++)</strong> — topics, services, actions, TF</li>
+          <li><strong>ROS2 Nav2 Basics</strong> — Costmaps, AMCL, BT Navigator, planners</li>
+          <li><strong>ROS2 Perception</strong> — OpenCV, YOLO, point-cloud basics</li>
+          <li><strong>Advanced ROS2 Navigation</strong> — custom planners, recovery behaviours</li>
+        </ul>
+        <blockquote>
+          “The Construct provides browser-based ROS 2 environments — perfect for training without local setup headaches.”
+        </blockquote>
+        <p class="small" style="margin-top:0.5em;">
+          🔗 <a href="https://www.theconstruct.ai" target="_blank">www.theconstruct.ai</a>
+        </p>
+      </section>
+
+      <!-- 15. DEVCONTAINER USAGE -->
+      <section>
+        <h2>🐳 DevContainer Usage</h2>
+        <ul>
+          <li>Add <code>.devcontainer/devcontainer.json</code> for a <strong>reproducible workspace</strong></li>
+          <li>Base image: <code>ros:${ROS_DISTRO}-ros-base</code></li>
+          <li>Pre-install deps: <code>nav2-bringup</code>, <code>slam-toolbox</code>, <code>ultralytics</code>, <code>realsense2-camera</code></li>
+          <li>Volume mount workspace + <code>~/.ros</code> (bags / maps)</li>
+          <li>Jetson users: rely on <strong>NVIDIA Docker runtime</strong> + <code>--gpus all</code></li>
+        </ul>
+        <pre style="width:85%;margin:auto;font-size:0.7em;"><code class="language-json">// .devcontainer/devcontainer.json excerpt
+"image": "ros:jazzy-ros-base",
+"runArgs": ["--privileged", "--network=host"],
+"postCreateCommand": "rosdep install --from-paths src -y"</code></pre>
+        <p class="small">
+          Everyone runs the exact same ROS 2 version, tools, and Python packages.
+        </p>
+      </section>
+
+      <!-- 16. CONTACT -->
+      <section>
+        <h2>🙏 Questions?</h2>
         <p style="font-size:1.1em; margin-top:1.5em;">
           <strong>Thomas Simon</strong><br>
-          <span class="small">Fondateur &amp; Roboticist — Reebot</span>
+          <span class="small">Founder &amp; Roboticist — Reebot</span>
         </p>
         <p style="margin-top:1.2em;">
           🌐 <a href="https://www.reebot.tech" target="_blank">www.reebot.tech</a><br>
@@ -378,8 +445,8 @@ model.train(data="dataset.yaml", epochs=10, imgsz=640)</code></pre>
           Repo : HorseShitBot — ROS 2 Jazzy — Raspberry Pi / Jetson Nano
         </p>
         <footer class="slide-footer">
-          <span>Formation interne</span>
-          <span>9h-12h / 13h-17h</span>
+          <span>Internal Training</span>
+          <span>9am-12pm / 1pm-5pm</span>
         </footer>
       </section>
 

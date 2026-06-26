@@ -6,6 +6,11 @@ ROS 2 robot controller with switchable wheel backends (MKS steppers / ODrive BLD
 generic actuator nodes (lift, brush, bin door) with stall-based referencing,
 Bluetooth gamepad teleop, a web dashboard, and an on-robot ILI9341 SPI status screen.
 
+## Training — Perception & Autonomous Navigation
+
+The one-day training plan (1 day, 9am–5pm) is available in **[PLAN.md](PLAN.md)**.
+Technical details: see `docs/training_perception_navigation.md` and `docs/slam_guide.md`.
+
 ### Nodes
 
 | Node | Purpose |

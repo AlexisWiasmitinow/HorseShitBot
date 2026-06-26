@@ -1,38 +1,38 @@
-# Guide SLAM pour HorseShitBot (YDLidar T-MINI Plus)
+# SLAM Guide for HorseShitBot (YDLidar T-MINI Plus)
 
-> **SLAM recommandé** : [SLAM Toolbox](https://github.com/SteveMacenski/slam_toolbox) — ROS 2 natif, maintenu par Steve Macenski (mainteneur Nav2).
+> **Recommended SLAM** : [SLAM Toolbox](https://github.com/SteveMacenski/slam_toolbox) — native ROS 2, maintained by Steve Macenski (Nav2 maintainer).
 > 
-> **Pourquoi pas Cartographer ?** Cartographer fonctionne, mais sa configuration est verbeuse (fichiers Lua, pbstream) et moins pédagogique pour une formation d’une journée.
-> **Pourquoi pas gmapping / hector ?** Ce sont des packages ROS 1 non portés officiellement sur ROS 2.
+> **Why not Cartographer?** Cartographer works, but its configuration is verbose (Lua files, pbstream) and less pedagogical for a one-day training.
+> **Why not gmapping / hector?** These are ROS 1 packages not officially ported to ROS 2.
 
 ---
 
-## 1. Pourquoi SLAM Toolbox avec le T-MINI Plus ?
+## 1. Why SLAM Toolbox with the T-MINI Plus?
 
-| Critère | SLAM Toolbox | Avantage pour le robot |
+| Criterion | SLAM Toolbox | Advantage for the robot |
 |---------|--------------|------------------------|
-| **Compatibilité** | Natif ROS 2 (`sensor_msgs/LaserScan`) | Le `lidar_node` publie déjà sur `/scan` |
-| **Mode offline** | `online_sync_launch.py` + `--clock` | Permet de générer une carte à partir du rosbag enregistré le matin |
-| **Open-loop odometry** | Scan-to-map matching robuste | Corrige la dérive de l’odométrie par intégration des RPM (pas de codeurs absolus) |
-| **Sortie** | `.pgm` + `.yaml` directement | Compatible Nav2 / `map_server` sans conversion |
-| **Lifelong mapping** | `lifelong_launch.py` disponible | Pour cartographier de grandes surfaces sur la durée |
+| **Compatibility** | Native ROS 2 (`sensor_msgs/LaserScan`) | The `lidar_node` already publishes on `/scan` |
+| **Offline mode** | `online_sync_launch.py` + `--clock` | Allows generating a map from the rosbag recorded in the morning |
+| **Open-loop odometry** | Robust scan-to-map matching | Corrects the drift of the command-integrated RPM odometry (no absolute encoders) |
+| **Output** | `.pgm` + `.yaml` directly | Compatible Nav2 / `map_server` without conversion |
+| **Lifelong mapping** | `lifelong_launch.py` available | For mapping large areas over time |
 
 ---
 
-## 2. Caractéristiques du Lidar utilisées par SLAM
+## 2. LiDAR Characteristics Used by SLAM
 
-Depuis `lidar_node.py` :
+From `lidar_node.py`:
 
-| Paramètre | Valeur | Impact sur SLAM |
+| Parameter | Value | Impact on SLAM |
 |-----------|--------|-----------------|
-| `frame_id` | `laser` | Le TF `base_link → laser` doit exister (déjà dans `robot_launch.py`) |
-| `topic` | `/scan` | SLAM Toolbox s’y abonne par défaut |
-| `range_min` | 0.02 m | Très proche du robot → bien pour détecter les obstacles à l’arrière |
-| `range_max` | 12.0 m | Portée correcte pour intérieur / hangar |
-| `angle_offset` | -90° | Compensation de l’orientation physique du capteur (géré par le driver) |
-| `scan_bins` | 720 | Résolution angulaire 0.5° — très bien pour un lidar low-cost |
+| `frame_id` | `laser` | The TF `base_link → laser` must exist (already in `robot_launch.py`) |
+| `topic` | `/scan` | SLAM Toolbox subscribes by default |
+| `range_min` | 0.02 m | Very close to the robot → good for detecting rear obstacles |
+| `range_max` | 12.0 m | Correct range for indoor / hangar use |
+| `angle_offset` | -90° | Compensation for the physical sensor orientation (handled by the driver) |
+| `scan_bins` | 720 | Angular resolution 0.5° — very good for a low-cost lidar |
 
-> ⚠️ **Attention** : le `base_link → laser` dans `robot_launch.py` a un `yaw=3.14159` (π rad). Le lidar est monté à 180° par rapport à l’avant du robot. SLAM Toolbox s’en fiche : il utilise le TF arbre pour transformer le scan dans `odom`.
+> ⚠️ **Warning** : the `base_link → laser` in `robot_launch.py` has a `yaw=3.14159` (π rad). The lidar is mounted at 180° relative to the front of the robot. SLAM Toolbox does not care: it uses the TF tree to transform the scan into `odom`.
 
 ---
 
@@ -43,17 +43,17 @@ sudo apt update
 sudo apt install ros-$ROS_DISTRO-slam-toolbox
 ```
 
-Vérifier la présence des launch files :
+Check that launch files are present:
 ```bash
 ros2 pkg prefix slam_toolbox
-# Doit afficher /opt/ros/$ROS_DISTRO/share/slam_toolbox
+# Should output /opt/ros/$ROS_DISTRO/share/slam_toolbox
 ```
 
 ---
 
-## 4. Configuration recommandée (`slam_toolbox_config.yaml`)
+## 4. Recommended Configuration (`slam_toolbox_config.yaml`)
 
-Créer `src/horseshitbot/config/slam_toolbox_config.yaml` :
+Create `src/horseshitbot/config/slam_toolbox_config.yaml`:
 
 ```yaml
 slam_toolbox:
@@ -82,7 +82,7 @@ slam_toolbox:
     # ------------------------------------------------------------------
     use_scan_matching: true
     use_scan_barycenter: true
-    minimum_travel_distance: 0.15      # mètre (petit robot, odo open-loop)
+    minimum_travel_distance: 0.15      # metre (small robot, open-loop odo)
     minimum_travel_heading: 0.15       # radian
     scan_buffer_size: 15
     scan_buffer_maximum_scan_distance: 10.0
@@ -91,8 +91,8 @@ slam_toolbox:
     # Loop closure
     # ------------------------------------------------------------------
     link_match_minimum_response_fine: 0.1
-    link_scan_maximum_distance: 1.5    # tolérance pour matcher des scans éloignés
-    loop_search_maximum_distance: 5.0  # distance max pour chercher une boucle
+    link_scan_maximum_distance: 1.5    # tolerance for matching distant scans
+    loop_search_maximum_distance: 5.0  # max distance to search a loop
     loop_search_maximum_angle: 3.14    # 180°
     do_loop_closing: true
     loop_match_minimum_chain_size: 3
@@ -101,7 +101,7 @@ slam_toolbox:
     loop_match_minimum_response_fine: 0.1
 
     # ------------------------------------------------------------------
-    # Correspondance (scan-to-map)
+    # Correspondence (scan-to-map)
     # ------------------------------------------------------------------
     correlation_search_space_dimension: 0.5
     correlation_search_space_resolution: 0.01
@@ -111,7 +111,7 @@ slam_toolbox:
     loop_search_space_smear_deviation: 0.03
 
     # ------------------------------------------------------------------
-    # Carte
+    # Map
     # ------------------------------------------------------------------
     distance_variance_penalty: 0.5
     angle_variance_penalty: 1.0
@@ -126,83 +126,83 @@ slam_toolbox:
     # Rasterisation
     # ------------------------------------------------------------------
     resolution: 0.05        # 5 cm / pixel
-    max_laser_range: 12.0   # ne pas dépasser le range_max du lidar
+    max_laser_range: 12.0   # do not exceed the lidar range_max
 ```
 
-### Points clefs de cette config pour HorseShitBot
+### Key points of this config for HorseShitBot
 
-- `minimum_travel_distance: 0.15` : avec une odo open-loop qui dérive, on veut **beaucoup de recouvrement** entre scans. 15 cm garantit un bon overlap sans saturer le CPU.
-- `link_scan_maximum_distance: 1.5` : le robot est petit et évolue dans des espaces potentiellement étroits ; on autorise un matching plus large que la config par défaut (0.3).
-- `max_laser_range: 12.0` : identique au `range_max` du driver. Ne pas augmenter artificiellement sinon les rayons sans retour créent du bruit dans la carte.
-- `resolution: 0.05` : bon compromis précision / poids mémoire pour un Jetson.
+- `minimum_travel_distance: 0.15` : with an open-loop odo that drifts, we want ** lots of overlap** between scans. 15 cm guarantees good overlap without saturating the CPU.
+- `link_scan_maximum_distance: 1.5` : the robot is small and operates in potentially narrow spaces; we allow wider matching than the default (0.3).
+- `max_laser_range: 12.0` : identical to the driver `range_max`. Do not artificially increase it otherwise rays without return create noise in the map.
+- `resolution: 0.05` : good precision / memory weight compromise for a Jetson.
 
 ---
 
-## 5. Mapping en temps réel (live)
+## 5. Real-time Mapping (Live)
 
-**Pré-requis** : le robot est allumé, le lidar tourne (`/scan` publie), l’odométrie est active (`/odom`), et la TF `base_link → laser` existe.
+**Prerequisites** : the robot is powered on, the lidar is running (`/scan` publishes), odometry is active (`/odom`), and the TF `base_link → laser` exists.
 
 ```bash
-# Lancer le robot (si pas déjà fait)
+# Launch the robot (if not already done)
 ros2 launch horseshitbot robot_launch.py enable_camera:=false
 
-# Dans un autre terminal, lancer SLAM Toolbox
+# In another terminal, launch SLAM Toolbox
 ros2 launch slam_toolbox online_sync_launch.py \
   slam_params_file:=$(pwd)/src/horseshitbot/config/slam_toolbox_config.yaml \
   use_sim_time:=false
 ```
 
-Visualiser dans RViz2 :
+Visualize in RViz2:
 - Topic `/map` (OccupancyGrid)
-- Topic `/scan` (LaserScan), couleur par intensité si besoin
-- TF : vérifier que `odom → base_link → laser` est cohérent
+- Topic `/scan` (LaserScan), colour by intensity if needed
+- TF : verify that `odom → base_link → laser` is consistent
 
-Conduire le robot lentement (le T-MINI peut manquer des points en virage rapide).
+Drive the robot slowly (the T-MINI can miss points in fast turns).
 
 ---
 
-## 6. Mapping offline depuis rosbag (recommandé pour la formation)
+## 6. Offline Mapping from Rosbag (Recommended for the Training)
 
-C’est le mode utilisé pendant la formation (13h00-14h00) car il permet de rejouer, corriger, et ne pas dépendre de la batterie du robot.
+This is the mode used during the training (13:00-14:00) because it allows replaying, correcting, and not depending on the robot battery.
 
 ```bash
-# 1. Lancer SLAM Toolbox en mode simulé
+# 1. Launch SLAM Toolbox in simulated mode
 ros2 launch slam_toolbox online_sync_launch.py \
   slam_params_file:=$(pwd)/src/horseshitbot/config/slam_toolbox_config.yaml \
   use_sim_time:=true
 
-# 2. Jouer le rosbag (le bag du mapping, qui contient /scan + /odom + /tf)
+# 2. Play the rosbag (the mapping bag, containing /scan + /odom + /tf)
 ros2 bag play ~/rosbags/horseshitbot_YYYY-MM-DD_HH-MM-SS --clock
 
-# 3. RViz2 (optionnel, pour visualiser la carte se construire)
+# 3. RViz2 (optional, to visualize the map being built)
 rviz2
 ```
 
-> ⏱️ Un rosbag de 5-10 minutes d’une salle de 10×10 m suffit largement.
+> ⏱️ A 5-10 minute rosbag of a 10×10 m room is more than enough.
 
 ---
 
-## 7. Sauvegarder la carte
+## 7. Saving the Map
 
-### Méthode A : Service ROS 2 (recommandé)
+### Method A : ROS 2 Service (recommended)
 
 ```bash
-# Créer le dossier de destination
+# Create the destination folder
 mkdir -p ~/maps
 
-# Appeler le service de sauvegarde
+# Call the save service
 ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap "name:
   data: '/home/$(whoami)/maps/salle_test'"
 ```
 
-Résultat :
+Result:
 ```
 ~/maps/
 ├── salle_test.pgm
 └── salle_test.yaml
 ```
 
-### Méthode B : CLI map_saver (legacy mais fonctionnel)
+### Method B : CLI map_saver (legacy but functional)
 
 ```bash
 ros2 run nav2_map_server map_saver_cli -t /map -f ~/maps/salle_test
@@ -210,13 +210,13 @@ ros2 run nav2_map_server map_saver_cli -t /map -f ~/maps/salle_test
 
 ---
 
-## 8. Intégration Nav2 — passer de la carte à la navigation
+## 8. Nav2 Integration — From Map to Navigation
 
-1. Copier les fichiers `.pgm` + `.yaml` dans le repo :
+1. Copy the `.pgm` + `.yaml` files into the repo:
    ```bash
    cp ~/maps/salle_test.* src/horseshitbot/maps/
    ```
-2. Cette carte est ensuite utilisée par `nav2_bringup_launch.py` → `map_server` → AMCL.
+2. This map is then used by `nav2_bringup_launch.py` → `map_server` → AMCL.
    ```bash
    ros2 launch horseshitbot nav2_bringup_launch.py \
      map:=$(pwd)/src/horseshitbot/maps/salle_test.yaml
@@ -226,25 +226,25 @@ ros2 run nav2_map_server map_saver_cli -t /map -f ~/maps/salle_test
 
 ## 9. Troubleshooting SLAM Toolbox + T-MINI
 
-| Symptôme | Cause probable | Solution |
+| Symptom | Probable Cause | Solution |
 |----------|----------------|----------|
-| **“No laser scan received”** | TF `base_link → laser` manquante | Vérifier `robot_launch.py` (lignes 106-113) ou `ros2 run tf2_tools view_frames` |
-| **Carte floue / brouillard** | `minimum_travel_distance` trop petit + robot trop lent / immobile | Augmenter à 0.25 ; assurer un mouvement continu |
-| **La carte se dédouble** | Odométrie open-loop dérive trop entre deux scans | Conduire plus lentement en ligne droite ; vérifier que le lidar scan rate est stable |
-| **Boucle de fermeture ratée** | Espace trop peu texturé (couloir blanc) | Ajouter des objets distinctifs ; baisser `link_scan_maximum_distance` à 0.8 |
-| **Points fantômes derrière le robot** | `range_min` très bas (0.02 m) et réflexions | Augmenter `range_min` à 0.1 m dans `lidar_node` (filtre) ou ignorer les très courtes distances |
-| **Carte trop petite / coupée** | Le rosbag s’est arrêté avant la fin | Continuer la lecture ; ou utiliser `--rate 0.5` pour ralentir et laisser SLAM suivre |
-| **CPU saturé sur Jetson** | `resolution: 0.05` est lourd | Passer à `resolution: 0.10` si la précision n’est pas critique |
+| **“No laser scan received”** | Missing TF `base_link → laser` | Check `robot_launch.py` (lines 106-113) or `ros2 run tf2_tools view_frames` |
+| **Blurry / foggy map** | `minimum_travel_distance` too small + robot too slow / stationary | Increase to 0.25 ; ensure continuous movement |
+| **Map doubles** | Open-loop odometry drifts too much between two scans | Drive slower in straight lines ; verify that the lidar scan rate is stable |
+| **Failed loop closure** | Space too little textured (white corridor) | Add distinctive objects ; lower `link_scan_maximum_distance` to 0.8 |
+| **Ghost points behind the robot** | Very low `range_min` (0.02 m) and reflections | Increase `range_min` to 0.1 m in `lidar_node` (filter) or ignore very short distances |
+| **Map too small / cut off** | The rosbag stopped before the end | Continue playing ; or use `--rate 0.5` to slow down and let SLAM catch up |
+| **CPU saturated on Jetson** | `resolution: 0.05` is heavy | Switch to `resolution: 0.10` if precision is not critical |
 
 ---
 
-## 10. Mode localization (pour aller plus loin)
+## 10. Localization Mode (To Go Further)
 
-Une fois la carte générée, on peut passer SLAM Toolbox en mode **localisation** (sans modifier la carte) :
+Once the map is generated, SLAM Toolbox can be switched to **localization** mode (without modifying the map):
 
 ```bash
-# Éditer slam_toolbox_config.yaml : mode: "localization"
-# Ajouter :
+# Edit slam_toolbox_config.yaml : mode: "localization"
+# Add:
 # map_file_name: "/home/user/maps/salle_test"
 # map_start_pose: [0.0, 0.0, 0.0]
 
@@ -253,8 +253,8 @@ ros2 launch slam_toolbox localization_launch.py \
   use_sim_time:=false
 ```
 
-Dans ce mode, SLAM se comporte comme AMCL + une légère correction scan-to-map. **Nav2 fournit déjà AMCL**, donc ce mode n’est pas nécessaire pour la stack autonome du projet, mais c’est utile à connaître.
+In this mode, SLAM behaves like AMCL + a slight scan-to-map correction. **Nav2 already provides AMCL**, so this mode is not necessary for the project's autonomous stack, but it is useful to know.
 
 ---
 
-*Guide écrit pour le lidar **YDLidar T-MINI Plus** du HorseShitBot — baud 230400, frame `laser`, TF `base_link→laser` fournie par le launch robot.*
+*Guide written for the **YDLidar T-MINI Plus** of HorseShitBot — baud 230400, frame `laser`, TF `base_link→laser` provided by the robot launch.*
