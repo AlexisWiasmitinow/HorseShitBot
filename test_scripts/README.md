@@ -202,6 +202,63 @@ Defaults match `params.yaml` / `ILI9341Display` for each platform. Override with
 
 ---
 
+### `icm20948_i2c_test.py` — ICM-20948 9-DOF IMU (I2C)
+
+Tests an ICM-20948 IMU (accel + gyro + AK09916 magnetometer) over I2C: WHO_AM_I checks, sensor init, and single/continuous readings. Includes an `i2cdetect`-style bus scan for finding the device address.
+
+**Dependencies:**
+
+```bash
+pip install smbus2
+```
+
+**Wiring (Jetson 40-pin header):**
+
+```
+IMU Pin   Jetson pin   Notes
+───────   ──────────   ─────
+VCC       3.3V (pin 1) 3.3V logic only
+GND       GND (pin 6)  Any ground
+SDA       pin 3        I2C1 (usually /dev/i2c-1 on Nano; 7/8/9 on Xavier/Orin)
+SCL       pin 5
+AD0       GND or 3.3V  GND -> address 0x68 (default); 3.3V -> 0x69
+```
+
+**Usage:**
+
+```bash
+# List available I2C buses
+python3 icm20948_i2c_test.py --list-buses
+
+# Find the device's address on a bus (like i2cdetect -y 1)
+python3 icm20948_i2c_test.py --scan --bus 1
+
+# Single reading, defaults (bus 1, address 0x68)
+python3 icm20948_i2c_test.py
+
+# Different bus/address (Xavier/Orin often use bus 7/8/9; AD0 high -> 0x69)
+python3 icm20948_i2c_test.py --bus 8 --addr 0x69
+
+# Stream continuously (Ctrl+C to stop), or a fixed number of samples at a set rate
+python3 icm20948_i2c_test.py -c
+python3 icm20948_i2c_test.py -c -n 20 -r 5
+
+# Skip the magnetometer (accel/gyro only)
+python3 icm20948_i2c_test.py --no-mag
+
+# Different full-scale ranges
+python3 icm20948_i2c_test.py --accel-fs 4 --gyro-fs 500
+```
+
+**What to look for:**
+- `--scan` shows a device at `0x68` (or `0x69` if AD0 is pulled high)
+- WHO_AM_I reads back `0xEA` (ICM-20948) and, if testing the magnetometer, `0x09` (AK09916)
+- At rest: one accel axis (whichever is vertical) reads ~1g, others near 0g; gyro reads near 0dps on all axes
+- Temperature reads near room temperature
+- Magnetometer values change smoothly as you rotate the board (and jump/settle near a speaker or motor)
+
+---
+
 ### `datafrog_controller_test.py` — Data Frog Bluetooth Gamepad
 
 Tests a Bluetooth gamepad (Data Frog or similar Xbox-style controller) via `evdev`. Verifies axes, buttons, and rumble/vibration.
