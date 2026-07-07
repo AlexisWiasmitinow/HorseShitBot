@@ -144,7 +144,7 @@ lidar_node:
   ros__parameters:
     port: "/dev/lidar"
     baud: 230400
-    auto_start: false
+    auto_start: true
     publish_hz: 5.0
     frame_id: "laser"
     range_min: 0.02
