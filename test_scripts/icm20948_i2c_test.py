@@ -18,6 +18,12 @@ Jetson I2C wiring (Jetson.GPIO-style 40-pin header):
     SDA  -> pin 3  (I2C1, usually /dev/i2c-1 on Nano; 7/8/9 on Xavier/Orin)
     SCL  -> pin 5
     AD0  -> GND for address 0x68 (default), 3.3V for 0x69
+    nCS  -> 3.3V (REQUIRED for I2C mode!)
+             The ICM-20948 is an I2C/SPI combo chip. Leaving nCS floating or
+             low can latch it into SPI mode, and I2C reads will just time out
+             / NACK with no obvious reason. Tie it to VDD (3.3V) for I2C.
+    FSYNC -> GND (or leave unconnected if the breakout ties it off already;
+             not used by this script, but floating inputs can be noisy)
 
 Usage:
     python3 icm20948_i2c_test.py                       # single reading, bus 1, addr 0x68
@@ -195,16 +201,22 @@ def list_buses():
     return devs
 
 
-def scan_bus(bus: int):
+def scan_bus(bus: int, quiet: bool = False) -> list:
     import smbus2
-    print(f"=== I2C scan: bus {bus} (like `i2cdetect -y {bus}`) ===")
+    if not quiet:
+        print(f"=== I2C scan: bus {bus} (like `i2cdetect -y {bus}`) ===")
     try:
         smb = smbus2.SMBus(bus)
     except FileNotFoundError:
         print(f"  ERROR: /dev/i2c-{bus} not found. Try --list-buses to see what exists.")
         return []
+    except PermissionError:
+        print(f"  ERROR: permission denied opening /dev/i2c-{bus}. "
+              f"Try: sudo usermod -aG i2c $USER (log out/in), or run with sudo.")
+        return []
     found = []
-    print("     " + " ".join(f"{c:02x}" for c in range(16)))
+    if not quiet:
+        print("     " + " ".join(f"{c:02x}" for c in range(16)))
     for row in range(0, 0x78, 16):
         line = f"{row:02x}: "
         for col in range(16):
@@ -218,15 +230,41 @@ def scan_bus(bus: int):
                 found.append(addr)
             except OSError:
                 line += "-- "
-        print(line)
+        if not quiet:
+            print(line)
     smb.close()
-    if found:
-        print(f"\n  Found device(s) at: {', '.join(hex(a) for a in found)}")
-        if 0x68 in found or 0x69 in found:
-            print("  0x68/0x69 matches the ICM-20948's default I2C address(es) (AD0 low/high).")
-    else:
-        print("\n  No devices found. Check wiring (SDA/SCL not swapped), pull-ups, 3.3V power, and AD0 level.")
+    if not quiet:
+        if found:
+            print(f"\n  Found device(s) at: {', '.join(hex(a) for a in found)}")
+            if 0x68 in found or 0x69 in found:
+                print("  0x68/0x69 matches the ICM-20948's default I2C address(es) (AD0 low/high).")
+        else:
+            print("\n  No devices found. Check wiring (SDA/SCL not swapped), pull-ups, 3.3V power, and AD0 level.")
     return found
+
+
+def scan_all_buses():
+    devs = list_buses()
+    if not devs:
+        return
+    print("\n=== Scanning every bus for 0x68 / 0x69 (ICM-20948 candidates) ===")
+    hits = []
+    for d in devs:
+        bus_num = int(d.rsplit("-", 1)[-1])
+        found = scan_bus(bus_num, quiet=True)
+        candidates = [a for a in found if a in (0x68, 0x69)]
+        status = f"candidates: {[hex(a) for a in candidates]}" if candidates else (
+            f"other device(s): {[hex(a) for a in found]}" if found else "no devices")
+        print(f"  {d}: {status}")
+        if candidates:
+            hits.extend((bus_num, a) for a in candidates)
+    if hits:
+        print("\n  Likely match(es):")
+        for bus_num, addr in hits:
+            print(f"    python3 {sys.argv[0]} --bus {bus_num} --addr 0x{addr:02X}")
+    else:
+        print("\n  No 0x68/0x69 device found on any bus. This points to a wiring/power issue")
+        print("  rather than a bus-number mistake — see the README troubleshooting section.")
 
 
 # ── printing helpers ─────────────────────────────────────────────
@@ -255,6 +293,7 @@ def main():
 examples:
   python3 icm20948_i2c_test.py                    # single reading, bus 1, addr 0x68
   python3 icm20948_i2c_test.py --scan              # find the device's address on a bus
+  python3 icm20948_i2c_test.py --scan-all          # not sure which bus? check all of them
   python3 icm20948_i2c_test.py --list-buses        # see which /dev/i2c-N exist
   python3 icm20948_i2c_test.py -c -n 20 -r 5       # stream 20 samples at ~5 Hz
   python3 icm20948_i2c_test.py --bus 8 --addr 0x69 # Xavier/Orin often use bus 7/8/9
@@ -266,6 +305,9 @@ examples:
         help="I2C address (default 0x68; 0x69 if AD0 is tied high)")
     parser.add_argument("--scan", action="store_true",
         help="Scan the bus for device addresses (like i2cdetect -y) and exit")
+    parser.add_argument("--scan-all", action="store_true",
+        help="Scan every available /dev/i2c-* bus for a 0x68/0x69 device and exit "
+             "(use this if you're not sure which bus the header maps to)")
     parser.add_argument("--list-buses", action="store_true",
         help="List available /dev/i2c-* devices and exit")
     parser.add_argument("--no-mag", action="store_true",
@@ -284,6 +326,10 @@ examples:
 
     if args.list_buses:
         list_buses()
+        return
+
+    if args.scan_all:
+        scan_all_buses()
         return
 
     if args.scan:
@@ -311,6 +357,8 @@ examples:
         except OSError as e:
             print(f"  ERROR: no ACK from 0x{args.addr:02X} on bus {args.bus}: {e}", file=sys.stderr)
             print("  Check wiring (SDA/SCL), pull-ups, power, and AD0 level (0x68 vs 0x69).", file=sys.stderr)
+            print("  Also check nCS: it MUST be tied to 3.3V for I2C mode (floating/low", file=sys.stderr)
+            print("  can select SPI mode instead, which looks identical to a wiring fault).", file=sys.stderr)
             print(f"  Try: python3 {sys.argv[0]} --scan --bus {args.bus}", file=sys.stderr)
             sys.exit(1)
 

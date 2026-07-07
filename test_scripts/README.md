@@ -222,7 +222,11 @@ GND       GND (pin 6)  Any ground
 SDA       pin 3        I2C1 (usually /dev/i2c-1 on Nano; 7/8/9 on Xavier/Orin)
 SCL       pin 5
 AD0       GND or 3.3V  GND -> address 0x68 (default); 3.3V -> 0x69
+nCS       3.3V         REQUIRED for I2C mode — see note below
+FSYNC     GND / NC     Not used by this script; float can be noisy on some boards
 ```
+
+**Don't forget `nCS`:** the ICM-20948 is an I2C/SPI combo chip, and `nCS` doubles as the interface-select pin. If it's left floating or pulled low, the chip can come up in SPI mode instead of I2C — `--scan` will show nothing and WHO_AM_I reads will just time out/NACK, which looks identical to a wiring or address problem. Tie `nCS` straight to 3.3V (VDD) to force I2C mode. Most breakout boards (SparkFun, etc.) call this pin out explicitly for this reason.
 
 **Usage:**
 
@@ -230,7 +234,10 @@ AD0       GND or 3.3V  GND -> address 0x68 (default); 3.3V -> 0x69
 # List available I2C buses
 python3 icm20948_i2c_test.py --list-buses
 
-# Find the device's address on a bus (like i2cdetect -y 1)
+# Not sure which bus the header maps to? Check all of them for 0x68/0x69 at once
+python3 icm20948_i2c_test.py --scan-all
+
+# Find the device's address on a specific bus (like i2cdetect -y 1)
 python3 icm20948_i2c_test.py --scan --bus 1
 
 # Single reading, defaults (bus 1, address 0x68)
