@@ -188,12 +188,17 @@ class GamepadTeleopNode(Node):
         self.declare_parameter("max_linear_speed", 1.0)
         self.declare_parameter("max_angular_speed", 1.0)
         self.declare_parameter("invert_y", True)
+        # Most modern controllers report ABS_X positive when the stick is
+        # pushed RIGHT, but ROS convention has positive angular.z = CCW =
+        # turn LEFT. Default invert_turn=true matches that convention.
+        self.declare_parameter("invert_turn", True)
 
         self._deadzone = self.get_parameter("deadzone").get_parameter_value().double_value
         self._rate = self.get_parameter("publish_rate").get_parameter_value().double_value
         self._max_lin = self.get_parameter("max_linear_speed").get_parameter_value().double_value
         self._max_ang = self.get_parameter("max_angular_speed").get_parameter_value().double_value
         self._invert_y = self.get_parameter("invert_y").get_parameter_value().bool_value
+        self._invert_turn = self.get_parameter("invert_turn").get_parameter_value().bool_value
         self._device_path = self.get_parameter("device_path").get_parameter_value().string_value
 
         # Publishers
@@ -342,7 +347,8 @@ class GamepadTeleopNode(Node):
 
             if event.code == ecodes.ABS_X:
                 with self._lock:
-                    self._axis_x = self._apply_deadzone(val)
+                    raw = self._apply_deadzone(val)
+                    self._axis_x = -raw if self._invert_turn else raw
                     if self._axis_x != 0.0 or self._axis_y != 0.0:
                         self._active_inputs.add("L Stick")
                     else:

@@ -12,3 +12,5 @@ log/
 *.bag
 *.mcap
 rosbags/
+
+for_trainer_only.md

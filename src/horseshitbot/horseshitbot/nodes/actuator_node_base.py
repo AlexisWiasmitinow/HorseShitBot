@@ -98,16 +98,22 @@ class ActuatorNodeBase(Node):
         )
 
     def _mks_set_speed(self, motor_id, rpm, acc, invert) -> bool:
+        """
+        Fire-and-forget speed command for actuators.
+
+        Called from the 20 Hz tick timer — never spin_until_future_complete
+        here, that re-enters the executor and blocks the tick (causing
+        delayed stop commands and watchdog-driven oscillation).
+        """
+        if not self._mks_cli.service_is_ready():
+            return False
         req = MksSetSpeed.Request()
         req.motor_id = int(motor_id)
         req.rpm = float(rpm)
         req.accel = int(acc)
         req.invert_dir = bool(invert)
-        future = self._mks_cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=0.5)
-        if future.result() is not None:
-            return future.result().success
-        return False
+        self._mks_cli.call_async(req)
+        return True
 
     # ── callbacks ────────────────────────────────────────────────
 

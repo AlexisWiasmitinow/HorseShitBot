@@ -225,7 +225,24 @@ button.primary:hover { background: #3db88a; }
   font-size: 1.1rem;
   letter-spacing: 1px;
   animation: estop-flash 0.8s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
+.estop-banner button {
+  background: #fff;
+  color: var(--err);
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+.estop-banner button:hover { background: #ffe0e0; }
 @keyframes estop-flash {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }

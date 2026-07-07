@@ -431,6 +431,13 @@ class WebDashboardNode(Node):
         self._mks_move_cli = self.create_client(MksMoveTurns, "/mks/move_turns")
         self._mks_current_cli = self.create_client(MksSetCurrent, "/mks/set_current")
         self._mks_save_defaults_cli = self.create_client(Trigger, "/mks/save_current_defaults")
+        self._mks_scan_cli = self.create_client(Trigger, "/mks/scan")
+        # Generic per-action service clients, created lazily by /api/command/...
+        self._action_clis: dict[str, object] = {}
+        # Pre-create wheel_driver_node clients so the first Resume / E-Stop
+        # click from the web UI doesn't lose the race with ROS discovery.
+        for _name in ("/wheel_driver_node/stop", "/wheel_driver_node/stop_fast"):
+            self._action_clis[_name] = self.create_client(Trigger, _name)
         self._config_pub = self.create_publisher(String, "/gamepad/config", 10)
 
         self._app = self._build_app()
@@ -439,6 +446,25 @@ class WebDashboardNode(Node):
         self._server_thread.start()
 
         self.get_logger().info(f"Web dashboard at http://{self._host}:{self._port}")
+
+    def _get_or_create_action_client(self, srv_name: str, action: str):
+        """Lazily create (and cache) a service client for a per-node action."""
+        cached = self._action_clis.get(srv_name)
+        if cached is not None:
+            return cached
+        if action in ("stop", "stop_fast", "reference"):
+            srv_type = Trigger
+        elif action in ("open", "close"):
+            srv_type = ActuatorCommand
+        else:
+            return None
+        try:
+            cli = self.create_client(srv_type, srv_name)
+        except Exception as exc:
+            self.get_logger().error(f"create_client({srv_name}) failed: {exc}")
+            return None
+        self._action_clis[srv_name] = cli
+        return cli
 
     def _build_app(self) -> FastAPI:
         app = FastAPI(title="HorseShitBot Dashboard")
@@ -552,16 +578,27 @@ class WebDashboardNode(Node):
 
         @app.post("/api/command/{node_name}/{action}")
         async def command(node_name: str, action: str):
-            service_map = {
-                "stop": f"/{node_name}/stop",
-                "stop_fast": f"/{node_name}/stop_fast",
-                "reference": f"/{node_name}/reference",
-                "open": f"/{node_name}/open",
-                "close": f"/{node_name}/close",
-            }
-            srv_name = service_map.get(action)
-            if not srv_name:
+            # Trigger-style actions take no payload.
+            trigger_actions = {"stop", "stop_fast", "reference"}
+            # ActuatorCommand actions: open/close (speed_override=0 -> use node default).
+            actuator_actions = {"open", "close"}
+            if action not in trigger_actions and action not in actuator_actions:
                 return {"success": False, "message": f"unknown action: {action}"}
+
+            srv_name = f"/{node_name}/{action}"
+            cli = ros_node._get_or_create_action_client(srv_name, action)
+            if cli is None:
+                return {"success": False, "message": f"could not create client for {srv_name}"}
+            if not cli.service_is_ready():
+                return {"success": False, "message": f"{srv_name} not available"}
+
+            if action in trigger_actions:
+                cli.call_async(Trigger.Request())
+            else:
+                req = ActuatorCommand.Request()
+                req.command = action
+                req.speed_override = 0.0
+                cli.call_async(req)
             return {"success": True, "message": f"called {srv_name}"}
 
         @app.post("/api/recording/{profile}/start")
@@ -639,6 +676,16 @@ class WebDashboardNode(Node):
                 return {"success": False, "message": "MKS bus node not available"}
             ros_node._mks_save_defaults_cli.call_async(Trigger.Request())
             return {"success": True, "message": "saving current values as defaults"}
+
+        @app.post("/api/mks/scan")
+        async def mks_scan():
+            """Trigger a manual scan of all configured motors. Fire-and-forget;
+            the result is published on /mks_bus/status and shown in the
+            Hardware card on the dashboard."""
+            if not ros_node._mks_scan_cli.service_is_ready():
+                return {"success": False, "message": "MKS bus node not available"}
+            ros_node._mks_scan_cli.call_async(Trigger.Request())
+            return {"success": True, "message": "scan started"}
 
         @app.get("/api/bag-topics/{profile}")
         async def get_bag_topics(profile: str):

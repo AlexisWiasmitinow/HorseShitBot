@@ -22,8 +22,10 @@ REG_RUN_CURRENT = 0x0083
 REG_MICROSTEPS = 0x0084
 REG_HOLD_CURRENT_PCT = 0x009B
 REG_ENABLE = 0x00F3
+REG_POS_REL = 0x00F4   # mode 2: relative move by encoder coordinate
+REG_POS_ABS = 0x00F5   # mode 3: absolute move by encoder coordinate
 REG_SPEED = 0x00F6
-REG_POS_ABS = 0x00F5
+REG_EMERGENCY_STOP = 0x00F7  # MKS manual 8.3.1: write 1 to stop the motor instantly
 REG_AXIS_ZERO = 0x0092
 REG_RELEASE_PROTECT = 0x003D
 
@@ -31,7 +33,9 @@ MODE_SR_OPEN = 3
 MODE_SR_CLOSE = 4
 MODE_SR_VFOC = 5
 
-COUNTS_PER_REV = 0x4000
+FULL_STEPS_PER_REV = 200
+DEFAULT_MICROSTEPS = 16
+ENCODER_CPR = 0x4000  # 14-bit encoder = 16384 counts/rev
 
 
 def _split_i32_to_u16s(val: int):
@@ -50,6 +54,10 @@ class BusCfg:
     timeout: float = 0.35
     retries: int = 3
     inter_delay: float = 0.002
+    # Used by probe() only — keep this small so health checks against
+    # missing motors don't stall the whole bus. A typical successful
+    # round-trip at 115200 baud is ~3 ms, so 60 ms gives 20× slack.
+    probe_timeout: float = 0.06
 
 
 class MksBus:
@@ -161,13 +169,18 @@ class MksBus:
 
     def probe(self, unit_id: int) -> bool:
         """Quick single-attempt connectivity check (no retries, no reconnect).
+        Uses a short probe-specific timeout so missing motors don't stall the
+        single-threaded executor — a normal probe round-trip is ~3 ms, so the
+        default 60 ms is plenty for a healthy bus.
         Suppresses pymodbus log noise for expected timeouts."""
         self._ensure_connected()
         prev_level = _pymodbus_logger.level
         prev_retries = getattr(self.client, "retries", 0)
+        prev_timeout = self._get_client_timeout()
         _pymodbus_logger.setLevel(logging.CRITICAL)
         try:
             self.client.retries = 0
+            self._set_client_timeout(self.cfg.probe_timeout)
             with self.lock:
                 rr = self.client.read_input_registers(
                     address=0x3A, count=1, device_id=unit_id,
@@ -177,7 +190,42 @@ class MksBus:
             return False
         finally:
             self.client.retries = prev_retries
+            if prev_timeout is not None:
+                self._set_client_timeout(prev_timeout)
             _pymodbus_logger.setLevel(prev_level)
+
+    # ── pymodbus version-tolerant timeout helpers ───────────────────
+    # The timeout attribute moved around between pymodbus 2.x, 3.x and
+    # 3.6+, so look in a few places.
+
+    def _get_client_timeout(self) -> float | None:
+        try:
+            cp = getattr(self.client, "comm_params", None)
+            if cp is not None and hasattr(cp, "timeout_connect"):
+                return cp.timeout_connect
+        except Exception:
+            pass
+        for attr in ("timeout", "_timeout"):
+            if hasattr(self.client, attr):
+                try:
+                    return getattr(self.client, attr)
+                except Exception:
+                    pass
+        return None
+
+    def _set_client_timeout(self, value: float) -> None:
+        try:
+            cp = getattr(self.client, "comm_params", None)
+            if cp is not None and hasattr(cp, "timeout_connect"):
+                cp.timeout_connect = float(value)
+        except Exception:
+            pass
+        for attr in ("timeout", "_timeout"):
+            if hasattr(self.client, attr):
+                try:
+                    setattr(self.client, attr, float(value))
+                except Exception:
+                    pass
 
     def get_run_current(self, unit_id: int) -> int | None:
         """Read run current in mA. Returns None if firmware doesn't support readback."""
@@ -208,13 +256,42 @@ class MksBus:
         pct = int(clamp(pct, 10, 100))
         self.write_reg(unit_id, REG_HOLD_CURRENT_PCT, (pct - 10) // 10)
 
-    def init_servo(self, unit_id: int, mode: int = MODE_SR_VFOC, enable: bool = True):
+    def init_servo(self, unit_id: int, mode: int = MODE_SR_VFOC,
+                   microsteps: int = DEFAULT_MICROSTEPS, enable: bool = True):
         self.write_reg(unit_id, REG_WORKMODE, int(mode))
+        self.write_reg(unit_id, REG_MICROSTEPS, int(microsteps))
         if enable:
             self.write_reg(unit_id, REG_ENABLE, 1)
 
     def set_enable(self, unit_id: int, enable: bool):
         self.write_reg(unit_id, REG_ENABLE, 1 if enable else 0)
+
+    def emergency_stop(self, unit_id: int):
+        """Slam the motor to a halt instantly. Per MKS manual 8.3.1, this
+        bypasses the acc ramp — the motor stops regardless of current RPM.
+        The manual warns that doing this above 1000 RPM is mechanically
+        stressful, but for e-stop that's the price we pay.
+
+        IMPORTANT: writing REG_EMERGENCY_STOP=1 latches the motor in a
+        stopped state. The controller will keep ACKing Modbus writes but
+        will ignore further set_speed commands until the latch is cleared
+        — see release_emergency_stop()."""
+        self.write_reg(unit_id, REG_EMERGENCY_STOP, 1)
+
+    def release_emergency_stop(self, unit_id: int):
+        """Clear the latch left behind by emergency_stop(). The MKS
+        controller doesn't react to a fresh REG_SPEED write after F7 was
+        triggered, so we explicitly toggle REG_ENABLE off → on. We also
+        opportunistically write 0 to F7 in case some firmware revisions
+        accept that as a release. The encoder zero is preserved (unlike
+        clear_error_state which also calls axis_zero)."""
+        try:
+            self.write_reg(unit_id, REG_EMERGENCY_STOP, 0)
+        except Exception:
+            pass
+        self.set_enable(unit_id, False)
+        time.sleep(0.05)
+        self.set_enable(unit_id, True)
 
     def axis_zero(self, unit_id: int):
         self.write_reg(unit_id, REG_AXIS_ZERO, 1)
@@ -240,21 +317,34 @@ class MksBus:
         self, unit_id: int, abs_axis_i32: int, speed_rpm: int = 600, acc: int = 2
     ):
         speed_rpm = int(clamp(speed_rpm, 0, 3000))
-        acc = int(clamp(acc, 0, 65535))
+        acc = int(clamp(acc, 0, 255))
         hi, lo = _split_i32_to_u16s(int(abs_axis_i32))
         self.write_regs(unit_id, REG_POS_ABS, [acc, speed_rpm, hi, lo])
+
+    def move_rel_axis(
+        self, unit_id: int, offset_i32: int, speed_rpm: int = 600, acc: int = 2
+    ):
+        """Relative move by encoder coordinate offset (16384 counts/rev)."""
+        speed_rpm = int(clamp(speed_rpm, 0, 3000))
+        acc = int(clamp(acc, 0, 255))
+        hi, lo = _split_i32_to_u16s(int(offset_i32))
+        self.write_regs(unit_id, REG_POS_REL, [acc, speed_rpm, hi, lo])
 
     def move_turns(
         self, unit_id: int, turns: float, speed_rpm: int = 300,
         acc: int = 3, invert_dir: bool = False,
+        closed_loop: bool = True,
+        microsteps: int = DEFAULT_MICROSTEPS,
     ):
-        """Relative move: zero the axis, then move to turns × COUNTS_PER_REV."""
-        self.axis_zero(unit_id)
-        time.sleep(0.05)
-        counts = int(round(turns * COUNTS_PER_REV))
+        """Relative move using encoder coordinate offset (mode 2, reg 0xF4)."""
+        if closed_loop:
+            counts_per_rev = ENCODER_CPR
+        else:
+            counts_per_rev = FULL_STEPS_PER_REV * microsteps
+        offset = int(round(turns * counts_per_rev))
         if invert_dir:
-            counts = -counts
-        self.move_abs_axis(unit_id, counts, speed_rpm=speed_rpm, acc=acc)
+            offset = -offset
+        self.move_rel_axis(unit_id, offset, speed_rpm=speed_rpm, acc=acc)
 
     def clear_error_state(self, unit_id: int, mode: int | None = None):
         try:

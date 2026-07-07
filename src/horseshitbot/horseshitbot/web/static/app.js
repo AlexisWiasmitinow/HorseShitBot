@@ -82,7 +82,7 @@ function updateDashboard(data) {
   updateCurrent("right", w.current_right, currentLim);
 
   const estopBanner = document.getElementById("estop-banner");
-  if (estopBanner) estopBanner.style.display = w.estopped ? "block" : "none";
+  if (estopBanner) estopBanner.style.display = w.estopped ? "flex" : "none";
   const card = document.getElementById("card-wheels");
   if (card) card.classList.toggle("estopped", !!w.estopped);
   const wErr = document.getElementById("w-error");
@@ -141,7 +141,14 @@ function updateDashboard(data) {
   }
   const motorsEl = document.getElementById("hw-motors");
   if (motorsEl && hw.motors) {
-    const motorNames = {"3": "Lift A", "4": "Brush", "5": "Lift B", "6": "Door"};
+    const motorNames = {
+      "1": "Left Track",
+      "2": "Right Track",
+      "3": "Lift A",
+      "4": "Brush",
+      "5": "Lift B",
+      "6": "Door",
+    };
     const info = hw.motor_info || {};
     for (const [id, online] of Object.entries(hw.motors)) {
       const mi = info[id] || {};
@@ -153,9 +160,9 @@ function updateDashboard(data) {
         block.innerHTML =
           `<div class="kv"><span class="label">Motor ${id} (${motorNames[id] || "?"})</span><span class="value" id="hw-m${id}-status">--</span></div>` +
           `<div class="motor-current-row">` +
-            `<label>Run<input type="number" id="hw-m${id}-run" class="motor-cur-input" min="10" max="5200" step="100"></label>` +
+            `<label>Run<input type="number" id="hw-m${id}-run" class="motor-cur-input" min="10" max="5200" step="100" oninput="_motorDirty[${id}]=true"></label>` +
             `<span class="jog-unit">mA</span>` +
-            `<label>Hold<input type="number" id="hw-m${id}-hold" class="motor-cur-input" min="10" max="100" step="10"></label>` +
+            `<label>Hold<input type="number" id="hw-m${id}-hold" class="motor-cur-input" min="10" max="100" step="10" oninput="_motorDirty[${id}]=true"></label>` +
             `<span class="jog-unit">%</span>` +
             `<button class="primary" onclick="setMotorCurrent(${id})">Set</button>` +
           `</div>`;
@@ -168,10 +175,12 @@ function updateDashboard(data) {
       }
       const runInput = document.getElementById("hw-m" + id + "-run");
       const holdInput = document.getElementById("hw-m" + id + "-hold");
-      if (runInput && document.activeElement !== runInput && mi.run_current_ma != null)
-        runInput.value = mi.run_current_ma;
-      if (holdInput && document.activeElement !== holdInput && mi.hold_current_pct != null)
-        holdInput.value = mi.hold_current_pct;
+      if (!_motorDirty[id]) {
+        if (runInput && mi.run_current_ma != null)
+          runInput.value = mi.run_current_ma;
+        if (holdInput && mi.hold_current_pct != null)
+          holdInput.value = mi.hold_current_pct;
+      }
     }
   }
 
@@ -1505,6 +1514,12 @@ async function cmd(node, action) {
   catch (e) { console.error("Command failed:", e); }
 }
 
+async function resumeEstop() {
+  // /wheel_driver_node/stop is the action that clears the e-stop flag
+  // (gentle stop + recovery, see _srv_stop in wheel_driver_node.py).
+  await cmd("wheel_driver_node", "stop");
+}
+
 async function switchBackend() {
   try { await fetch("/api/command/wheel_driver_node/switch_backend", { method: "POST" }); }
   catch (e) { console.error("Switch failed:", e); }
@@ -1525,12 +1540,32 @@ async function saveMotorDefaults() {
   }
 }
 
+async function scanMotors() {
+  // Fire the manual MKS bus scan. Status is published asynchronously on
+  // /mks_bus/status and will refresh the motor list within a second.
+  const msg = document.getElementById("hw-save-msg");
+  try {
+    const resp = await fetch("/api/mks/scan", { method: "POST" });
+    const r = await resp.json();
+    if (msg) {
+      msg.textContent = r.success ? "Scanning…" : (r.message || "Failed");
+      msg.style.color = r.success ? "var(--ok)" : "var(--err)";
+      setTimeout(() => { msg.textContent = ""; }, 3000);
+    }
+  } catch (e) {
+    if (msg) { msg.textContent = "Failed"; msg.style.color = "var(--err)"; }
+  }
+}
+
+const _motorDirty = {};
+
 async function setMotorCurrent(motorId) {
   const runEl = document.getElementById("hw-m" + motorId + "-run");
   const holdEl = document.getElementById("hw-m" + motorId + "-hold");
   const run = runEl ? parseInt(runEl.value) : 0;
   const hold = holdEl ? parseInt(holdEl.value) : 0;
   if (!run && !hold) return;
+  _motorDirty[motorId] = true;
   try {
     await fetch("/api/mks/set_current", {
       method: "POST",
@@ -1540,16 +1575,25 @@ async function setMotorCurrent(motorId) {
   } catch (e) { console.error("Set current failed:", e); }
 }
 
-async function jogMotor(motorId, inputId) {
+async function jogMotor(motorId, inputId, speedInputId, accInputId) {
   const input = document.getElementById(inputId);
   if (!input) return;
   const turns = parseFloat(input.value);
   if (isNaN(turns) || turns === 0) return;
+  const payload = { motor_id: motorId, turns: turns };
+  if (speedInputId) {
+    const spdEl = document.getElementById(speedInputId);
+    if (spdEl) payload.speed_rpm = parseInt(spdEl.value) || 300;
+  }
+  if (accInputId) {
+    const accEl = document.getElementById(accInputId);
+    if (accEl) payload.accel = parseInt(accEl.value) || 3;
+  }
   try {
     await fetch("/api/mks/move_turns", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ motor_id: motorId, turns: turns }),
+      body: JSON.stringify(payload),
     });
   } catch (e) { console.error("Jog failed:", e); }
 }
