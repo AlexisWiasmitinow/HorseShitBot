@@ -317,15 +317,8 @@ function updateDashboard(data) {
     lidarPoints = lidarPts;
   }
 
-  if (lidar.scanning && !lidarScanning) {
-    lidarScanning = true;
-    setLidarStatusUi(true);
-    setPreviewButtons(camStreaming || lidarScanning);
-
-    if (!lidarAnimFrame) {
-      lidarAnimFrame = requestAnimationFrame(drawLidar);
-    }
-  }
+  // Do not auto-enable LiDAR preview because backend reports scanning.
+  // Preview must start only after the user clicks "Start Preview".
 
   if (!lidar.scanning && lidarScanning) {
     lidarScanning = false;
@@ -1443,7 +1436,7 @@ function drawLidarCanvas(canvas) {
   ctx.fillStyle = "#0a0e17";
   ctx.fillRect(0, 0, W, H);
 
-  const ringCount = 4;
+  const ringCount = 8;
   ctx.strokeStyle = "#1a2035";
   ctx.lineWidth = 1;
   ctx.font = "10px monospace";
@@ -1775,4 +1768,671 @@ const _lidarRange = document.getElementById("lidar-range");
 const _lidarRangeVal = document.getElementById("lidar-range-val");
 if (_lidarRange && _lidarRangeVal) {
   _lidarRange.addEventListener("input", () => { _lidarRangeVal.textContent = _lidarRange.value; });
+}
+
+/* ================================================================
+   FORCE UI FIX V3
+   ================================================================ */
+
+function normalizeTopicCounts(rawCounts) {
+  if (!rawCounts) return null;
+
+  if (!Array.isArray(rawCounts) && typeof rawCounts === "object") {
+    return rawCounts;
+  }
+
+  if (Array.isArray(rawCounts)) {
+    const out = {};
+    for (const item of rawCounts) {
+      if (!item || typeof item !== "object") continue;
+      const topic = item.topic || item.name;
+      const count = item.count ?? item.messages ?? item.msg_count ?? item.value;
+      if (topic) out[topic] = count;
+    }
+    return out;
+  }
+
+  return null;
+}
+
+function getTopicShortName(topic) {
+  if (!topic) return "--";
+  const parts = String(topic).split("/").filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : topic;
+}
+
+function updateRecordingTopicCounts(profile, rec) {
+  const body = document.getElementById(`rec-topic-counts-body-${profile}`);
+  if (!body) return;
+
+  const rawCounts =
+    rec.topic_counts ||
+    rec.topic_message_counts ||
+    rec.topic_counts_by_name ||
+    rec.counts_by_topic ||
+    rec.counts ||
+    null;
+
+  const counts = normalizeTopicCounts(rawCounts);
+  const selectedTopics = (_bagTopicData[profile] && _bagTopicData[profile].selected_topics) || [];
+
+  body.innerHTML = "";
+
+  if (!counts) {
+    const msg = document.createElement("div");
+    msg.className = "rec-topic-count-empty";
+    msg.textContent = rec.recording
+      ? "Recording, but backend is not sending per-topic counts yet."
+      : "No per-topic count data yet.";
+    body.appendChild(msg);
+    return;
+  }
+
+  const topics = selectedTopics.length > 0
+    ? selectedTopics
+    : Object.keys(counts).sort();
+
+  for (const topic of topics) {
+    const value = Number(counts[topic] ?? counts[getTopicShortName(topic)] ?? 0) || 0;
+
+    const row = document.createElement("div");
+    row.className = "rec-topic-count-row";
+
+    const name = document.createElement("div");
+    name.className = "rec-topic-count-name";
+    name.textContent = getTopicShortName(topic);
+    name.title = topic;
+
+    const count = document.createElement("div");
+    count.className = "rec-topic-count-value";
+    count.textContent = value;
+
+    row.appendChild(name);
+    row.appendChild(count);
+    body.appendChild(row);
+  }
+}
+
+function getBagProfile(bag) {
+  const raw = `${bag.profile || ""} ${bag.type || ""} ${bag.name || ""}`.toLowerCase();
+
+  if (raw.includes("perception")) return "perception";
+  if (raw.includes("mapping")) return "mapping";
+
+  return "other";
+}
+
+function renderBagCard(bag) {
+  const card = document.createElement("div");
+  card.className = "bag-card";
+
+  const name = document.createElement("div");
+  name.className = "bag-card-name";
+  name.textContent = bag.name || "(unnamed bag)";
+  card.appendChild(name);
+
+  const meta = document.createElement("div");
+  meta.className = "bag-card-meta";
+
+  const date = document.createElement("span");
+  date.textContent = formatDate(bag.modified);
+
+  const size = document.createElement("span");
+  size.textContent = formatBytes(bag.size_bytes || 0);
+
+  const files = document.createElement("span");
+  const fileCount = (bag.files || []).length;
+  files.textContent = `${fileCount} file${fileCount === 1 ? "" : "s"}`;
+
+  meta.appendChild(date);
+  meta.appendChild(size);
+  meta.appendChild(files);
+  card.appendChild(meta);
+
+  const exts = [...new Set((bag.files || []).map(f => f.includes(".") ? "." + f.split(".").pop() : f))];
+  if (exts.length > 0) {
+    const fileInfo = document.createElement("div");
+    fileInfo.className = "bag-card-files";
+    fileInfo.textContent = exts.join(", ");
+    card.appendChild(fileInfo);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "bag-card-actions";
+
+  const dlBtn = document.createElement("a");
+  dlBtn.href = `/api/bags/${encodeURIComponent(bag.name)}/download`;
+  dlBtn.className = "bag-dl";
+  dlBtn.textContent = "Download";
+  dlBtn.setAttribute("download", "");
+  actions.appendChild(dlBtn);
+
+  const delBtn = document.createElement("button");
+  delBtn.className = "danger bag-del";
+  delBtn.textContent = "Delete";
+  delBtn.onclick = () => deleteBag(bag.name);
+  actions.appendChild(delBtn);
+
+  card.appendChild(actions);
+  return card;
+}
+
+async function loadBags() {
+  const loading = document.getElementById("bags-loading");
+  const columns = document.getElementById("bags-columns");
+  const empty = document.getElementById("bags-empty");
+
+  try {
+    const resp = await fetch("/api/bags");
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+
+    bagsData = await resp.json();
+    renderBags();
+
+    const bags = bagsData.bags || [];
+
+    if (loading) loading.style.display = "none";
+
+    if (bags.length === 0) {
+      if (columns) columns.style.display = "none";
+      if (empty) empty.style.display = "";
+    } else {
+      if (columns) columns.style.display = "grid";
+      if (empty) empty.style.display = "none";
+    }
+  } catch (e) {
+    console.error("Failed to load bags:", e);
+    if (loading) loading.textContent = "Failed to load: " + e.message;
+  }
+}
+
+function renderBags() {
+  const summary = document.getElementById("bags-summary");
+  if (!bagsData) return;
+
+  const bags = [...(bagsData.bags || [])].sort((a, b) => {
+    const da = new Date(a.modified || 0).getTime();
+    const db = new Date(b.modified || 0).getTime();
+    return db - da;
+  });
+
+  if (summary) {
+    summary.textContent = `${bags.length} recording${bags.length !== 1 ? "s" : ""} · ${formatBytes(bagsData.total_bytes || 0)}`;
+  }
+
+  const diskWrap = document.getElementById("disk-bar-wrap");
+  if (diskWrap && bagsData.disk_total) {
+    diskWrap.style.display = "";
+
+    const total = bagsData.disk_total;
+    const free = bagsData.disk_free;
+    const used = bagsData.disk_used;
+    const bagBytes = bagsData.total_bytes || 0;
+    const otherUsed = Math.max(0, used - bagBytes);
+
+    const pctBags = Math.max(0.5, (bagBytes / total) * 100);
+    const pctOther = Math.max(0.5, (otherUsed / total) * 100);
+
+    document.getElementById("disk-bar-bags").style.width = pctBags + "%";
+    document.getElementById("disk-bar-other").style.width = pctOther + "%";
+    document.getElementById("disk-label-used").textContent =
+      `Bags: ${formatBytes(bagBytes)} · Other: ${formatBytes(otherUsed)} · Total: ${formatBytes(total)}`;
+    document.getElementById("disk-label-free").textContent =
+      `${formatBytes(free)} free`;
+  } else if (diskWrap) {
+    diskWrap.style.display = "none";
+  }
+
+  const grouped = {
+    perception: [],
+    mapping: [],
+    other: [],
+  };
+
+  for (const bag of bags) {
+    grouped[getBagProfile(bag)].push(bag);
+  }
+
+  for (const profile of ["perception", "mapping", "other"]) {
+    const list = document.getElementById(`bags-list-${profile}`);
+    const count = document.getElementById(`bags-count-${profile}`);
+    const empty = document.getElementById(`bags-empty-${profile}`);
+    const column = document.getElementById(`bag-column-${profile}`);
+    const items = grouped[profile];
+
+    if (count) count.textContent = String(items.length);
+
+    if (list) {
+      list.innerHTML = "";
+      for (const bag of items) {
+        list.appendChild(renderBagCard(bag));
+      }
+    }
+
+    if (empty) empty.style.display = items.length === 0 ? "" : "none";
+
+    if (profile === "other" && column) {
+      column.style.display = items.length === 0 ? "none" : "";
+    }
+  }
+}
+
+(function wrapUpdateDashboardForTopicCounts() {
+  if (typeof updateDashboard !== "function") return;
+
+  const oldUpdateDashboard = updateDashboard;
+
+  updateDashboard = function(data) {
+    oldUpdateDashboard(data);
+
+    for (const profile of ["perception", "mapping"]) {
+      const rec = data[profile + "_recorder"] || {};
+      updateRecordingTopicCounts(profile, rec);
+    }
+  };
+})();
+
+/* ================================================================
+   FORCE UI FIX V4: bag search + date grouping
+   ================================================================ */
+
+let bagsSearchTerm = "";
+
+function getBagSearchText(bag) {
+  return [
+    bag.name || "",
+    bag.profile || "",
+    bag.type || "",
+    bag.modified || "",
+    formatDate(bag.modified || ""),
+    (bag.files || []).join(" "),
+  ].join(" ").toLowerCase();
+}
+
+function formatBagDateGroup(isoStr) {
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return "Unknown date";
+
+    return d.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  } catch {
+    return "Unknown date";
+  }
+}
+
+function renderBagDateGroups(listEl, items) {
+  listEl.innerHTML = "";
+
+  const groups = {};
+
+  for (const bag of items) {
+    const key = formatBagDateGroup(bag.modified);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(bag);
+  }
+
+  for (const [dateLabel, bags] of Object.entries(groups)) {
+    const group = document.createElement("div");
+    group.className = "bag-date-group";
+
+    const title = document.createElement("div");
+    title.className = "bag-date-title";
+    title.innerHTML = `<span>${dateLabel}</span><span class="bag-date-count">${bags.length}</span>`;
+    group.appendChild(title);
+
+    for (const bag of bags) {
+      group.appendChild(renderBagCard(bag));
+    }
+
+    listEl.appendChild(group);
+  }
+}
+
+function ensureBagsSearchBox() {
+  const columns = document.getElementById("bags-columns");
+  if (!columns) return;
+
+  let row = document.getElementById("bags-search-row");
+  if (row) return;
+
+  row = document.createElement("div");
+  row.id = "bags-search-row";
+  row.className = "bags-search-row";
+  row.innerHTML = `
+    <label for="bags-search">Search</label>
+    <input id="bags-search" type="search" placeholder="Search bags by name, date, type, files...">
+  `;
+
+  columns.parentElement.insertBefore(row, columns);
+
+  const input = document.getElementById("bags-search");
+  if (input) {
+    input.value = bagsSearchTerm;
+    input.addEventListener("input", () => {
+      bagsSearchTerm = input.value.trim().toLowerCase();
+      renderBags();
+    });
+  }
+}
+
+function renderBags() {
+  ensureBagsSearchBox();
+
+  const summary = document.getElementById("bags-summary");
+  if (!bagsData) return;
+
+  const allBags = [...(bagsData.bags || [])].sort((a, b) => {
+    const da = new Date(a.modified || 0).getTime();
+    const db = new Date(b.modified || 0).getTime();
+    return db - da;
+  });
+
+  const bags = bagsSearchTerm
+    ? allBags.filter(bag => getBagSearchText(bag).includes(bagsSearchTerm))
+    : allBags;
+
+  if (summary) {
+    const totalText = `${allBags.length} recording${allBags.length !== 1 ? "s" : ""} · ${formatBytes(bagsData.total_bytes || 0)}`;
+    summary.textContent = bagsSearchTerm
+      ? `${bags.length}/${totalText}`
+      : totalText;
+  }
+
+  const diskWrap = document.getElementById("disk-bar-wrap");
+  if (diskWrap && bagsData.disk_total) {
+    diskWrap.style.display = "";
+
+    const total = bagsData.disk_total;
+    const free = bagsData.disk_free;
+    const used = bagsData.disk_used;
+    const bagBytes = bagsData.total_bytes || 0;
+    const otherUsed = Math.max(0, used - bagBytes);
+
+    const pctBags = Math.max(0.5, (bagBytes / total) * 100);
+    const pctOther = Math.max(0.5, (otherUsed / total) * 100);
+
+    document.getElementById("disk-bar-bags").style.width = pctBags + "%";
+    document.getElementById("disk-bar-other").style.width = pctOther + "%";
+    document.getElementById("disk-label-used").textContent =
+      `Bags: ${formatBytes(bagBytes)} · Other: ${formatBytes(otherUsed)} · Total: ${formatBytes(total)}`;
+    document.getElementById("disk-label-free").textContent =
+      `${formatBytes(free)} free`;
+  } else if (diskWrap) {
+    diskWrap.style.display = "none";
+  }
+
+  const grouped = {
+    perception: [],
+    mapping: [],
+    other: [],
+  };
+
+  for (const bag of bags) {
+    grouped[getBagProfile(bag)].push(bag);
+  }
+
+  for (const profile of ["perception", "mapping", "other"]) {
+    const list = document.getElementById(`bags-list-${profile}`);
+    const count = document.getElementById(`bags-count-${profile}`);
+    const empty = document.getElementById(`bags-empty-${profile}`);
+    const column = document.getElementById(`bag-column-${profile}`);
+    const items = grouped[profile];
+
+    if (count) count.textContent = String(items.length);
+
+    if (list) {
+      renderBagDateGroups(list, items);
+    }
+
+    if (empty) {
+      empty.style.display = items.length === 0 ? "" : "none";
+      empty.textContent = bagsSearchTerm
+        ? `No ${profile} bags match the search.`
+        : `No ${profile} bags.`;
+    }
+
+    if (profile === "other" && column) {
+      column.style.display = items.length === 0 ? "none" : "";
+    }
+  }
+}
+
+/* ================================================================
+   FORCE UI FIX V5: compact bag cards with right-side icon buttons
+   ================================================================ */
+
+window._bagsSearchTermV5 = window._bagsSearchTermV5 || "";
+
+function getBagProfile(bag) {
+  const raw = `${bag.profile || ""} ${bag.type || ""} ${bag.name || ""}`.toLowerCase();
+
+  if (raw.includes("perception")) return "perception";
+  if (raw.includes("mapping")) return "mapping";
+
+  return "other";
+}
+
+function getBagSearchText(bag) {
+  return [
+    bag.name || "",
+    bag.profile || "",
+    bag.type || "",
+    bag.modified || "",
+    formatDate(bag.modified || ""),
+    (bag.files || []).join(" "),
+  ].join(" ").toLowerCase();
+}
+
+function formatBagDateGroup(isoStr) {
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return "Unknown date";
+    return d.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  } catch {
+    return "Unknown date";
+  }
+}
+
+function renderBagCard(bag) {
+  const card = document.createElement("div");
+  card.className = "bag-card";
+
+  const name = document.createElement("div");
+  name.className = "bag-card-name";
+  name.textContent = bag.name || "(unnamed bag)";
+  card.appendChild(name);
+
+  const meta = document.createElement("div");
+  meta.className = "bag-card-meta";
+
+  const date = document.createElement("span");
+  date.textContent = formatDate(bag.modified);
+
+  const size = document.createElement("span");
+  size.textContent = formatBytes(bag.size_bytes || 0);
+
+  const files = document.createElement("span");
+  const fileCount = (bag.files || []).length;
+  files.textContent = `${fileCount} file${fileCount === 1 ? "" : "s"}`;
+
+  meta.appendChild(date);
+  meta.appendChild(size);
+  meta.appendChild(files);
+  card.appendChild(meta);
+
+  const exts = [...new Set((bag.files || []).map(f => f.includes(".") ? "." + f.split(".").pop() : f))];
+  if (exts.length > 0) {
+    const fileInfo = document.createElement("div");
+    fileInfo.className = "bag-card-files";
+    fileInfo.textContent = exts.join(", ");
+    card.appendChild(fileInfo);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "bag-card-actions";
+
+  const dlBtn = document.createElement("a");
+  dlBtn.href = `/api/bags/${encodeURIComponent(bag.name)}/download`;
+  dlBtn.className = "bag-icon-btn bag-icon-download";
+  dlBtn.title = "Download";
+  dlBtn.setAttribute("aria-label", "Download");
+  dlBtn.setAttribute("download", "");
+  dlBtn.innerHTML = "<span>⬇</span>";
+  actions.appendChild(dlBtn);
+
+  const delBtn = document.createElement("button");
+  delBtn.type = "button";
+  delBtn.className = "bag-icon-btn bag-icon-delete";
+  delBtn.title = "Delete";
+  delBtn.setAttribute("aria-label", "Delete");
+  delBtn.innerHTML = "<span>🗑</span>";
+  delBtn.onclick = () => deleteBag(bag.name);
+  actions.appendChild(delBtn);
+
+  card.appendChild(actions);
+  return card;
+}
+
+function ensureBagsSearchBox() {
+  const columns = document.getElementById("bags-columns");
+  if (!columns) return;
+
+  let row = document.getElementById("bags-search-row");
+
+  if (!row) {
+    row = document.createElement("div");
+    row.id = "bags-search-row";
+    row.className = "bags-search-row";
+    row.innerHTML = `
+      <label for="bags-search">Search</label>
+      <input id="bags-search" type="search" placeholder="Search bags by name, date, type, files...">
+    `;
+    columns.parentElement.insertBefore(row, columns);
+  }
+
+  const input = document.getElementById("bags-search");
+  if (input && !input.dataset.boundV5) {
+    input.dataset.boundV5 = "1";
+    input.value = window._bagsSearchTermV5;
+    input.addEventListener("input", () => {
+      window._bagsSearchTermV5 = input.value.trim().toLowerCase();
+      renderBags();
+    });
+  }
+}
+
+function renderBagDateGroups(listEl, items) {
+  listEl.innerHTML = "";
+
+  const groups = {};
+
+  for (const bag of items) {
+    const key = formatBagDateGroup(bag.modified);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(bag);
+  }
+
+  for (const [dateLabel, bags] of Object.entries(groups)) {
+    const group = document.createElement("div");
+    group.className = "bag-date-group";
+
+    const title = document.createElement("div");
+    title.className = "bag-date-title";
+    title.innerHTML = `<span>${dateLabel}</span><span class="bag-date-count">${bags.length}</span>`;
+    group.appendChild(title);
+
+    for (const bag of bags) {
+      group.appendChild(renderBagCard(bag));
+    }
+
+    listEl.appendChild(group);
+  }
+}
+
+function renderBags() {
+  ensureBagsSearchBox();
+
+  const summary = document.getElementById("bags-summary");
+  if (!bagsData) return;
+
+  const allBags = [...(bagsData.bags || [])].sort((a, b) => {
+    const da = new Date(a.modified || 0).getTime();
+    const db = new Date(b.modified || 0).getTime();
+    return db - da;
+  });
+
+  const bags = window._bagsSearchTermV5
+    ? allBags.filter(bag => getBagSearchText(bag).includes(window._bagsSearchTermV5))
+    : allBags;
+
+  if (summary) {
+    const totalText = `${allBags.length} recording${allBags.length !== 1 ? "s" : ""} · ${formatBytes(bagsData.total_bytes || 0)}`;
+    summary.textContent = window._bagsSearchTermV5 ? `${bags.length}/${totalText}` : totalText;
+  }
+
+  const diskWrap = document.getElementById("disk-bar-wrap");
+  if (diskWrap && bagsData.disk_total) {
+    diskWrap.style.display = "";
+
+    const total = bagsData.disk_total;
+    const free = bagsData.disk_free;
+    const used = bagsData.disk_used;
+    const bagBytes = bagsData.total_bytes || 0;
+    const otherUsed = Math.max(0, used - bagBytes);
+
+    const pctBags = Math.max(0.5, (bagBytes / total) * 100);
+    const pctOther = Math.max(0.5, (otherUsed / total) * 100);
+
+    document.getElementById("disk-bar-bags").style.width = pctBags + "%";
+    document.getElementById("disk-bar-other").style.width = pctOther + "%";
+    document.getElementById("disk-label-used").textContent =
+      `Bags: ${formatBytes(bagBytes)} · Other: ${formatBytes(otherUsed)} · Total: ${formatBytes(total)}`;
+    document.getElementById("disk-label-free").textContent =
+      `${formatBytes(free)} free`;
+  } else if (diskWrap) {
+    diskWrap.style.display = "none";
+  }
+
+  const grouped = {
+    perception: [],
+    mapping: [],
+    other: [],
+  };
+
+  for (const bag of bags) {
+    grouped[getBagProfile(bag)].push(bag);
+  }
+
+  for (const profile of ["perception", "mapping", "other"]) {
+    const list = document.getElementById(`bags-list-${profile}`);
+    const count = document.getElementById(`bags-count-${profile}`);
+    const empty = document.getElementById(`bags-empty-${profile}`);
+    const column = document.getElementById(`bag-column-${profile}`);
+    const items = grouped[profile];
+
+    if (count) count.textContent = String(items.length);
+
+    if (list) {
+      renderBagDateGroups(list, items);
+    }
+
+    if (empty) {
+      empty.style.display = items.length === 0 ? "" : "none";
+      empty.textContent = window._bagsSearchTermV5
+        ? `No ${profile} bags match the search.`
+        : `No ${profile} bags.`;
+    }
+
+    if (profile === "other" && column) {
+      column.style.display = items.length === 0 ? "none" : "";
+    }
+  }
 }

@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HorseShitBot Dashboard</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=ui_fix_v5">
 </head>
 <body>
   <header>
     <h1>HorseShitBot</h1>
     <nav class="tabs">
       <button class="tab active" data-tab="dashboard">Dashboard</button>
-      <button class="tab" data-tab="preview">Preview</button>
       <button class="tab" data-tab="recordings">Recordings</button>
+      <button class="tab" data-tab="bags">Recorded Bags</button>
       <button class="tab" data-tab="controller">Controller</button>
       <button class="tab" data-tab="network">Network</button>
     </nav>
@@ -107,14 +107,8 @@
       <!-- Hardware -->
       <div class="card" id="card-hardware">
         <h2>Hardware</h2>
-        <div class="kv">
-          <span class="label">ODrive</span>
-          <span class="value" id="hw-odrive">--</span>
-        </div>
-        <div class="kv">
-          <span class="label">MKS Bus</span>
-          <span class="value" id="hw-mks-bus">--</span>
-        </div>
+        <div class="kv"><span class="label">ODrive</span><span class="value" id="hw-odrive">--</span></div>
+        <div class="kv"><span class="label">MKS Bus</span><span class="value" id="hw-mks-bus">--</span></div>
         <div id="hw-motors"></div>
         <div class="btn-row" id="hw-save-defaults-row" style="margin-top:12px">
           <button onclick="saveMotorDefaults()">Save as Default</button>
@@ -196,73 +190,25 @@
     </div>
   </div>
 
-<!-- ─── Preview tab ─── -->
-<div id="tab-preview" class="tab-content">
-  <div class="preview-wrap">
-    <div class="preview-controls">
-      <button id="preview-toggle" class="primary" onclick="togglePreview()">Start Preview</button>
-
-      <label class="cam-slider-label">
-        FPS
-        <input type="range" id="cam-fps" min="1" max="15" value="10">
-        <span id="cam-fps-val">10</span>
-      </label>
-
-      <label class="cam-slider-label">
-        Quality
-        <input type="range" id="cam-quality" min="10" max="95" value="50">
-        <span id="cam-quality-val">50</span>
-      </label>
-
-      <label class="cam-slider-label">
-        Lidar Range (m)
-        <input type="range" id="lidar-range" min="1" max="20" value="8" step="1">
-        <span id="lidar-range-val">8</span>
-      </label>
-
-      <span class="cam-state" id="cam-state">Stopped</span>
-      <span class="lidar-status" id="lidar-status">Stopped</span>
-      <span class="lidar-stats" id="lidar-stats"></span>
-    </div>
-
-    <div class="preview-grid">
-      <div class="cam-card">
-        <h3>Color Camera</h3>
-        <img id="cam-color" alt="Color stream">
-      </div>
-
-      <div class="cam-card">
-        <h3>Depth Camera</h3>
-        <img id="cam-depth" alt="Depth stream">
-      </div>
-
-      <div class="cam-card preview-lidar-card">
-        <h3>Lidar Scan</h3>
-        <div class="lidar-view">
-          <canvas id="lidar-canvas" width="700" height="700"></canvas>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
   <!-- ─── Recordings tab ─── -->
   <div id="tab-recordings" class="tab-content">
     <div class="bags-wrap">
-      <div class="rec-profiles-row">
 
-        <!-- Perception recorder -->
+      <div class="rec-profiles-row">
         <div class="topic-picker card" id="topic-picker-perception">
           <div class="topic-picker-header">
             <h2>Perception Topics</h2>
             <span class="topic-picker-hint" id="topic-picker-hint-perception"></span>
             <button class="primary" onclick="saveBagTopics('perception')">Apply</button>
           </div>
+
           <details class="topic-foldout">
             <summary>Topic checklist</summary>
             <div id="topic-groups-perception"></div>
           </details>
+
           <div id="topic-msg-perception" class="ctrl-msg"></div>
+
           <div class="rec-bar-row" style="margin-top:12px">
             <span class="rec-dot-lg" id="rec-dot-lg-perception"></span>
             <span class="rec-bar-label" id="rec-bar-label-perception">Idle</span>
@@ -271,20 +217,29 @@
             <button class="primary" id="rec-bar-start-perception" onclick="startRecording('perception')">Start</button>
             <button class="danger" id="rec-bar-stop-perception" onclick="stopRecording('perception')" style="display:none">Stop</button>
           </div>
+
+          <div class="rec-topic-counts" id="rec-topic-counts-perception">
+            <div class="rec-topic-counts-title">Topic counts</div>
+            <div class="rec-topic-counts-body" id="rec-topic-counts-body-perception">
+              Waiting for recorder status...
+            </div>
+          </div>
         </div>
 
-        <!-- Mapping recorder -->
         <div class="topic-picker card" id="topic-picker-mapping">
           <div class="topic-picker-header">
             <h2>Mapping Topics</h2>
             <span class="topic-picker-hint" id="topic-picker-hint-mapping"></span>
             <button class="primary" onclick="saveBagTopics('mapping')">Apply</button>
           </div>
+
           <details class="topic-foldout">
             <summary>Topic checklist</summary>
             <div id="topic-groups-mapping"></div>
           </details>
+
           <div id="topic-msg-mapping" class="ctrl-msg"></div>
+
           <div class="rec-bar-row" style="margin-top:12px">
             <span class="rec-dot-lg" id="rec-dot-lg-mapping"></span>
             <span class="rec-bar-label" id="rec-bar-label-mapping">Idle</span>
@@ -293,38 +248,80 @@
             <button class="primary" id="rec-bar-start-mapping" onclick="startRecording('mapping')">Start</button>
             <button class="danger" id="rec-bar-stop-mapping" onclick="stopRecording('mapping')" style="display:none">Stop</button>
           </div>
+
+          <div class="rec-topic-counts" id="rec-topic-counts-mapping">
+            <div class="rec-topic-counts-title">Topic counts</div>
+            <div class="rec-topic-counts-body" id="rec-topic-counts-body-mapping">
+              Waiting for recorder status...
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Preview window -->
       <div class="recording-preview-strip card">
-      <div class="recording-preview-header">
-        <h2>Live Preview While Recording</h2>
-        <button id="recording-preview-toggle" class="primary" onclick="togglePreview()">Start Preview</button>
+        <div class="recording-preview-header">
+          <h2>Live Preview While Recording</h2>
+          <button id="recording-preview-toggle" class="primary" onclick="togglePreview()">Start Preview</button>
+
+          <div class="recording-preview-controls">
+            <label class="cam-slider-label">
+              FPS
+              <input type="range" id="cam-fps" min="1" max="15" value="10">
+              <span id="cam-fps-val">10</span>
+            </label>
+
+            <label class="cam-slider-label">
+              Quality
+              <input type="range" id="cam-quality" min="10" max="95" value="50">
+              <span id="cam-quality-val">50</span>
+            </label>
+
+            <span class="cam-state" id="cam-state">Stopped</span>
+            <span class="lidar-status" id="lidar-status">Stopped</span>
+            <span class="lidar-stats" id="lidar-stats"></span>
+          </div>
+        </div>
+
+        <div class="recording-preview-grid">
+          <div class="mini-preview preview-card-color">
+            <h3>Color</h3>
+            <img id="rec-preview-color" alt="Recording color preview">
+          </div>
+
+          <div class="mini-preview preview-card-depth">
+            <h3>Depth</h3>
+            <img id="rec-preview-depth" alt="Recording depth preview">
+          </div>
+
+          <div class="mini-preview preview-card-lidar">
+            <h3>Lidar</h3>
+
+            <div class="lidar-preview-body">
+              <canvas id="rec-lidar-canvas" width="420" height="420"></canvas>
+
+              <label class="lidar-range-vertical">
+                <span class="lidar-range-title">Range</span>
+                <input type="range" id="lidar-range" min="1" max="20" value="8" step="1">
+                <span class="lidar-range-value"><span id="lidar-range-val">8</span> m</span>
+              </label>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="recording-preview-grid">
-        <div class="mini-preview">
-          <h3>Color</h3>
-          <img id="rec-preview-color" alt="Recording color preview">
-        </div>
-
-        <div class="mini-preview">
-          <h3>Depth</h3>
-          <img id="rec-preview-depth" alt="Recording depth preview">
-        </div>
-
-        <div class="mini-preview">
-          <h3>Lidar</h3>
-          <canvas id="rec-lidar-canvas" width="320" height="240"></canvas>
-        </div>
-      </div>
     </div>
+  </div>
+
+
+  <!-- ─── Recorded Bags tab ─── -->
+  <div id="tab-bags" class="tab-content">
+    <div class="bags-wrap">
       <div class="bags-header">
         <h2>Recorded Bags</h2>
         <span class="bags-summary" id="bags-summary"></span>
         <button onclick="loadBags()">Refresh</button>
       </div>
+
       <div class="disk-bar-wrap" id="disk-bar-wrap" style="display:none">
         <div class="disk-labels">
           <span id="disk-label-used"></span>
@@ -335,22 +332,46 @@
           <div class="disk-bar-other" id="disk-bar-other"></div>
         </div>
       </div>
+
       <div id="bags-loading" class="ctrl-hint">Loading...</div>
-      <table class="bags-table" id="bags-table" style="display:none">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Date</th>
-            <th>Size</th>
-            <th>Files</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="bags-tbody"></tbody>
-      </table>
+
+      <div class="bags-search-row" id="bags-search-row">
+        <label for="bags-search">Search</label>
+        <input id="bags-search" type="search" placeholder="Search bags by name, date, type, files...">
+      </div>
+
+      <div class="bags-columns" id="bags-columns" style="display:none">
+        <section class="bag-column card" id="bag-column-perception">
+          <div class="bag-column-header">
+            <h3>Perception Bags</h3>
+            <span class="bag-column-count" id="bags-count-perception">0</span>
+          </div>
+          <div class="bags-list" id="bags-list-perception"></div>
+          <div class="ctrl-hint bag-column-empty" id="bags-empty-perception">No perception bags.</div>
+        </section>
+
+        <section class="bag-column card" id="bag-column-mapping">
+          <div class="bag-column-header">
+            <h3>Mapping Bags</h3>
+            <span class="bag-column-count" id="bags-count-mapping">0</span>
+          </div>
+          <div class="bags-list" id="bags-list-mapping"></div>
+          <div class="ctrl-hint bag-column-empty" id="bags-empty-mapping">No mapping bags.</div>
+        </section>
+
+        <section class="bag-column card" id="bag-column-other" style="display:none">
+          <div class="bag-column-header">
+            <h3>Other Bags</h3>
+            <span class="bag-column-count" id="bags-count-other">0</span>
+          </div>
+          <div class="bags-list" id="bags-list-other"></div>
+        </section>
+      </div>
+
       <div id="bags-empty" class="ctrl-hint" style="display:none">No recordings found.</div>
     </div>
   </div>
+
 
   <!-- ─── Controller tab ─── -->
   <div id="tab-controller" class="tab-content">
@@ -360,11 +381,15 @@
       </div>
       <div class="card ctrl-panel">
         <h2>Button Assignments</h2>
-        <p class="ctrl-hint">Press a button on the controller to see it light up.
-          Change assignments with the dropdowns, then hit Save.</p>
+        <p class="ctrl-hint">
+          Press a button on the controller to see it light up.
+          Change assignments with the dropdowns, then hit Save.
+        </p>
         <div id="ctrl-loading" class="ctrl-hint">Loading config...</div>
         <table class="ctrl-table" id="ctrl-table" style="display:none">
-          <thead><tr><th></th><th>Button</th><th>Action</th></tr></thead>
+          <thead>
+            <tr><th></th><th>Button</th><th>Action</th></tr>
+          </thead>
           <tbody id="ctrl-tbody"></tbody>
         </table>
         <div class="btn-row" style="margin-top:16px">
@@ -377,7 +402,6 @@
     </div>
   </div>
 
-
   <!-- ─── Network tab ─── -->
   <div id="tab-network" class="tab-content">
     <div class="net-wrap">
@@ -385,11 +409,11 @@
         <h2>Network Interfaces</h2>
         <button onclick="loadNetwork()">Refresh</button>
       </div>
+
       <div id="net-loading" class="ctrl-hint">Loading...</div>
       <div id="net-interfaces" class="net-interfaces"></div>
 
       <div id="net-wifi-section" class="net-wifi-section" style="display:none">
-
         <!-- WiFi Client mode -->
         <div id="net-wifi-client">
           <div class="net-header">
@@ -398,6 +422,7 @@
             <span id="wifi-scan-status" class="ctrl-hint"></span>
             <button class="net-ap-start-btn" onclick="openApSetup()">Start Access Point</button>
           </div>
+
           <div id="wifi-list" class="wifi-list">
             <div class="ctrl-hint" style="padding:14px">Click Scan to search for WiFi networks.</div>
           </div>
@@ -422,10 +447,13 @@
             <div id="wifi-msg" class="ctrl-msg"></div>
           </div>
 
-          <!-- AP setup panel (appears when "Start Access Point" clicked) -->
+          <!-- AP setup panel -->
           <div class="card net-ap-setup" id="ap-setup-panel" style="display:none">
             <h3>Start Access Point</h3>
-            <p class="ctrl-hint">WiFi will disconnect from any network and become an access point. Other devices can connect to the robot directly.</p>
+            <p class="ctrl-hint">
+              WiFi will disconnect from any network and become an access point.
+              Other devices can connect to the robot directly.
+            </p>
             <div class="net-field">
               <label>AP Name (SSID)</label>
               <input type="text" id="ap-ssid" value="HorseShitBot" placeholder="HorseShitBot">
@@ -457,21 +485,22 @@
               <div class="kv"><span class="label">SSID</span><span class="value" id="ap-current-ssid">--</span></div>
               <div class="kv"><span class="label">IP Address</span><span class="value" id="ap-current-ip">10.0.0.1</span></div>
               <p class="ctrl-hint" style="margin-top:10px">
-                The robot is broadcasting a WiFi network. Connect your device to the SSID above, then access the dashboard at the IP shown.
+                The robot is broadcasting a WiFi network. Connect your device to the SSID above,
+                then access the dashboard at the IP shown.
               </p>
             </div>
             <div class="btn-row" style="margin-top:12px">
               <button class="danger" onclick="stopAp()">Stop Access Point</button>
             </div>
-            <div id="ap-msg" class="ctrl-msg"></div>
+            <div id="ap-msg-active" class="ctrl-msg"></div>
           </div>
         </div>
-
       </div>
 
       <div id="net-config-modal" class="net-modal" style="display:none">
         <div class="net-modal-inner card">
           <h2 id="net-cfg-title">Configure Interface</h2>
+
           <div class="net-field">
             <label>Mode</label>
             <select id="net-cfg-mode" onchange="onNetModeChange()">
@@ -479,6 +508,7 @@
               <option value="manual">Static IP</option>
             </select>
           </div>
+
           <div id="net-cfg-static-fields" style="display:none">
             <div class="net-field">
               <label>IP Address</label>
@@ -496,13 +526,16 @@
               <label>DNS</label>
               <input type="text" id="net-cfg-dns" placeholder="8.8.8.8 (optional)">
             </div>
+
             <div class="net-divider"></div>
+
             <div class="net-field">
               <label class="net-cb-label">
                 <input type="checkbox" id="net-cfg-dhcpd" onchange="onDhcpdToggle()">
                 Enable DHCP Server on this interface
               </label>
             </div>
+
             <div id="net-cfg-dhcpd-fields" style="display:none">
               <div class="net-field">
                 <label>DHCP Range Start</label>
@@ -514,16 +547,18 @@
               </div>
             </div>
           </div>
+
           <div class="btn-row" style="margin-top:16px">
             <button class="primary" onclick="applyNetConfig()">Apply</button>
             <button onclick="closeNetConfig()">Cancel</button>
           </div>
+
           <div id="net-cfg-msg" class="ctrl-msg"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=ui_fix_v5"></script>
 </body>
 </html>
