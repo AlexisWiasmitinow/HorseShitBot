@@ -15,9 +15,11 @@ Dependencies:
 Jetson I2C wiring (Jetson.GPIO-style 40-pin header):
     VCC  -> 3.3V (pin 1)      IMU boards are almost always 3.3V logic
     GND  -> GND (pin 6/9/...)
-    SDA  -> pin 3  (I2C1, usually /dev/i2c-1 on Nano; 7/8/9 on Xavier/Orin)
+    SDA  -> pin 3  (bus 7 on this robot's Jetson; varies by carrier board/model)
     SCL  -> pin 5
     AD0  -> GND for address 0x68 (default), 3.3V for 0x69
+             Note: the actual address seen on the bus is what matters — some
+             breakouts don't map AD0 the way you'd expect. Confirm with --scan.
     nCS  -> 3.3V (REQUIRED for I2C mode!)
              The ICM-20948 is an I2C/SPI combo chip. Leaving nCS floating or
              low can latch it into SPI mode, and I2C reads will just time out
@@ -25,11 +27,15 @@ Jetson I2C wiring (Jetson.GPIO-style 40-pin header):
     FSYNC -> GND (or leave unconnected if the breakout ties it off already;
              not used by this script, but floating inputs can be noisy)
 
+Defaults below (bus 7, address 0x68) match this robot's confirmed wiring.
+Use --scan-all if you're setting this up on different hardware.
+
 Usage:
-    python3 icm20948_i2c_test.py                       # single reading, bus 1, addr 0x68
+    python3 icm20948_i2c_test.py                       # single reading, bus 7, addr 0x68
     python3 icm20948_i2c_test.py --scan                 # i2cdetect-style bus scan
+    python3 icm20948_i2c_test.py --scan-all             # check every /dev/i2c-* bus for the IMU
     python3 icm20948_i2c_test.py --list-buses            # show available /dev/i2c-* devices
-    python3 icm20948_i2c_test.py --bus 8 --addr 0x69     # Xavier/Orin often use bus 7/8/9
+    python3 icm20948_i2c_test.py --bus 8 --addr 0x69     # different hardware/wiring
     python3 icm20948_i2c_test.py -c                      # stream continuously (Ctrl+C to stop)
     python3 icm20948_i2c_test.py -c -n 20 -r 5           # 20 samples at ~5 Hz
     python3 icm20948_i2c_test.py --no-mag                # skip AK09916 magnetometer test
@@ -38,6 +44,7 @@ Usage:
 
 import argparse
 import glob
+import os
 import sys
 import time
 
@@ -189,6 +196,76 @@ class ICM20948:
         return {"mag_ut": (mx, my, mz), "overflow": overflow}
 
 
+_JETSON_IO_PATH = "/opt/nvidia/jetson-io/jetson-io.py"
+
+
+def _is_jetson_soc() -> bool:
+    try:
+        with open("/proc/device-tree/model", "rb") as f:
+            return b"Jetson" in f.read()
+    except OSError:
+        return False
+
+
+def _current_boot_overlays() -> list:
+    """
+    Best-effort read of the OVERLAYS line jetson-io.py writes into the active
+    extlinux entry, so we can show what's currently applied without needing
+    root or having to run jetson-io.py's interactive UI.
+    """
+    try:
+        with open("/boot/extlinux/extlinux.conf", "r") as f:
+            text = f.read()
+    except OSError:
+        return []
+    overlays = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line.upper().startswith("OVERLAYS"):
+            _, _, rest = line.partition(" ")
+            overlays.extend(o for o in rest.replace(",", " ").split() if o)
+    return overlays
+
+
+def jetson_io_status():
+    print("=== jetson-io / header pinmux status ===")
+    if not _is_jetson_soc():
+        print("  Not running on a Jetson (no /proc/device-tree/model match) — jetson-io N/A.")
+        return
+    if os.path.exists(_JETSON_IO_PATH):
+        print(f"  Found: {_JETSON_IO_PATH}")
+    else:
+        print(f"  NOT found at {_JETSON_IO_PATH} (path may differ by JetPack version).")
+
+    overlays = _current_boot_overlays()
+    if overlays:
+        print("  Currently applied device-tree overlay(s) (from /boot/extlinux/extlinux.conf):")
+        for o in overlays:
+            print(f"    {o}")
+        print("  Look for an I2C-related overlay here if your expected bus is missing from --list-buses.")
+    else:
+        print("  No OVERLAYS line found in /boot/extlinux/extlinux.conf (default header config, or")
+        print("  a different JetPack layout — this is inconclusive, not necessarily a problem).")
+
+    print()
+    print("  Most carrier boards expose the header's I2C pins by default (unlike SPI/UART, which")
+    print("  share pins with GPIO and need explicit muxing). If your bus genuinely isn't showing up")
+    print("  in --list-buses, check the header config with:")
+    print(f"    sudo {_JETSON_IO_PATH}")
+    print("    -> Configure 40-pin header -> look for an I2C-labeled group and enable it")
+    print("    -> Save pin changes -> Save and reboot")
+
+
+def _missing_bus_hint(bus: int):
+    print(f"  /dev/i2c-{bus} does not exist.", file=sys.stderr)
+    if _is_jetson_soc():
+        print("  On Jetson, most carrier boards expose header I2C by default, but if this bus was", file=sys.stderr)
+        print("  never created, the header pins may need to be muxed to I2C via jetson-io:", file=sys.stderr)
+        print(f"    sudo {_JETSON_IO_PATH}   (Configure 40-pin header -> enable I2C group -> reboot)", file=sys.stderr)
+        print(f"  Check current status: python3 {sys.argv[0]} --jetson-io-status", file=sys.stderr)
+    print(f"  See what does exist: python3 {sys.argv[0]} --list-buses", file=sys.stderr)
+
+
 # ── I2C bus discovery / scan (no smbus2 dependency needed) ──────
 
 def list_buses():
@@ -208,7 +285,7 @@ def scan_bus(bus: int, quiet: bool = False) -> list:
     try:
         smb = smbus2.SMBus(bus)
     except FileNotFoundError:
-        print(f"  ERROR: /dev/i2c-{bus} not found. Try --list-buses to see what exists.")
+        _missing_bus_hint(bus)
         return []
     except PermissionError:
         print(f"  ERROR: permission denied opening /dev/i2c-{bus}. "
@@ -291,18 +368,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
-  python3 icm20948_i2c_test.py                    # single reading, bus 1, addr 0x68
+  python3 icm20948_i2c_test.py                    # single reading, bus 7, addr 0x68 (this robot)
   python3 icm20948_i2c_test.py --scan              # find the device's address on a bus
   python3 icm20948_i2c_test.py --scan-all          # not sure which bus? check all of them
   python3 icm20948_i2c_test.py --list-buses        # see which /dev/i2c-N exist
+  python3 icm20948_i2c_test.py --jetson-io-status  # check header pinmux (jetson-io.py) state
   python3 icm20948_i2c_test.py -c -n 20 -r 5       # stream 20 samples at ~5 Hz
-  python3 icm20948_i2c_test.py --bus 8 --addr 0x69 # Xavier/Orin often use bus 7/8/9
+  python3 icm20948_i2c_test.py --bus 8 --addr 0x69 # different hardware/wiring
 """,
     )
-    parser.add_argument("--bus", type=int, default=1,
-        help="I2C bus number, i.e. /dev/i2c-N (default 1; Jetson Nano=1, Xavier/Orin often 7/8/9)")
+    parser.add_argument("--bus", type=int, default=7,
+        help="I2C bus number, i.e. /dev/i2c-N (default 7, confirmed on this robot's Jetson; "
+             "varies by carrier board/model, use --scan-all if unsure)")
     parser.add_argument("--addr", type=lambda s: int(s, 0), default=0x68,
-        help="I2C address (default 0x68; 0x69 if AD0 is tied high)")
+        help="I2C address (default 0x68, confirmed on this robot; try 0x69 if AD0 is tied high "
+             "and 0x68 doesn't respond)")
     parser.add_argument("--scan", action="store_true",
         help="Scan the bus for device addresses (like i2cdetect -y) and exit")
     parser.add_argument("--scan-all", action="store_true",
@@ -310,6 +390,8 @@ examples:
              "(use this if you're not sure which bus the header maps to)")
     parser.add_argument("--list-buses", action="store_true",
         help="List available /dev/i2c-* devices and exit")
+    parser.add_argument("--jetson-io-status", action="store_true",
+        help="Show jetson-io.py path and currently applied header overlay(s), and exit")
     parser.add_argument("--no-mag", action="store_true",
         help="Skip the AK09916 magnetometer test (accel/gyro only)")
     parser.add_argument("--accel-fs", type=int, choices=sorted(_ACCEL_FS_MAP), default=2,
@@ -326,6 +408,10 @@ examples:
 
     if args.list_buses:
         list_buses()
+        return
+
+    if args.jetson_io_status:
+        jetson_io_status()
         return
 
     if args.scan_all:
@@ -346,8 +432,8 @@ examples:
     try:
         imu = ICM20948(args.bus, args.addr)
     except FileNotFoundError:
-        print(f"ERROR: /dev/i2c-{args.bus} not found.", file=sys.stderr)
-        print("Enable I2C for your platform (e.g. jetson-io on Jetson) or check --bus.", file=sys.stderr)
+        print("ERROR:", file=sys.stderr)
+        _missing_bus_hint(args.bus)
         sys.exit(1)
 
     try:

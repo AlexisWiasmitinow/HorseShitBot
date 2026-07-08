@@ -219,14 +219,31 @@ IMU Pin   Jetson pin   Notes
 ───────   ──────────   ─────
 VCC       3.3V (pin 1) 3.3V logic only
 GND       GND (pin 6)  Any ground
-SDA       pin 3        I2C1 (usually /dev/i2c-1 on Nano; 7/8/9 on Xavier/Orin)
+SDA       pin 3        bus 7 on this robot's Jetson (varies by carrier board/model)
 SCL       pin 5
-AD0       GND or 3.3V  GND -> address 0x68 (default); 3.3V -> 0x69
+AD0       GND or 3.3V  GND -> address 0x68 (default); 3.3V -> 0x69 (see note below)
 nCS       3.3V         REQUIRED for I2C mode — see note below
 FSYNC     GND / NC     Not used by this script; float can be noisy on some boards
 ```
 
+Confirmed on this robot: **bus 7, address 0x68** (script defaults match this). If you're wiring up new/different hardware, use `--scan-all` to find the actual bus/address rather than assuming.
+
+**AD0 isn't always trustworthy:** in theory `AD0` selects `0x68` (low) vs `0x69` (high), but on this robot's board `AD0` reads 3.3V and the chip still answers at `0x68` — some breakouts mislabel the pin or invert the logic. Trust what `i2cdetect`/`--scan` actually shows over what the datasheet says AD0 should do.
+
 **Don't forget `nCS`:** the ICM-20948 is an I2C/SPI combo chip, and `nCS` doubles as the interface-select pin. If it's left floating or pulled low, the chip can come up in SPI mode instead of I2C — `--scan` will show nothing and WHO_AM_I reads will just time out/NACK, which looks identical to a wiring or address problem. Tie `nCS` straight to 3.3V (VDD) to force I2C mode. Most breakout boards (SparkFun, etc.) call this pin out explicitly for this reason.
+
+**If the bus doesn't exist at all (`--list-buses` doesn't show it):** most carrier boards expose the 40-pin header's I2C lines by default — unlike SPI/UART, which share pins with GPIO and need explicit muxing via `jetson-io`. But some carrier boards/header configs do route I2C through a `jetson-io`-configurable group. If your expected `/dev/i2c-N` never shows up, the script will point you at this automatically, or check it directly:
+
+```bash
+python3 icm20948_i2c_test.py --jetson-io-status
+```
+
+This reports whether `/opt/nvidia/jetson-io/jetson-io.py` exists and what device-tree overlay(s) are currently applied (read from `/boot/extlinux/extlinux.conf`), without needing root or running the interactive tool. If your bus is genuinely missing, configure it and reboot:
+
+```bash
+sudo /opt/nvidia/jetson-io/jetson-io.py
+# -> Configure 40-pin header -> enable the I2C-labeled group (if present) -> Save and reboot
+```
 
 **Usage:**
 
@@ -237,13 +254,13 @@ python3 icm20948_i2c_test.py --list-buses
 # Not sure which bus the header maps to? Check all of them for 0x68/0x69 at once
 python3 icm20948_i2c_test.py --scan-all
 
-# Find the device's address on a specific bus (like i2cdetect -y 1)
-python3 icm20948_i2c_test.py --scan --bus 1
+# Find the device's address on a specific bus (like i2cdetect -y 7)
+python3 icm20948_i2c_test.py --scan --bus 7
 
-# Single reading, defaults (bus 1, address 0x68)
+# Single reading, defaults (bus 7, address 0x68 — confirmed on this robot)
 python3 icm20948_i2c_test.py
 
-# Different bus/address (Xavier/Orin often use bus 7/8/9; AD0 high -> 0x69)
+# Different bus/address (other hardware/wiring)
 python3 icm20948_i2c_test.py --bus 8 --addr 0x69
 
 # Stream continuously (Ctrl+C to stop), or a fixed number of samples at a set rate
@@ -258,10 +275,10 @@ python3 icm20948_i2c_test.py --accel-fs 4 --gyro-fs 500
 ```
 
 **What to look for:**
-- `--scan` shows a device at `0x68` (or `0x69` if AD0 is pulled high)
+- `--scan` shows a device at `0x68` (confirmed on this robot's wiring; could be `0x69` on other hardware)
 - WHO_AM_I reads back `0xEA` (ICM-20948) and, if testing the magnetometer, `0x09` (AK09916)
-- At rest: one accel axis (whichever is vertical) reads ~1g, others near 0g; gyro reads near 0dps on all axes
-- Temperature reads near room temperature
+- At rest: accel magnitude (√(x²+y²+z²)) is ~1g, split across axes depending on board tilt; gyro reads near 0dps on all axes
+- Temperature reads near room/board temperature
 - Magnetometer values change smoothly as you rotate the board (and jump/settle near a speaker or motor)
 
 ---
