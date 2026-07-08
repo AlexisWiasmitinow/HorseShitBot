@@ -246,11 +246,11 @@
   </div>
 </div>
 
-
   <!-- ─── Recordings tab ─── -->
   <div id="tab-recordings" class="tab-content">
     <div class="bags-wrap">
       <div class="rec-profiles-row">
+
         <!-- Perception recorder -->
         <div class="topic-picker card" id="topic-picker-perception">
           <div class="topic-picker-header">
@@ -258,7 +258,10 @@
             <span class="topic-picker-hint" id="topic-picker-hint-perception"></span>
             <button class="primary" onclick="saveBagTopics('perception')">Apply</button>
           </div>
-          <div id="topic-groups-perception"></div>
+          <details class="topic-foldout">
+            <summary>Topic checklist</summary>
+            <div id="topic-groups-perception"></div>
+          </details>
           <div id="topic-msg-perception" class="ctrl-msg"></div>
           <div class="rec-bar-row" style="margin-top:12px">
             <span class="rec-dot-lg" id="rec-dot-lg-perception"></span>
@@ -277,7 +280,10 @@
             <span class="topic-picker-hint" id="topic-picker-hint-mapping"></span>
             <button class="primary" onclick="saveBagTopics('mapping')">Apply</button>
           </div>
-          <div id="topic-groups-mapping"></div>
+          <details class="topic-foldout">
+            <summary>Topic checklist</summary>
+            <div id="topic-groups-mapping"></div>
+          </details>
           <div id="topic-msg-mapping" class="ctrl-msg"></div>
           <div class="rec-bar-row" style="margin-top:12px">
             <span class="rec-dot-lg" id="rec-dot-lg-mapping"></span>
@@ -290,6 +296,30 @@
         </div>
       </div>
 
+      <!-- Preview window -->
+      <div class="recording-preview-strip card">
+      <div class="recording-preview-header">
+        <h2>Live Preview While Recording</h2>
+        <button id="recording-preview-toggle" class="primary" onclick="togglePreview()">Start Preview</button>
+      </div>
+
+      <div class="recording-preview-grid">
+        <div class="mini-preview">
+          <h3>Color</h3>
+          <img id="rec-preview-color" alt="Recording color preview">
+        </div>
+
+        <div class="mini-preview">
+          <h3>Depth</h3>
+          <img id="rec-preview-depth" alt="Recording depth preview">
+        </div>
+
+        <div class="mini-preview">
+          <h3>Lidar</h3>
+          <canvas id="rec-lidar-canvas" width="320" height="240"></canvas>
+        </div>
+      </div>
+    </div>
       <div class="bags-header">
         <h2>Recorded Bags</h2>
         <span class="bags-summary" id="bags-summary"></span>

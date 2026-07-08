@@ -309,26 +309,37 @@ function updateDashboard(data) {
 
   updateThermals(data.thermals || []);
 
-  // Lidar
+// Lidar
   const lidar = data.lidar || {};
   const lidarPts = data.lidar_points;
-  if (lidarPts && Array.isArray(lidarPts) && lidarPts.length > 0) {
+
+  if (Array.isArray(lidarPts)) {
     lidarPoints = lidarPts;
   }
-  const lidarStatusEl = document.getElementById("lidar-status");
-  if (lidarStatusEl && !lidarScanning && lidar.scanning) {
+
+  if (lidar.scanning && !lidarScanning) {
     lidarScanning = true;
-    lidarStatusEl.textContent = "Scanning";
-    lidarStatusEl.className = "lidar-status ok";
-    document.getElementById("lidar-toggle").textContent = "Stop Scan";
-    document.getElementById("lidar-toggle").className = "danger";
-    if (!lidarAnimFrame) lidarAnimFrame = requestAnimationFrame(drawLidar);
+    setLidarStatusUi(true);
+    setPreviewButtons(camStreaming || lidarScanning);
+
+    if (!lidarAnimFrame) {
+      lidarAnimFrame = requestAnimationFrame(drawLidar);
+    }
   }
+
+  if (!lidar.scanning && lidarScanning) {
+    lidarScanning = false;
+    setLidarStatusUi(false);
+    setPreviewButtons(camStreaming || lidarScanning);
+    drawLidar();
+  }
+
   const statsEl = document.getElementById("lidar-stats");
   if (statsEl && lidar.connected != null) {
     const parts = [];
-    if (!lidar.connected) parts.push("Disconnected");
-    else {
+    if (!lidar.connected) {
+      parts.push("Disconnected");
+    } else {
       parts.push(`${lidar.point_count || 0} pts`);
       if (lidar.firmware) parts.push(`fw ${lidar.firmware}`);
     }
@@ -573,66 +584,68 @@ function showCtrlMsg(text, type) {
 
 let camStreaming = false;
 
-function startCamera() {
-  const fps = document.getElementById("cam-fps").value;
-  const quality = document.getElementById("cam-quality").value;
+function getPreviewFps() {
+  const el = document.getElementById("cam-fps");
+  return el ? el.value : "10";
+}
 
-  const colorImg = document.getElementById("cam-color");
-  const depthImg = document.getElementById("cam-depth");
+function getPreviewQuality() {
+  const el = document.getElementById("cam-quality");
+  return el ? el.value : "50";
+}
+
+function setCameraStatus(text, cls = "") {
   const stateEl = document.getElementById("cam-state");
+  if (!stateEl) return;
+  stateEl.textContent = text;
+  stateEl.className = "cam-state" + (cls ? " " + cls : "");
+}
 
-  const qs = `fps=${fps}&quality=${quality}`;
-  colorImg.src = `/api/stream/color?${qs}`;
-  depthImg.src = `/api/stream/depth?${qs}`;
+function startCamera() {
+  const fps = getPreviewFps();
+  const quality = getPreviewQuality();
+
+  const colorImgs = [
+    document.getElementById("cam-color"),
+    document.getElementById("rec-preview-color"),
+  ].filter(Boolean);
+
+  const depthImgs = [
+    document.getElementById("cam-depth"),
+    document.getElementById("rec-preview-depth"),
+  ].filter(Boolean);
+
+  const qs = `fps=${encodeURIComponent(fps)}&quality=${encodeURIComponent(quality)}`;
+
+  for (const img of colorImgs) {
+    img.src = `/api/stream/color?${qs}&t=${Date.now()}`;
+    img.onerror = () => setCameraStatus("Color stream error", "err");
+  }
+
+  for (const img of depthImgs) {
+    img.src = `/api/stream/depth?${qs}&t=${Date.now()}`;
+    img.onerror = () => setCameraStatus("Depth stream error", "err");
+  }
 
   camStreaming = true;
-  document.getElementById("cam-toggle").textContent = "Stop Stream";
-  document.getElementById("cam-toggle").className = "danger";
-  if (stateEl) { stateEl.textContent = "Streaming"; stateEl.className = "cam-state ok"; }
-
-  colorImg.onerror = () => {
-    if (stateEl) { stateEl.textContent = "Stream error"; stateEl.className = "cam-state err"; }
-  };
+  setCameraStatus("Streaming", "ok");
+  setPreviewButtons(camStreaming || lidarScanning);
 }
 
 function stopCamera() {
-  const colorImg = document.getElementById("cam-color");
-  const depthImg = document.getElementById("cam-depth");
-  const stateEl = document.getElementById("cam-state");
+  for (const id of ["cam-color", "rec-preview-color", "cam-depth", "rec-preview-depth"]) {
+    const img = document.getElementById(id);
+    if (img) img.src = "";
+  }
 
-  colorImg.src = "";
-  depthImg.src = "";
   camStreaming = false;
-  document.getElementById("cam-toggle").textContent = "Start Stream";
-  document.getElementById("cam-toggle").className = "primary";
-  if (stateEl) { stateEl.textContent = "Stopped"; stateEl.className = "cam-state"; }
+  setCameraStatus("Stopped");
+  setPreviewButtons(camStreaming || lidarScanning);
 }
 
 function toggleCamera() {
   if (camStreaming) stopCamera();
   else startCamera();
-}
-
-function togglePreview() {
-  if (camStreaming || lidarScanning) {
-    stopCamera();
-    stopLidar();
-
-    const btn = document.getElementById("preview-toggle");
-    if (btn) {
-      btn.textContent = "Start Preview";
-      btn.className = "primary";
-    }
-  } else {
-    startCamera();
-    startLidar();
-
-    const btn = document.getElementById("preview-toggle");
-    if (btn) {
-      btn.textContent = "Stop Preview";
-      btn.className = "danger";
-    }
-  }
 }
 
 // ─── Bag Topic Picker ────────────────────────────────────────────
@@ -1324,40 +1337,89 @@ function showApMsg(text, type) {
   el.className = "ctrl-msg " + (type || "");
 }
 
-// ─── Lidar ───────────────────────────────────────────────────────
+// ─── Lidar / Preview ─────────────────────────────────────────────
 
 let lidarScanning = false;
 let lidarPoints = [];
 let lidarAnimFrame = null;
 
+function setPreviewButtons(running) {
+  for (const id of ["preview-toggle", "recording-preview-toggle"]) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+
+    btn.textContent = running ? "Stop Preview" : "Start Preview";
+    btn.className = running ? "danger" : "primary";
+  }
+}
+
+function setLidarStatusUi(running, message = null) {
+  const status = document.getElementById("lidar-status");
+  if (status) {
+    status.textContent = message || (running ? "Scanning" : "Stopped");
+    status.className = running ? "lidar-status ok" : "lidar-status";
+  }
+}
+
+async function togglePreview() {
+  if (camStreaming || lidarScanning) {
+    stopCamera();
+    await stopLidar();
+    setPreviewButtons(false);
+    drawLidar();
+    return;
+  }
+
+  startCamera();
+  await startLidar();
+
+  setPreviewButtons(camStreaming || lidarScanning);
+  drawLidar();
+}
+
 async function startLidar() {
   try {
     const resp = await fetch("/api/lidar/start", { method: "POST" });
     const r = await resp.json();
+
     if (!r.success) {
-      const el = document.getElementById("lidar-status");
-      if (el) { el.textContent = r.message || "Failed"; el.className = "lidar-status err"; }
+      console.warn("Lidar start failed:", r);
+      setLidarStatusUi(false, r.message || "Lidar failed");
+      drawLidar();
       return;
     }
-  } catch (e) { console.error("Lidar start failed:", e); return; }
+  } catch (e) {
+    console.error("Lidar start failed:", e);
+    setLidarStatusUi(false, "Lidar start failed");
+    drawLidar();
+    return;
+  }
 
   lidarScanning = true;
-  document.getElementById("lidar-toggle").textContent = "Stop Scan";
-  document.getElementById("lidar-toggle").className = "danger";
-  const el = document.getElementById("lidar-status");
-  if (el) { el.textContent = "Scanning"; el.className = "lidar-status ok"; }
-  if (!lidarAnimFrame) lidarAnimFrame = requestAnimationFrame(drawLidar);
+  setLidarStatusUi(true);
+  setPreviewButtons(camStreaming || lidarScanning);
+
+  if (!lidarAnimFrame) {
+    lidarAnimFrame = requestAnimationFrame(drawLidar);
+  }
 }
 
 async function stopLidar() {
-  try { await fetch("/api/lidar/stop", { method: "POST" }); } catch (e) { /* ignore */ }
+  try {
+    await fetch("/api/lidar/stop", { method: "POST" });
+  } catch (e) {
+    console.warn("Lidar stop failed:", e);
+  }
 
   lidarScanning = false;
-  document.getElementById("lidar-toggle").textContent = "Start Scan";
-  document.getElementById("lidar-toggle").className = "primary";
-  const el = document.getElementById("lidar-status");
-  if (el) { el.textContent = "Stopped"; el.className = "lidar-status"; }
-  if (lidarAnimFrame) { cancelAnimationFrame(lidarAnimFrame); lidarAnimFrame = null; }
+  setLidarStatusUi(false);
+
+  if (lidarAnimFrame) {
+    cancelAnimationFrame(lidarAnimFrame);
+    lidarAnimFrame = null;
+  }
+
+  drawLidar();
 }
 
 function toggleLidar() {
@@ -1365,63 +1427,72 @@ function toggleLidar() {
   else startLidar();
 }
 
-function drawLidar() {
-  const canvas = document.getElementById("lidar-canvas");
+function drawLidarCanvas(canvas) {
   if (!canvas) return;
+
   const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  const cx = W / 2, cy = H / 2;
+  const W = canvas.width;
+  const H = canvas.height;
+  const cx = W / 2;
+  const cy = H / 2;
+
   const rangeM = parseFloat(document.getElementById("lidar-range")?.value || "8");
   const rangeMax = rangeM * 1000;
-  const radius = Math.min(cx, cy) - 20;
+  const radius = Math.min(cx, cy) - 18;
 
   ctx.fillStyle = "#0a0e17";
   ctx.fillRect(0, 0, W, H);
 
-  // Distance rings
   const ringCount = 4;
   ctx.strokeStyle = "#1a2035";
   ctx.lineWidth = 1;
-  ctx.font = "11px monospace";
-  ctx.fillStyle = "#3a4565";
+  ctx.font = "10px monospace";
+  ctx.fillStyle = "#5c6688";
+
   for (let i = 1; i <= ringCount; i++) {
     const r = (radius / ringCount) * i;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
-    const mLabel = ((rangeM / ringCount) * i).toFixed(1) + "m";
-    ctx.fillText(mLabel, cx + r + 3, cy - 3);
+
+    const label = ((rangeM / ringCount) * i).toFixed(1) + "m";
+    ctx.fillText(label, cx + r + 4, cy - 4);
   }
 
-  // Cross-hairs
   ctx.strokeStyle = "#1a2035";
   ctx.beginPath();
-  ctx.moveTo(cx, 10); ctx.lineTo(cx, H - 10);
-  ctx.moveTo(10, cy); ctx.lineTo(W - 10, cy);
+  ctx.moveTo(cx, 8);
+  ctx.lineTo(cx, H - 8);
+  ctx.moveTo(8, cy);
+  ctx.lineTo(W - 8, cy);
   ctx.stroke();
 
-  // Robot marker
   ctx.fillStyle = "#e94560";
   ctx.beginPath();
   ctx.arc(cx, cy, 4, 0, Math.PI * 2);
   ctx.fill();
 
-  // Points
-  if (lidarPoints.length > 0) {
+  let visiblePoints = 0;
+
+  if (Array.isArray(lidarPoints) && lidarPoints.length > 0) {
     ctx.fillStyle = "#4ecca3";
+
     for (const pt of lidarPoints) {
       const angleDeg = pt[0];
       const distMm = pt[1];
+
       if (distMm <= 0 || distMm > rangeMax) continue;
+
       const angleRad = (angleDeg - 90) * Math.PI / 180;
       const r = (distMm / rangeMax) * radius;
       const px = cx + r * Math.cos(angleRad);
       const py = cy + r * Math.sin(angleRad);
+
       ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+      visiblePoints++;
     }
   }
 
-  // Forward arrow
   ctx.save();
   ctx.strokeStyle = "#4ecca3";
   ctx.lineWidth = 2;
@@ -1429,6 +1500,7 @@ function drawLidar() {
   ctx.moveTo(cx, cy - 8);
   ctx.lineTo(cx, 24);
   ctx.stroke();
+
   ctx.beginPath();
   ctx.moveTo(cx - 5, 30);
   ctx.lineTo(cx, 22);
@@ -1437,32 +1509,61 @@ function drawLidar() {
   ctx.fill();
   ctx.restore();
 
-  // Direction labels
   ctx.fillStyle = "#4ecca3";
-  ctx.font = "bold 11px monospace";
+  ctx.font = "bold 10px monospace";
   ctx.textAlign = "center";
   ctx.fillText("FWD", cx, 14);
+
   ctx.fillStyle = "#4ecca366";
-  ctx.font = "11px monospace";
+  ctx.font = "10px monospace";
   ctx.fillText("BACK", cx, H - 6);
+
   ctx.textAlign = "left";
   ctx.fillText("LEFT", 2, cy - 3);
+
   ctx.textAlign = "right";
   ctx.fillText("RIGHT", W - 2, cy - 3);
+
   ctx.textAlign = "left";
 
-  if (lidarScanning) lidarAnimFrame = requestAnimationFrame(drawLidar);
+  if (visiblePoints === 0) {
+    ctx.fillStyle = "#8a8a9a";
+    ctx.font = "12px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(lidarScanning ? "Waiting for lidar points..." : "Lidar preview stopped", cx, cy + 24);
+    ctx.textAlign = "left";
+  }
+}
+
+function drawLidar() {
+  const canvases = [
+    document.getElementById("lidar-canvas"),
+    document.getElementById("rec-lidar-canvas"),
+  ].filter(Boolean);
+
+  for (const canvas of canvases) {
+    drawLidarCanvas(canvas);
+  }
+
+  if (lidarScanning) {
+    lidarAnimFrame = requestAnimationFrame(drawLidar);
+  } else {
+    lidarAnimFrame = null;
+  }
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────
 
 function initTabs() {
   const tabs = document.querySelectorAll(".tabs .tab");
+
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
       tabs.forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
+
       document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+
       const target = document.getElementById("tab-" + tab.dataset.tab);
       if (target) target.classList.add("active");
 
@@ -1473,11 +1574,14 @@ function initTabs() {
       } else {
         stopBagsAutoRefresh();
       }
+
       if (tab.dataset.tab === "network") {
         loadNetwork();
       }
-      if (tab.dataset.tab === "preview") {
+
+      if (tab.dataset.tab === "preview" || tab.dataset.tab === "recordings") {
         drawLidar();
+        setPreviewButtons(camStreaming || lidarScanning);
       }
 
       if (tab.dataset.tab !== "preview" && tab.dataset.tab !== "recordings" && camStreaming) {

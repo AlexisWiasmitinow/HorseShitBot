@@ -1008,3 +1008,274 @@ button.primary:hover { background: #3db88a; }
     display: none;
   }
 }
+
+.topic-foldout {
+  margin-top: 10px;
+}
+
+.topic-foldout summary {
+  cursor: pointer;
+  color: var(--ok);
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.topic-foldout[open] summary {
+  margin-bottom: 10px;
+}
+
+.recording-preview-strip {
+  margin-bottom: 20px;
+}
+
+.recording-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.recording-preview-header h2 {
+  margin-right: auto;
+}
+
+.recording-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.mini-preview {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 10px;
+  overflow: hidden;
+}
+
+.mini-preview h3 {
+  color: var(--accent);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.mini-preview img,
+.mini-preview canvas {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: #000;
+  border-radius: 4px;
+  display: block;
+}
+
+.preview-wrap {
+  max-width: 1300px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.1fr;
+  gap: 16px;
+}
+
+.preview-lidar-card .lidar-view {
+  height: 100%;
+}
+
+@media (max-width: 1000px) {
+  .preview-grid,
+  .recording-preview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Combined Preview tab ───────────────────────────────────── */
+
+.preview-wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.14);
+}
+
+.preview-controls button {
+  flex-shrink: 0;
+}
+
+.preview-controls .cam-slider-label {
+  margin: 0;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.preview-grid .cam-card {
+  min-width: 0;
+}
+
+.preview-grid .cam-card h3 {
+  margin-bottom: 8px;
+}
+
+.preview-grid .cam-card img {
+  width: 100%;
+  max-height: 300px;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: #000;
+}
+
+.preview-lidar-card {
+  grid-column: 1 / -1;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.14);
+}
+
+.preview-lidar-card .lidar-view {
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.preview-lidar-card #lidar-canvas {
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+
+/* Smaller controls on preview page */
+.preview-controls .cam-state,
+.preview-controls .lidar-status,
+.preview-controls .lidar-stats {
+  font-size: 0.8rem;
+}
+
+/* Mobile fallback */
+@media (max-width: 800px) {
+  .preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-lidar-card {
+    grid-column: auto;
+  }
+}
+
+/* ── UI improvement: compact combined preview override ─────────── */
+
+.preview-wrap {
+  max-width: 980px !important;
+  margin: 0 auto !important;
+  padding: 16px !important;
+}
+
+.preview-controls {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+  padding-bottom: 12px !important;
+  margin-bottom: 16px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.14) !important;
+}
+
+.preview-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  gap: 14px !important;
+}
+
+.preview-grid > .cam-card {
+  min-width: 0 !important;
+}
+
+.preview-grid > .cam-card:nth-child(1) {
+  grid-column: 1 !important;
+}
+
+.preview-grid > .cam-card:nth-child(2) {
+  grid-column: 2 !important;
+}
+
+.preview-grid > .preview-lidar-card,
+.preview-grid > .cam-card:nth-child(3) {
+  grid-column: 1 / -1 !important;
+  border-top: 1px solid rgba(255,255,255,0.16) !important;
+  padding-top: 14px !important;
+}
+
+.preview-grid .cam-card img {
+  width: 100% !important;
+  height: 260px !important;
+  max-height: 260px !important;
+  aspect-ratio: 4 / 3 !important;
+  object-fit: contain !important;
+  background: #000 !important;
+}
+
+.preview-lidar-card .lidar-view {
+  max-width: 420px !important;
+  margin: 0 auto !important;
+}
+
+.preview-lidar-card #lidar-canvas {
+  width: 100% !important;
+  max-width: 420px !important;
+  height: auto !important;
+  aspect-ratio: 1 / 1 !important;
+}
+
+.recording-preview-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.mini-preview img,
+.mini-preview canvas {
+  width: 100% !important;
+  height: 220px !important;
+  max-height: 220px !important;
+  object-fit: contain !important;
+  background: #000 !important;
+}
+
+@media (max-width: 700px) {
+  .preview-grid,
+  .recording-preview-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .preview-grid > .cam-card,
+  .preview-grid > .preview-lidar-card {
+    grid-column: auto !important;
+  }
+}
