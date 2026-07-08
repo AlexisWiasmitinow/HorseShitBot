@@ -201,7 +201,7 @@ class LidarNode(Node):
 
         port = self.get_parameter("port").get_parameter_value().string_value
         baud = self.get_parameter("baud").get_parameter_value().integer_value
-        auto_start = self.get_parameter("auto_start").get_parameter_value().bool_value
+        self._auto_start = self.get_parameter("auto_start").get_parameter_value().bool_value
         pub_hz = self.get_parameter("publish_hz").get_parameter_value().double_value
         self._frame_id = self.get_parameter("frame_id").get_parameter_value().string_value
         self._range_min = self.get_parameter("range_min").get_parameter_value().double_value
@@ -215,6 +215,8 @@ class LidarNode(Node):
         self._lock = threading.Lock()
         self._points: list[tuple[float, float, int]] = []
         self._scan_count = 0
+        self._last_watchdog_scan_count = 0
+        self._watchdog_fail_count = 0
         self._connected = False
         self._device_info: dict = {}
 
@@ -236,13 +238,18 @@ class LidarNode(Node):
             else:
                 self.get_logger().warn("Lidar connected but GET_INFO failed")
 
-            if auto_start:
-                self._start_scanning()
+            if self._auto_start:
+                ok, msg = self._start_scanning()
+                if not ok:
+                    self.get_logger().warn(
+                        f"Initial lidar auto-start failed: {msg}; will retry"
+                    )
         else:
             self.get_logger().error(f"Cannot connect to lidar on {port}")
 
         period = 1.0 / max(0.5, pub_hz)
         self.create_timer(period, self._publish_tick)
+        self.create_timer(2.0, self._scan_watchdog)
 
     def _start_scanning(self) -> tuple[bool, str]:
         if self._scanning:
@@ -284,6 +291,45 @@ class LidarNode(Node):
                         self._scan_count += 1
             except Exception:
                 time.sleep(0.1)
+
+    def _scan_watchdog(self):
+        """Keep LiDAR scanning when auto_start is enabled."""
+        if not self._auto_start:
+            return
+
+        if not self._connected:
+            return
+
+        with self._lock:
+            current_count = self._scan_count
+
+        # Healthy: scan loop is producing completed scans.
+        if self._scanning and current_count > self._last_watchdog_scan_count:
+            self._last_watchdog_scan_count = current_count
+            self._watchdog_fail_count = 0
+            return
+
+        self._watchdog_fail_count += 1
+
+        # Give it one watchdog period before restarting an apparently stuck scan.
+        if self._scanning and self._watchdog_fail_count < 2:
+            return
+
+        self.get_logger().warn(
+            "Lidar watchdog: scan is not producing data; restarting scan"
+        )
+
+        if self._scanning:
+            self._stop_scanning()
+
+        ok, msg = self._start_scanning()
+        if ok:
+            self.get_logger().info(f"Lidar watchdog: {msg}")
+        else:
+            self.get_logger().warn(f"Lidar watchdog failed: {msg}")
+
+        with self._lock:
+            self._last_watchdog_scan_count = self._scan_count
 
     def _publish_tick(self):
         with self._lock:
