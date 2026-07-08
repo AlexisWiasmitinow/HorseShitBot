@@ -613,6 +613,28 @@ function toggleCamera() {
   else startCamera();
 }
 
+function togglePreview() {
+  if (camStreaming || lidarScanning) {
+    stopCamera();
+    stopLidar();
+
+    const btn = document.getElementById("preview-toggle");
+    if (btn) {
+      btn.textContent = "Start Preview";
+      btn.className = "primary";
+    }
+  } else {
+    startCamera();
+    startLidar();
+
+    const btn = document.getElementById("preview-toggle");
+    if (btn) {
+      btn.textContent = "Stop Preview";
+      btn.className = "danger";
+    }
+  }
+}
+
 // ─── Bag Topic Picker ────────────────────────────────────────────
 
 const _bagTopicData = {};
@@ -1454,10 +1476,11 @@ function initTabs() {
       if (tab.dataset.tab === "network") {
         loadNetwork();
       }
-      if (tab.dataset.tab === "lidar") {
+      if (tab.dataset.tab === "preview") {
         drawLidar();
       }
-      if (tab.dataset.tab !== "camera" && camStreaming) {
+
+      if (tab.dataset.tab !== "preview" && tab.dataset.tab !== "recordings" && camStreaming) {
         stopCamera();
       }
     });

@@ -12,10 +12,9 @@
     <h1>HorseShitBot</h1>
     <nav class="tabs">
       <button class="tab active" data-tab="dashboard">Dashboard</button>
-      <button class="tab" data-tab="camera">Camera</button>
+      <button class="tab" data-tab="preview">Preview</button>
       <button class="tab" data-tab="recordings">Recordings</button>
       <button class="tab" data-tab="controller">Controller</button>
-      <button class="tab" data-tab="lidar">Lidar</button>
       <button class="tab" data-tab="network">Network</button>
     </nav>
     <span id="ws-status">Disconnected</span>
@@ -197,35 +196,56 @@
     </div>
   </div>
 
-  <!-- ─── Camera tab ─── -->
-  <div id="tab-camera" class="tab-content">
-    <div class="cam-wrap">
-      <div class="cam-controls">
-        <button id="cam-toggle" class="primary" onclick="toggleCamera()">Start Stream</button>
-        <label class="cam-slider-label">
-          FPS
-          <input type="range" id="cam-fps" min="1" max="15" value="10">
-          <span id="cam-fps-val">10</span>
-        </label>
-        <label class="cam-slider-label">
-          Quality
-          <input type="range" id="cam-quality" min="10" max="95" value="50">
-          <span id="cam-quality-val">50</span>
-        </label>
-        <span class="cam-state" id="cam-state">Stopped</span>
+<!-- ─── Preview tab ─── -->
+<div id="tab-preview" class="tab-content">
+  <div class="preview-wrap">
+    <div class="preview-controls">
+      <button id="preview-toggle" class="primary" onclick="togglePreview()">Start Preview</button>
+
+      <label class="cam-slider-label">
+        FPS
+        <input type="range" id="cam-fps" min="1" max="15" value="10">
+        <span id="cam-fps-val">10</span>
+      </label>
+
+      <label class="cam-slider-label">
+        Quality
+        <input type="range" id="cam-quality" min="10" max="95" value="50">
+        <span id="cam-quality-val">50</span>
+      </label>
+
+      <label class="cam-slider-label">
+        Lidar Range (m)
+        <input type="range" id="lidar-range" min="1" max="20" value="8" step="1">
+        <span id="lidar-range-val">8</span>
+      </label>
+
+      <span class="cam-state" id="cam-state">Stopped</span>
+      <span class="lidar-status" id="lidar-status">Stopped</span>
+      <span class="lidar-stats" id="lidar-stats"></span>
+    </div>
+
+    <div class="preview-grid">
+      <div class="cam-card">
+        <h3>Color Camera</h3>
+        <img id="cam-color" alt="Color stream">
       </div>
-      <div class="cam-grid">
-        <div class="cam-card">
-          <h3>Color</h3>
-          <img id="cam-color" alt="Color stream">
-        </div>
-        <div class="cam-card">
-          <h3>Depth</h3>
-          <img id="cam-depth" alt="Depth stream">
+
+      <div class="cam-card">
+        <h3>Depth Camera</h3>
+        <img id="cam-depth" alt="Depth stream">
+      </div>
+
+      <div class="cam-card preview-lidar-card">
+        <h3>Lidar Scan</h3>
+        <div class="lidar-view">
+          <canvas id="lidar-canvas" width="700" height="700"></canvas>
         </div>
       </div>
     </div>
   </div>
+</div>
+
 
   <!-- ─── Recordings tab ─── -->
   <div id="tab-recordings" class="tab-content">
@@ -327,24 +347,6 @@
     </div>
   </div>
 
-  <!-- ─── Lidar tab ─── -->
-  <div id="tab-lidar" class="tab-content">
-    <div class="lidar-wrap">
-      <div class="lidar-controls">
-        <button id="lidar-toggle" class="primary" onclick="toggleLidar()">Start Scan</button>
-        <span class="lidar-status" id="lidar-status">Stopped</span>
-        <span class="lidar-stats" id="lidar-stats"></span>
-        <label class="cam-slider-label">
-          Range (m)
-          <input type="range" id="lidar-range" min="1" max="20" value="8" step="1">
-          <span id="lidar-range-val">8</span>
-        </label>
-      </div>
-      <div class="lidar-view">
-        <canvas id="lidar-canvas" width="700" height="700"></canvas>
-      </div>
-    </div>
-  </div>
 
   <!-- ─── Network tab ─── -->
   <div id="tab-network" class="tab-content">
