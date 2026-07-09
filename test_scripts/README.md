@@ -221,14 +221,14 @@ VCC       3.3V (pin 1) 3.3V logic only
 GND       GND (pin 6)  Any ground
 SDA       pin 3        bus 7 on this robot's Jetson (varies by carrier board/model)
 SCL       pin 5
-AD0       GND or 3.3V  GND -> address 0x68 (default); 3.3V -> 0x69 (see note below)
+AD0       3.3V or GND  3.3V -> address 0x69 (this robot); GND -> 0x68 (see note below)
 nCS       3.3V         REQUIRED for I2C mode — see note below
 FSYNC     GND / NC     Not used by this script; float can be noisy on some boards
 ```
 
-Confirmed on this robot: **bus 7, address 0x68** (script defaults match this). If you're wiring up new/different hardware, use `--scan-all` to find the actual bus/address rather than assuming.
+Confirmed on this robot: **bus 7, address 0x69** (script defaults match this). If you're wiring up new/different hardware, use `--scan-all` to find the actual bus/address rather than assuming.
 
-**AD0 isn't always trustworthy:** in theory `AD0` selects `0x68` (low) vs `0x69` (high), but on this robot's board `AD0` reads 3.3V and the chip still answers at `0x68` — some breakouts mislabel the pin or invert the logic. Trust what `i2cdetect`/`--scan` actually shows over what the datasheet says AD0 should do.
+**AD0 selects the address:** in theory `AD0` selects `0x68` (low) vs `0x69` (high). Trust what `i2cdetect`/`--scan` actually shows if the chip doesn't answer at the expected address.
 
 **Don't forget `nCS`:** the ICM-20948 is an I2C/SPI combo chip, and `nCS` doubles as the interface-select pin. If it's left floating or pulled low, the chip can come up in SPI mode instead of I2C — `--scan` will show nothing and WHO_AM_I reads will just time out/NACK, which looks identical to a wiring or address problem. Tie `nCS` straight to 3.3V (VDD) to force I2C mode. Most breakout boards (SparkFun, etc.) call this pin out explicitly for this reason.
 
@@ -257,11 +257,11 @@ python3 icm20948_i2c_test.py --scan-all
 # Find the device's address on a specific bus (like i2cdetect -y 7)
 python3 icm20948_i2c_test.py --scan --bus 7
 
-# Single reading, defaults (bus 7, address 0x68 — confirmed on this robot)
+# Single reading, defaults (bus 7, address 0x69 — confirmed on this robot)
 python3 icm20948_i2c_test.py
 
 # Different bus/address (other hardware/wiring)
-python3 icm20948_i2c_test.py --bus 8 --addr 0x69
+python3 icm20948_i2c_test.py --bus 8 --addr 0x68
 
 # Stream continuously (Ctrl+C to stop), or a fixed number of samples at a set rate
 python3 icm20948_i2c_test.py -c
@@ -275,7 +275,7 @@ python3 icm20948_i2c_test.py --accel-fs 4 --gyro-fs 500
 ```
 
 **What to look for:**
-- `--scan` shows a device at `0x68` (confirmed on this robot's wiring; could be `0x69` on other hardware)
+- `--scan` shows a device at `0x69` (confirmed on this robot's wiring; could be `0x68` on other hardware)
 - WHO_AM_I reads back `0xEA` (ICM-20948) and, if testing the magnetometer, `0x09` (AK09916)
 - At rest: accel magnitude (√(x²+y²+z²)) is ~1g, split across axes depending on board tilt; gyro reads near 0dps on all axes
 - Temperature reads near room/board temperature

@@ -17,7 +17,7 @@ Jetson I2C wiring (Jetson.GPIO-style 40-pin header):
     GND  -> GND (pin 6/9/...)
     SDA  -> pin 3  (bus 7 on this robot's Jetson; varies by carrier board/model)
     SCL  -> pin 5
-    AD0  -> GND for address 0x68 (default), 3.3V for 0x69
+    AD0  -> 3.3V for address 0x69 (this robot), GND for 0x68
              Note: the actual address seen on the bus is what matters — some
              breakouts don't map AD0 the way you'd expect. Confirm with --scan.
     nCS  -> 3.3V (REQUIRED for I2C mode!)
@@ -27,15 +27,15 @@ Jetson I2C wiring (Jetson.GPIO-style 40-pin header):
     FSYNC -> GND (or leave unconnected if the breakout ties it off already;
              not used by this script, but floating inputs can be noisy)
 
-Defaults below (bus 7, address 0x68) match this robot's confirmed wiring.
+Defaults below (bus 7, address 0x69) match this robot's confirmed wiring.
 Use --scan-all if you're setting this up on different hardware.
 
 Usage:
-    python3 icm20948_i2c_test.py                       # single reading, bus 7, addr 0x68
+    python3 icm20948_i2c_test.py                       # single reading, bus 7, addr 0x69
     python3 icm20948_i2c_test.py --scan                 # i2cdetect-style bus scan
     python3 icm20948_i2c_test.py --scan-all             # check every /dev/i2c-* bus for the IMU
     python3 icm20948_i2c_test.py --list-buses            # show available /dev/i2c-* devices
-    python3 icm20948_i2c_test.py --bus 8 --addr 0x69     # different hardware/wiring
+    python3 icm20948_i2c_test.py --bus 8 --addr 0x68     # different hardware/wiring
     python3 icm20948_i2c_test.py -c                      # stream continuously (Ctrl+C to stop)
     python3 icm20948_i2c_test.py -c -n 20 -r 5           # 20 samples at ~5 Hz
     python3 icm20948_i2c_test.py --no-mag                # skip AK09916 magnetometer test
@@ -85,7 +85,7 @@ _MAG_UT_PER_LSB = 0.15  # AK09916 sensitivity
 class ICM20948:
     """Minimal ICM-20948 driver: bank switching, init, and raw sensor reads."""
 
-    def __init__(self, bus: int, addr: int = 0x68):
+    def __init__(self, bus: int, addr: int = 0x69):
         import smbus2
         self.bus_num = bus
         self.addr = addr
@@ -368,21 +368,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
-  python3 icm20948_i2c_test.py                    # single reading, bus 7, addr 0x68 (this robot)
+  python3 icm20948_i2c_test.py                    # single reading, bus 7, addr 0x69 (this robot)
   python3 icm20948_i2c_test.py --scan              # find the device's address on a bus
   python3 icm20948_i2c_test.py --scan-all          # not sure which bus? check all of them
   python3 icm20948_i2c_test.py --list-buses        # see which /dev/i2c-N exist
   python3 icm20948_i2c_test.py --jetson-io-status  # check header pinmux (jetson-io.py) state
   python3 icm20948_i2c_test.py -c -n 20 -r 5       # stream 20 samples at ~5 Hz
-  python3 icm20948_i2c_test.py --bus 8 --addr 0x69 # different hardware/wiring
+  python3 icm20948_i2c_test.py --bus 8 --addr 0x68 # different hardware/wiring
 """,
     )
     parser.add_argument("--bus", type=int, default=7,
         help="I2C bus number, i.e. /dev/i2c-N (default 7, confirmed on this robot's Jetson; "
              "varies by carrier board/model, use --scan-all if unsure)")
-    parser.add_argument("--addr", type=lambda s: int(s, 0), default=0x68,
-        help="I2C address (default 0x68, confirmed on this robot; try 0x69 if AD0 is tied high "
-             "and 0x68 doesn't respond)")
+    parser.add_argument("--addr", type=lambda s: int(s, 0), default=0x69,
+        help="I2C address (default 0x69, confirmed on this robot; try 0x68 if AD0 is tied low "
+             "and 0x69 doesn't respond)")
     parser.add_argument("--scan", action="store_true",
         help="Scan the bus for device addresses (like i2cdetect -y) and exit")
     parser.add_argument("--scan-all", action="store_true",
