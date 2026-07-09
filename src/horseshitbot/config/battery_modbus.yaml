@@ -1,0 +1,47 @@
+battery_modbus_node:
+  ros__parameters:
+    port: "/dev/ttyUSB0"
+    baudrate: 9600
+    slave_id: 1
+    channel: 1
+
+    read_period_sec: 1.0
+    serial_timeout_sec: 0.25
+
+    channel_base_register: 0
+    address_register: 14       # 0x000E
+    baudrate_register: 15      # 0x000F
+
+    # Usually raw / 100 = volts at ADC input.
+    raw_scale: 100.0
+
+    # ADC_voltage = real_battery_voltage * voltage_divider_factor.
+    #
+    # Final robot:
+    # voltage_divider_factor = 0.5
+    #
+    # So:
+    # battery_voltage = adc_voltage / 0.5 = adc_voltage * 2.
+    voltage_divider_factor: 0.5
+
+    # TODO: replace with real HSB battery thresholds.
+    # These are placeholders for a 24 V-class battery.
+    low_voltage: 22.0
+    critical_voltage: 21.0
+    critical_confirmations: 3
+
+    cmd_vel_topic: "/cmd_vel"
+
+    # Keep false during bench testing.
+    critical_action_enabled: false
+
+    # TODO: replace with the actual HSB motor-disable command/service call
+    # after checking the real motor interface.
+    #
+    # Example placeholder:
+    # disable_motors_command: "ros2 service call /motors/disable std_srvs/srv/Trigger {}"
+    disable_motors_command: ""
+
+    # Keep false until passwordless shutdown is configured and tested.
+    shutdown_enabled: false
+    shutdown_command: "sudo /sbin/shutdown -h now"
