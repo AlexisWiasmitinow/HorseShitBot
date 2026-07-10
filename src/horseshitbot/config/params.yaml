@@ -144,12 +144,22 @@ lidar_node:
   ros__parameters:
     port: "/dev/lidar"
     baud: 230400
-    auto_start: true
+    auto_start: false
     publish_hz: 5.0
     frame_id: "laser"
     range_min: 0.02
     range_max: 12.0
     scan_bins: 720
+
+imu_node:
+  ros__parameters:
+    bus: 7
+    address: 105
+    publish_hz: 50.0
+    frame_id: "imu_link"
+    accel_full_scale_g: 2
+    gyro_full_scale_dps: 250
+    use_magnetometer: true
 
 perception_recorder:
   ros__parameters:
@@ -172,5 +182,8 @@ mapping_recorder:
     default_topics:
       - "/scan"
       - "/odom"
+      - "/imu/data_raw"
+      - "/imu/mag"
+      - "/imu/temperature"
       - "/tf"
       - "/tf_static"

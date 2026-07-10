@@ -5,6 +5,7 @@ Arguments:
   enable_camera:=true/false   — enable/disable RealSense + bag recorder (default true)
   enable_mks:=true/false      — enable/disable MKS bus node (default true)
   enable_lidar:=true/false    — enable/disable lidar node (default true)
+  enable_imu:=true/false      — enable/disable ICM-20948 IMU node (default true)
 
 Example:
   ros2 launch horseshitbot robot_launch.py enable_camera:=false enable_mks:=false
@@ -30,7 +31,8 @@ def _launch_setup(context):
     enable_camera = LaunchConfiguration("enable_camera").perform(context).lower() == "true"
     enable_mks = LaunchConfiguration("enable_mks").perform(context).lower() == "true"
     enable_lidar = LaunchConfiguration("enable_lidar").perform(context).lower() == "true"
-
+    enable_imu = LaunchConfiguration("enable_imu").perform(context).lower() == "true"
+    
     nodes = []
 
     if enable_mks:
@@ -130,6 +132,33 @@ def _launch_setup(context):
         ),
     ]
 
+    if enable_imu:
+        nodes.append(Node(
+            package="horseshitbot",
+            executable="imu_node",
+            name="imu_node",
+            parameters=[params_file],
+            output="screen",
+        ))
+
+    # Bag recorders
+    nodes += [
+        Node(
+            package="horseshitbot",
+            executable="bag_recorder_node",
+            name="perception_recorder",
+            parameters=[params_file],
+            output="screen",
+        ),
+        Node(
+            package="horseshitbot",
+            executable="bag_recorder_node",
+            name="mapping_recorder",
+            parameters=[params_file],
+            output="screen",
+        ),
+    ]
+
     if enable_camera:
         from launch.actions import IncludeLaunchDescription
         rs_launch_dir = os.path.join(
@@ -161,6 +190,7 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_camera", default_value="true"),
         DeclareLaunchArgument("enable_mks", default_value="true"),
         DeclareLaunchArgument("enable_lidar", default_value="true"),
+        DeclareLaunchArgument("enable_imu", default_value="true"),
         DeclareLaunchArgument("params_file", default_value=""),
         OpaqueFunction(function=_launch_setup),
     ])

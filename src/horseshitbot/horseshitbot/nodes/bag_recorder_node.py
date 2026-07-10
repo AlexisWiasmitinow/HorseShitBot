@@ -47,6 +47,9 @@ _TOPIC_TYPE_MAP = {
     # Mapping — lidar + odometry
     "/scan": "sensor_msgs/msg/LaserScan",
     "/odom": "nav_msgs/msg/Odometry",
+    "/imu/data_raw": "sensor_msgs/msg/Imu",
+    "/imu/mag": "sensor_msgs/msg/MagneticField",
+    "/imu/temperature": "sensor_msgs/msg/Temperature",
     "/tf": "tf2_msgs/msg/TFMessage",
     "/tf_static": "tf2_msgs/msg/TFMessage",
     # Navigation
@@ -75,6 +78,9 @@ _TOPIC_GROUPS = {
     "Mapping": [
         "/scan",
         "/odom",
+        "/imu/data_raw",
+        "/imu/mag",
+        "/imu/temperature",
         "/tf",
         "/tf_static",
     ],

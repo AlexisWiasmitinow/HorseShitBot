@@ -42,6 +42,7 @@ setup(
             "bag_recorder_node = horseshitbot.nodes.bag_recorder_node:main",
             "yolo_detector_node = horseshitbot.nodes.yolo_detector_node:main",
             "lidar_node = horseshitbot.nodes.lidar_node:main",
+            "imu_node = horseshitbot.nodes.imu_node:main",
         ],
     },
 )
