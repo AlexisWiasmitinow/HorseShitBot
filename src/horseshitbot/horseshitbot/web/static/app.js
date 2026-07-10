@@ -310,33 +310,37 @@ function updateDashboard(data) {
     }
   }
 
+  updateMotionTelemetry(data);
   updateThermals(data.thermals || []);
 
-  // Lidar preview is controlled only by the preview button. The backend may
-  // keep the physical lidar node running for navigation, which must not reopen
-  // the UI preview after the operator has stopped it.
+  // Lidar
   const lidar = data.lidar || {};
   const lidarPts = data.lidar_points;
-  if (lidarScanning && Array.isArray(lidarPts)) {
+  if (lidarPts && Array.isArray(lidarPts) && lidarPts.length > 0) {
     lidarPoints = lidarPts;
   }
-
+  const lidarStatusEl = document.getElementById("lidar-status");
+  // The backend may keep the lidar sensor process alive. That must not open the
+  // browser preview: only the user's Start Preview button controls lidarScanning.
+  if (lidarStatusEl && !lidarScanning) {
+    lidarStatusEl.textContent = lidar.connected === false ? "Disconnected" : "Stopped";
+    lidarStatusEl.className = lidar.connected === false ? "lidar-status err" : "lidar-status";
+  }
   const statsEl = document.getElementById("lidar-stats");
   if (statsEl && lidar.connected != null) {
     const parts = [];
-    if (!lidar.connected) parts.push("Sensor disconnected");
+    if (!lidar.connected) parts.push("Disconnected");
     else {
-      parts.push("Sensor ready");
-      if (lidarScanning) parts.push(`${lidar.point_count || lidarPoints.length || 0} pts`);
+      parts.push(`${lidar.point_count || 0} pts`);
       if (lidar.firmware) parts.push(`fw ${lidar.firmware}`);
     }
     statsEl.textContent = parts.join(" · ");
   }
-
-  updateMotionPreview(data, leftMs, rightMs);
 }
 
-function _finiteNumber(...values) {
+// ─── Motion / IMU ─────────────────────────────────────────────────
+
+function _firstFinite(...values) {
   for (const value of values) {
     if (value == null || value === "") continue;
     const number = Number(value);
@@ -345,27 +349,18 @@ function _finiteNumber(...values) {
   return null;
 }
 
-function _getPath(source, path) {
-  let value = source;
-  for (const key of path) {
-    if (value == null || typeof value !== "object") return undefined;
-    value = value[key];
-  }
-  return value;
-}
-
-function _setMotionValue(id, value, digits = 2) {
+function _motionText(id, value, digits = 2) {
   const el = document.getElementById(id);
   if (!el) return;
   el.textContent = Number.isFinite(value) ? value.toFixed(digits) : "--";
 }
 
-function _quaternionToRollPitch(orientation) {
-  if (!orientation) return { roll: null, pitch: null };
-  const x = _finiteNumber(orientation.x, orientation.qx);
-  const y = _finiteNumber(orientation.y, orientation.qy);
-  const z = _finiteNumber(orientation.z, orientation.qz);
-  const w = _finiteNumber(orientation.w, orientation.qw);
+function _quaternionToRollPitch(q) {
+  if (!q) return { roll: null, pitch: null };
+  const x = _firstFinite(q.x, q[0]);
+  const y = _firstFinite(q.y, q[1]);
+  const z = _firstFinite(q.z, q[2]);
+  const w = _firstFinite(q.w, q[3]);
   if ([x, y, z, w].some(v => v == null)) return { roll: null, pitch: null };
 
   const sinrCosp = 2 * (w * x + y * z);
@@ -377,59 +372,42 @@ function _quaternionToRollPitch(orientation) {
   return { roll, pitch };
 }
 
-function updateMotionPreview(data, leftWheelMs, rightWheelMs) {
-  const imu = data.imu || data.imu_data || data.imu_status || data.imu_raw || {};
-  const odom = data.odom || data.odometry || data.robot_odom || {};
+function updateMotionTelemetry(data) {
+  const wheel = data.wheel_status || {};
+  const left = rpmToMs(wheel.left_rpm || 0);
+  const right = rpmToMs(wheel.right_rpm || 0);
+  const linearSpeed = (left + right) / 2;
 
-  const linearSpeed = _finiteNumber(
-    _getPath(odom, ["twist", "twist", "linear", "x"]),
-    _getPath(odom, ["twist", "linear", "x"]),
-    _getPath(odom, ["linear_velocity", "x"]),
-    odom.linear_speed,
-    data.linear_velocity,
-    (Number.isFinite(leftWheelMs) && Number.isFinite(rightWheelMs))
-      ? (leftWheelMs + rightWheelMs) / 2
-      : null
-  );
+  const imu = data.imu || data.imu_data || data.imu_status || {};
+  const angular = imu.angular_velocity || imu.gyro || imu.angular || {};
+  const accel = imu.linear_acceleration || imu.acceleration || imu.accel || {};
+  const orientation = imu.orientation || imu.quaternion || imu.q || null;
 
-  const angularVelocity = imu.angular_velocity || imu.gyro || imu.angular || {};
-  const linearAcceleration = imu.linear_acceleration || imu.acceleration || imu.accel || {};
-  const yawRate = _finiteNumber(
-    angularVelocity.z,
-    imu.gyro_z,
+  const yawRate = _firstFinite(
+    angular.z,
     imu.angular_velocity_z,
-    _getPath(odom, ["twist", "twist", "angular", "z"]),
-    _getPath(odom, ["twist", "angular", "z"]),
-    odom.angular_velocity
+    imu.gyro_z,
+    imu.yaw_rate
   );
-  const accelX = _finiteNumber(linearAcceleration.x, imu.accel_x, imu.linear_acceleration_x);
-  const accelY = _finiteNumber(linearAcceleration.y, imu.accel_y, imu.linear_acceleration_y);
+  const accelX = _firstFinite(accel.x, imu.accel_x, imu.linear_acceleration_x);
+  const accelY = _firstFinite(accel.y, imu.accel_y, imu.linear_acceleration_y);
 
-  const orientation = imu.orientation || imu.quaternion || imu.pose?.orientation || null;
-  const quaternionAngles = _quaternionToRollPitch(orientation);
-  const roll = _finiteNumber(
-    imu.roll_deg,
-    quaternionAngles.roll,
-    Number.isFinite(Number(imu.roll_rad)) ? Number(imu.roll_rad) * 180 / Math.PI : null
-  );
-  const pitch = _finiteNumber(
-    imu.pitch_deg,
-    quaternionAngles.pitch,
-    Number.isFinite(Number(imu.pitch_rad)) ? Number(imu.pitch_rad) * 180 / Math.PI : null
-  );
+  const converted = _quaternionToRollPitch(orientation);
+  const roll = _firstFinite(imu.roll, imu.roll_deg, converted.roll);
+  const pitch = _firstFinite(imu.pitch, imu.pitch_deg, converted.pitch);
 
-  _setMotionValue("motion-linear-speed", linearSpeed);
-  _setMotionValue("motion-yaw-rate", yawRate, 3);
-  _setMotionValue("imu-accel-x", accelX);
-  _setMotionValue("imu-accel-y", accelY);
-  _setMotionValue("imu-roll", roll, 1);
-  _setMotionValue("imu-pitch", pitch, 1);
+  _motionText("motion-linear-speed", linearSpeed);
+  _motionText("motion-yaw-rate", yawRate);
+  _motionText("motion-accel-x", accelX);
+  _motionText("motion-accel-y", accelY);
+  _motionText("motion-roll", roll, 1);
+  _motionText("motion-pitch", pitch, 1);
 
-  const imuLive = [yawRate, accelX, accelY, roll, pitch].some(Number.isFinite);
-  const status = document.getElementById("imu-preview-status");
-  if (status) {
-    status.textContent = imuLive ? "IMU live" : "Waiting for /imu/data_raw";
-    status.className = "motion-status" + (imuLive ? " live" : "");
+  const state = document.getElementById("imu-state");
+  if (state) {
+    const hasImu = [yawRate, accelX, accelY, roll, pitch].some(Number.isFinite);
+    state.textContent = hasImu ? "Live IMU data" : "Waiting for /imu/data_raw";
+    state.className = "motion-state" + (hasImu ? " ok" : "");
   }
 }
 
@@ -754,65 +732,34 @@ function toggleCamera() {
 const _bagTopicData = {};
 
 async function loadBagTopics() {
-  const profiles = ["perception", "mapping"];
-  for (const profile of profiles) {
-    const container = document.getElementById(`topic-groups-${profile}`);
-    if (container) container.innerHTML = '<div class="topic-load-state">Loading topics…</div>';
-  }
-
-  await Promise.all(profiles.map(async profile => {
+  for (const profile of ["perception", "mapping"]) {
     try {
       const resp = await fetch(`/api/bag-topics/${profile}`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
       _bagTopicData[profile] = await resp.json();
     } catch (e) {
       console.error(`Failed to load ${profile} bag topics:`, e);
-      _bagTopicData[profile] = { _error: e.message };
     }
-    renderTopicPicker(profile);
-  }));
-}
-
-function _normaliseTopicGroups(data) {
-  const raw = data.topic_groups ?? data.groups ?? data.available_topics ?? data.topics ?? {};
-  if (Array.isArray(raw)) return { Topics: raw };
-  if (!raw || typeof raw !== "object") return {};
-
-  const groups = {};
-  for (const [name, value] of Object.entries(raw)) {
-    if (Array.isArray(value)) groups[name] = value;
-    else if (typeof value === "string") groups[name] = [value];
-    else if (value && Array.isArray(value.topics)) groups[name] = value.topics;
   }
-  return groups;
+  renderTopicPicker("perception");
+  renderTopicPicker("mapping");
 }
 
 function renderTopicPicker(profile) {
   const container = document.getElementById(`topic-groups-${profile}`);
   const hint = document.getElementById(`topic-picker-hint-${profile}`);
   const data = _bagTopicData[profile];
-  if (!container) return;
+  if (!container || !data) return;
 
-  if (!data) {
-    container.innerHTML = '<div class="topic-load-state">Loading topics…</div>';
-    return;
+  const groups = data.topic_groups || {};
+  const selected = data.selected_topics || [];
+  const recording = data.recording;
+
+  if (hint) {
+    hint.textContent = recording ? "(locked while recording)" : "";
   }
-  if (data._error) {
-    container.innerHTML = `<div class="topic-load-state error">Could not load topics: ${data._error}</div>`;
-    return;
-  }
 
-  const groups = _normaliseTopicGroups(data);
-  const selected = data.selected_topics || data.selected || data.enabled_topics || [];
-  const recording = Boolean(data.recording);
-
-  if (hint) hint.textContent = recording ? "Locked while recording" : "";
-
-  if (Object.keys(groups).length === 0 && selected.length > 0) groups.Selected = selected;
-  if (Object.keys(groups).length === 0) {
-    container.innerHTML = '<div class="topic-load-state error">No topics were returned by the recorder API.</div>';
-    return;
-  }
+  closeTopicChecklist(profile);
 
   container.innerHTML = "";
   for (const [groupName, topics] of Object.entries(groups)) {
@@ -824,29 +771,20 @@ function renderTopicPicker(profile) {
     label.textContent = groupName;
     group.appendChild(label);
 
-    for (const topicValue of topics) {
-      const topic = typeof topicValue === "string"
-        ? topicValue
-        : (topicValue?.name || topicValue?.topic || "");
-      if (!topic) continue;
-
+    for (const topic of topics) {
       const lbl = document.createElement("label");
       lbl.className = "topic-cb-label";
-      lbl.dataset.topic = topic;
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.value = topic;
-      cb.checked = selected.includes(topic) || Boolean(topicValue?.selected);
+      cb.checked = selected.includes(topic);
       cb.disabled = recording;
       cb.className = "topic-cb";
       lbl.appendChild(cb);
-
       const span = document.createElement("span");
-      span.textContent = topic.split("/").filter(Boolean).pop() || topic;
+      span.textContent = topic.split("/").pop();
       span.title = topic;
       lbl.appendChild(span);
-
-
       group.appendChild(lbl);
     }
     container.appendChild(group);
@@ -869,6 +807,7 @@ async function saveBagTopics(profile) {
     const result = await resp.json();
     if (result.success) {
       showTopicMsg(profile, `Applied ${topics.length} topic(s). Takes effect on next recording.`, "ok");
+      closeTopicChecklist(profile);
     } else {
       showTopicMsg(profile, result.error || "Failed", "err");
     }
@@ -886,203 +825,243 @@ function showTopicMsg(profile, text, type) {
   el._timer = setTimeout(() => { el.textContent = ""; el.className = "ctrl-msg"; }, 4000);
 }
 
-// ─── Recordings ──────────────────────────────────────────────────
+// ─── Recorded bags ───────────────────────────────────────────────
 
 let bagsData = null;
-let bagsAutoRefresh = null;
+let bagsLoading = false;
 
 async function loadBags() {
+  if (bagsLoading) return;
+  bagsLoading = true;
+
   const loading = document.getElementById("bags-loading");
-  const empty = document.getElementById("bags-empty");
-  const isInitialLoad = !bagsData;
+  const refresh = document.getElementById("bags-refresh");
   if (loading) {
-    loading.style.display = isInitialLoad ? "" : "none";
-    loading.textContent = "Loading...";
+    loading.style.display = "";
+    loading.textContent = bagsData ? "Refreshing recordings..." : "Loading recordings...";
   }
+  if (refresh) refresh.disabled = true;
+
   try {
-    const resp = await fetch("/api/bags");
+    const resp = await fetch("/api/bags", { cache: "no-store" });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     bagsData = await resp.json();
     renderBags();
+
+    const updated = document.getElementById("bags-last-updated");
+    if (updated) {
+      updated.textContent = "Last refreshed " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
     if (loading) loading.style.display = "none";
   } catch (e) {
     console.error("Failed to load bags:", e);
-    if (loading) loading.textContent = "Failed to load: " + e.message;
+    if (loading) {
+      loading.style.display = "";
+      loading.textContent = "Failed to load recordings: " + e.message;
+    }
+  } finally {
+    bagsLoading = false;
+    if (refresh) refresh.disabled = false;
   }
 }
 
 function formatBytes(bytes) {
-  const safeBytes = Number(bytes) || 0;
-  if (safeBytes === 0) return "0 B";
+  const numeric = Number(bytes || 0);
+  if (numeric === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(Math.floor(Math.log(safeBytes) / Math.log(1024)), units.length - 1);
-  const val = safeBytes / Math.pow(1024, i);
+  const i = Math.min(Math.floor(Math.log(numeric) / Math.log(1024)), units.length - 1);
+  const val = numeric / Math.pow(1024, i);
   return val.toFixed(i === 0 ? 0 : 1) + " " + units[i];
 }
 
-function _bagDateValue(bag) {
-  const value = bag.modified || bag.created || bag.date || bag.timestamp || 0;
-  const parsed = new Date(value).getTime();
-  return Number.isFinite(parsed) ? parsed : 0;
+function bagTimestamp(bag) {
+  const raw = bag.modified || bag.created || bag.date || bag.timestamp || 0;
+  const timestamp = new Date(raw).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function formatDate(isoStr) {
-  try {
-    const d = new Date(isoStr);
-    if (Number.isNaN(d.getTime())) return isoStr || "--";
-    return d.toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return isoStr || "--";
+function bagDateKey(bag) {
+  const timestamp = bagTimestamp(bag);
+  if (!timestamp) return "unknown";
+  const d = new Date(timestamp);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatBagDateHeading(key) {
+  if (key === "unknown") return "Unknown date";
+  const d = new Date(key + "T12:00:00");
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatBagTime(bag) {
+  const timestamp = bagTimestamp(bag);
+  if (!timestamp) return "--:--";
+  return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function inferBagProfile(bag) {
+  const explicit = String(bag.profile || bag.type || bag.category || "").toLowerCase();
+  const name = String(bag.name || "").toLowerCase();
+  const text = `${explicit} ${name}`;
+  if (/perception|camera|color|depth|image/.test(text)) return "perception";
+  if (/mapping|map_|map-|lidar|scan|odom|imu|slam|navigation/.test(text)) return "mapping";
+  return "other";
+}
+
+function renderBags() {
+  if (!bagsData) return;
+
+  const allBags = Array.isArray(bagsData.bags) ? bagsData.bags.slice() : [];
+  const dateFilter = document.getElementById("bags-date-filter")?.value || "";
+  const direction = document.getElementById("bags-sort")?.value === "asc" ? 1 : -1;
+  const filtered = allBags
+    .filter(bag => !dateFilter || bagDateKey(bag) === dateFilter)
+    .sort((a, b) => direction * (bagTimestamp(a) - bagTimestamp(b)));
+
+  const summary = document.getElementById("bags-summary");
+  if (summary) {
+    const visibleText = dateFilter ? `${filtered.length} shown of ${allBags.length}` : `${allBags.length} recording${allBags.length === 1 ? "" : "s"}`;
+    summary.textContent = `${visibleText} · ${formatBytes(bagsData.total_bytes)}`;
+  }
+
+  renderDiskUsage();
+
+  const buckets = { perception: [], mapping: [], other: [] };
+  for (const bag of filtered) buckets[inferBagProfile(bag)].push(bag);
+
+  renderBagProfile("perception", buckets.perception);
+  renderBagProfile("mapping", buckets.mapping);
+  renderBagProfile("other", buckets.other);
+
+  const otherCard = document.getElementById("bags-other-card");
+  if (otherCard) otherCard.style.display = buckets.other.length ? "" : "none";
+
+  const grid = document.getElementById("bags-profile-grid");
+  const empty = document.getElementById("bags-empty");
+  if (filtered.length) {
+    if (grid) grid.style.display = "grid";
+    if (empty) empty.style.display = "none";
+  } else {
+    if (grid) grid.style.display = "none";
+    if (empty) empty.style.display = "";
   }
 }
 
-function _bagProfile(bag) {
-  const explicit = String(bag.profile || bag.type || bag.category || "").toLowerCase();
-  const name = String(bag.name || "").toLowerCase();
-  if (explicit.includes("perception") || name.startsWith("perception") || name.includes("_perception")) return "perception";
-  if (explicit.includes("mapping") || name.startsWith("mapping") || name.includes("_mapping")) return "mapping";
+function renderDiskUsage() {
+  const diskWrap = document.getElementById("disk-bar-wrap");
+  if (!diskWrap || !bagsData?.disk_total) return;
 
-  const topics = Array.isArray(bag.topics) ? bag.topics.join(" ").toLowerCase() : "";
-  if (/camera|image_raw|depth/.test(topics)) return "perception";
-  if (/scan|odom|\/tf|imu/.test(topics)) return "mapping";
-  return "mapping";
+  diskWrap.style.display = "";
+  const total = Number(bagsData.disk_total || 0);
+  const free = Number(bagsData.disk_free || 0);
+  const used = Number(bagsData.disk_used || Math.max(0, total - free));
+  const bagBytes = Number(bagsData.total_bytes || 0);
+  const otherUsed = Math.max(0, used - bagBytes);
+
+  const pctBags = total ? (bagBytes / total) * 100 : 0;
+  const pctOther = total ? (otherUsed / total) * 100 : 0;
+  const bagsBar = document.getElementById("disk-bar-bags");
+  const otherBar = document.getElementById("disk-bar-other");
+  if (bagsBar) bagsBar.style.width = pctBags + "%";
+  if (otherBar) otherBar.style.width = pctOther + "%";
+  setText("disk-label-used", `Bags: ${formatBytes(bagBytes)} · Other: ${formatBytes(otherUsed)} · Total: ${formatBytes(total)}`);
+  setText("disk-label-free", `${formatBytes(free)} free`);
 }
 
-function _bagDateObject(bag) {
-  const value = bag.modified || bag.created || bag.date || bag.timestamp;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function _localDateKey(date) {
-  if (!date) return "unknown";
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function _formatBagDay(date) {
-  if (!date) return "Unknown date";
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const key = _localDateKey(date);
-  const prefix = key === _localDateKey(today)
-    ? "Today"
-    : key === _localDateKey(yesterday)
-      ? "Yesterday"
-      : date.toLocaleDateString(undefined, { weekday: "long" });
-  return `${prefix}, ${date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  })}`;
-}
-
-function _formatBagTime(bag) {
-  const date = _bagDateObject(bag);
-  return date
-    ? date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-    : "--";
-}
-
-function _createBagTableRow(bag) {
-  const tr = document.createElement("tr");
-
-  const tdTime = document.createElement("td");
-  tdTime.className = "bag-time";
-  tdTime.textContent = _formatBagTime(bag);
-  tr.appendChild(tdTime);
-
-  const tdName = document.createElement("td");
-  tdName.className = "bag-name";
-  tdName.textContent = bag.name || "Unnamed recording";
-  tdName.title = bag.name || "";
-  tr.appendChild(tdName);
-
-  const tdSize = document.createElement("td");
-  tdSize.textContent = formatBytes(bag.size_bytes);
-  tr.appendChild(tdSize);
-
-  const tdFiles = document.createElement("td");
-  tdFiles.className = "bag-files";
-  const files = bag.files || [];
-  const exts = [...new Set(files.map(f => f.includes(".") ? "." + f.split(".").pop() : f))];
-  tdFiles.textContent = `${files.length} files${exts.length ? ` (${exts.join(", ")})` : ""}`;
-  tr.appendChild(tdFiles);
-
-  const tdActions = document.createElement("td");
-  tdActions.className = "bag-actions";
-
-  const dlBtn = document.createElement("a");
-  dlBtn.href = `/api/bags/${encodeURIComponent(bag.name)}/download`;
-  dlBtn.className = "bag-dl";
-  dlBtn.textContent = "Download";
-  dlBtn.setAttribute("download", "");
-  tdActions.appendChild(dlBtn);
-
-  const delBtn = document.createElement("button");
-  delBtn.className = "danger bag-del";
-  delBtn.textContent = "Delete";
-  delBtn.onclick = () => deleteBag(bag.name);
-  tdActions.appendChild(delBtn);
-
-  tr.appendChild(tdActions);
-  return tr;
-}
-
-function _renderBagRows(profile, bags) {
-  const container = document.getElementById(`bags-list-${profile}`);
-  const empty = document.getElementById(`bags-empty-${profile}`);
+function renderBagProfile(profile, bags) {
+  const container = document.getElementById(`bags-${profile}`);
   const count = document.getElementById(`bags-count-${profile}`);
-  if (!container || !empty) return;
+  if (!container) return;
 
+  if (count) count.textContent = `${bags.length} recording${bags.length === 1 ? "" : "s"}`;
   container.innerHTML = "";
-  const label = `${bags.length} recording${bags.length === 1 ? "" : "s"}`;
-  if (count) count.textContent = label;
-  empty.style.display = bags.length ? "none" : "block";
-  if (!bags.length) return;
+
+  if (!bags.length) {
+    const empty = document.createElement("div");
+    empty.className = "bag-profile-empty";
+    empty.textContent = "No recordings for this date.";
+    container.appendChild(empty);
+    return;
+  }
 
   const groups = new Map();
   for (const bag of bags) {
-    const date = _bagDateObject(bag);
-    const key = _localDateKey(date);
-    if (!groups.has(key)) groups.set(key, { date, bags: [] });
-    groups.get(key).bags.push(bag);
+    const key = bagDateKey(bag);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(bag);
   }
 
-  for (const { date, bags: dayBags } of groups.values()) {
-    const section = document.createElement("section");
-    section.className = "bag-date-section";
+  for (const [dateKey, dateBags] of groups) {
+    const group = document.createElement("section");
+    group.className = "bag-date-group";
 
     const heading = document.createElement("div");
     heading.className = "bag-date-heading";
-    const title = document.createElement("h4");
-    title.textContent = _formatBagDay(date);
-    const dayCount = document.createElement("span");
-    dayCount.textContent = `${dayBags.length} bag${dayBags.length === 1 ? "" : "s"}`;
-    heading.append(title, dayCount);
+    const date = document.createElement("span");
+    date.textContent = formatBagDateHeading(dateKey);
+    const amount = document.createElement("span");
+    amount.textContent = `${dateBags.length} bag${dateBags.length === 1 ? "" : "s"}`;
+    heading.append(date, amount);
+    group.appendChild(heading);
 
-    const shell = document.createElement("div");
-    shell.className = "table-shell";
     const table = document.createElement("table");
-    table.className = "bags-table dated-bags-table";
-    table.innerHTML = '<thead><tr><th>Time</th><th>Name</th><th>Size</th><th>Files</th><th></th></tr></thead>';
+    table.className = "bag-date-table";
     const tbody = document.createElement("tbody");
-    for (const bag of dayBags) tbody.appendChild(_createBagTableRow(bag));
+    for (const bag of dateBags) tbody.appendChild(buildBagRow(bag));
     table.appendChild(tbody);
-    shell.appendChild(table);
-
-    section.append(heading, shell);
-    container.appendChild(section);
+    group.appendChild(table);
+    container.appendChild(group);
   }
+}
+
+function buildBagRow(bag) {
+  const tr = document.createElement("tr");
+
+  const nameCell = document.createElement("td");
+  nameCell.className = "bag-name-cell";
+  const name = document.createElement("span");
+  name.className = "bag-name";
+  name.textContent = bag.name || "Unnamed recording";
+  name.title = bag.name || "";
+  const time = document.createElement("span");
+  time.className = "bag-time";
+  time.textContent = formatBagTime(bag);
+  nameCell.append(name, time);
+
+  const metaCell = document.createElement("td");
+  metaCell.className = "bag-meta-cell";
+  const fileCount = Array.isArray(bag.files) ? bag.files.length : 0;
+  metaCell.textContent = `${formatBytes(bag.size_bytes)} · ${fileCount} file${fileCount === 1 ? "" : "s"}`;
+
+  const actionCell = document.createElement("td");
+  actionCell.className = "bag-action-cell";
+  const actions = document.createElement("div");
+  actions.className = "bag-actions";
+
+  const download = document.createElement("a");
+  download.href = `/api/bags/${encodeURIComponent(bag.name)}/download`;
+  download.className = "bag-dl";
+  download.textContent = "Download";
+  download.setAttribute("download", "");
+
+  const remove = document.createElement("button");
+  remove.className = "danger bag-del";
+  remove.type = "button";
+  remove.textContent = "Delete";
+  remove.onclick = () => deleteBag(bag.name);
+
+  actions.append(download, remove);
+  actionCell.appendChild(actions);
+  tr.append(nameCell, metaCell, actionCell);
+  return tr;
 }
 
 function clearBagDateFilter() {
@@ -1091,85 +1070,19 @@ function clearBagDateFilter() {
   renderBags();
 }
 
-function renderBags() {
-  if (!bagsData) return;
-  const summary = document.getElementById("bags-summary");
-  const allBags = [...(bagsData.bags || [])];
-  const selectedDate = document.getElementById("bags-date-filter")?.value || "";
-  const clearButton = document.getElementById("bags-clear-date");
-  if (clearButton) clearButton.disabled = !selectedDate;
-
-  const sortDirection = document.getElementById("bags-sort")?.value || "desc";
-  allBags.sort((a, b) => sortDirection === "asc"
-    ? _bagDateValue(a) - _bagDateValue(b)
-    : _bagDateValue(b) - _bagDateValue(a));
-
-  const bags = selectedDate
-    ? allBags.filter(bag => _localDateKey(_bagDateObject(bag)) === selectedDate)
-    : allBags;
-
-  if (summary) {
-    const filteredText = selectedDate ? `${bags.length} of ${allBags.length}` : `${bags.length}`;
-    const visibleBytes = bags.reduce((sum, bag) => sum + (Number(bag.size_bytes) || 0), 0);
-    summary.textContent = `${filteredText} recording${bags.length === 1 ? "" : "s"} · ${formatBytes(visibleBytes)}`;
-  }
-
-  const diskWrap = document.getElementById("disk-bar-wrap");
-  if (diskWrap && bagsData.disk_total) {
-    diskWrap.style.display = "";
-    const total = Number(bagsData.disk_total) || 1;
-    const free = Number(bagsData.disk_free) || 0;
-    const used = Number(bagsData.disk_used) || 0;
-    const bagBytes = Number(bagsData.total_bytes) || 0;
-    const otherUsed = Math.max(0, used - bagBytes);
-
-    document.getElementById("disk-bar-bags").style.width = Math.max(0.5, (bagBytes / total) * 100) + "%";
-    document.getElementById("disk-bar-other").style.width = Math.max(0.5, (otherUsed / total) * 100) + "%";
-    document.getElementById("disk-label-used").textContent =
-      `Bags: ${formatBytes(bagBytes)} · Other: ${formatBytes(otherUsed)} · Total: ${formatBytes(total)}`;
-    document.getElementById("disk-label-free").textContent = `${formatBytes(free)} free`;
-  } else if (diskWrap) {
-    diskWrap.style.display = "none";
-  }
-
-  const perception = bags.filter(bag => _bagProfile(bag) === "perception");
-  const mapping = bags.filter(bag => _bagProfile(bag) === "mapping");
-  _renderBagRows("perception", perception);
-  _renderBagRows("mapping", mapping);
-
-  const globalEmpty = document.getElementById("bags-empty");
-  if (globalEmpty) {
-    globalEmpty.style.display = bags.length ? "none" : "block";
-    globalEmpty.textContent = selectedDate
-      ? "No recordings were found on the selected date."
-      : "No recordings found.";
-  }
-}
-
 async function deleteBag(name) {
-  if (!confirm(`Delete recording "${name}"?\nThis cannot be undone.`)) return;
+  if (!confirm(`Delete recording "${name}"?
+This cannot be undone.`)) return;
   try {
     const resp = await fetch(`/api/bags/${encodeURIComponent(name)}`, { method: "DELETE" });
     const result = await resp.json();
     if (result.success || resp.ok) {
-      loadBags();
+      await loadBags();
     } else {
       alert("Delete failed: " + (result.error || "unknown error"));
     }
   } catch (e) {
     alert("Network error: " + e.message);
-  }
-}
-
-function startBagsAutoRefresh() {
-  if (bagsAutoRefresh) return;
-  bagsAutoRefresh = setInterval(loadBags, 3000);
-}
-
-function stopBagsAutoRefresh() {
-  if (bagsAutoRefresh) {
-    clearInterval(bagsAutoRefresh);
-    bagsAutoRefresh = null;
   }
 }
 
@@ -1625,79 +1538,36 @@ let lidarScanning = false;
 let lidarPoints = [];
 let lidarAnimFrame = null;
 
-let lidarRequestPending = false;
-
-function _setLidarPreviewUi(active, message = active ? "Previewing" : "Stopped", error = false) {
-  const toggle = document.getElementById("lidar-toggle");
-  const status = document.getElementById("lidar-status");
-  if (toggle) {
-    toggle.innerHTML = active
-      ? '<span class="button-play">■</span> Stop Preview'
-      : '<span class="button-play">▶</span> Start Preview';
-    toggle.className = (active ? "danger" : "primary") + " compact";
-    toggle.disabled = lidarRequestPending;
-  }
-  if (status) {
-    status.textContent = message;
-    status.className = "lidar-status" + (error ? " err" : active ? " ok" : "");
-  }
-}
-
 async function startLidar() {
-  if (lidarScanning || lidarRequestPending) return;
-  lidarRequestPending = true;
-  _setLidarPreviewUi(false, "Starting...");
-
   try {
     const resp = await fetch("/api/lidar/start", { method: "POST" });
-    const text = await resp.text();
-    let result = {};
-    try { result = text ? JSON.parse(text) : {}; } catch { result = {}; }
-    if (!resp.ok || result.success === false) {
-      throw new Error(result.message || `HTTP ${resp.status}`);
+    const r = await resp.json();
+    if (!r.success) {
+      const el = document.getElementById("lidar-status");
+      if (el) { el.textContent = r.message || "Failed"; el.className = "lidar-status err"; }
+      return;
     }
+  } catch (e) { console.error("Lidar start failed:", e); return; }
 
-    lidarScanning = true;
-    lidarPoints = [];
-    _setLidarPreviewUi(true, "Previewing");
-    if (!lidarAnimFrame) lidarAnimFrame = requestAnimationFrame(drawLidar);
-  } catch (e) {
-    lidarScanning = false;
-    lidarPoints = [];
-    _setLidarPreviewUi(false, e.message || "Failed to start", true);
-    drawLidar();
-  } finally {
-    lidarRequestPending = false;
-    const toggle = document.getElementById("lidar-toggle");
-    if (toggle) toggle.disabled = false;
-  }
+  lidarScanning = true;
+  document.getElementById("lidar-toggle").innerHTML = '<span class="button-play">■</span> Stop Preview';
+  document.getElementById("lidar-toggle").className = "danger compact";
+  const el = document.getElementById("lidar-status");
+  if (el) { el.textContent = "Scanning"; el.className = "lidar-status ok"; }
+  if (!lidarAnimFrame) lidarAnimFrame = requestAnimationFrame(drawLidar);
 }
 
 async function stopLidar() {
-  if (lidarRequestPending) return;
+  try { await fetch("/api/lidar/stop", { method: "POST" }); } catch (e) { /* ignore */ }
 
-  // Stop the UI immediately. WebSocket lidar.scanning status is deliberately
-  // ignored, so the preview cannot turn itself back on.
   lidarScanning = false;
   lidarPoints = [];
-  if (lidarAnimFrame) {
-    cancelAnimationFrame(lidarAnimFrame);
-    lidarAnimFrame = null;
-  }
-  _setLidarPreviewUi(false, "Stopped");
+  document.getElementById("lidar-toggle").innerHTML = '<span class="button-play">▶</span> Start Preview';
+  document.getElementById("lidar-toggle").className = "primary compact";
+  const el = document.getElementById("lidar-status");
+  if (el) { el.textContent = "Stopped"; el.className = "lidar-status"; }
+  if (lidarAnimFrame) { cancelAnimationFrame(lidarAnimFrame); lidarAnimFrame = null; }
   drawLidar();
-
-  lidarRequestPending = true;
-  const toggle = document.getElementById("lidar-toggle");
-  if (toggle) toggle.disabled = true;
-  try {
-    await fetch("/api/lidar/stop", { method: "POST" });
-  } catch (e) {
-    console.warn("Lidar stop request failed; preview remains stopped:", e);
-  } finally {
-    lidarRequestPending = false;
-    if (toggle) toggle.disabled = false;
-  }
 }
 
 function toggleLidar() {
@@ -1813,7 +1683,7 @@ const PAGE_META = {
   recordings: {
     title: "Recordings",
     subtitle: "Configure topics, preview sensors, and record data",
-    icon: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/>'
+    icon: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>'
   },
   "recorded-bags": {
     title: "Recorded Bags",
@@ -1850,98 +1720,125 @@ function initTabs() {
       document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
       document.getElementById("tab-" + tabName)?.classList.add("active");
       updatePageHeading(tabName);
-      if (window.matchMedia("(max-width: 900px)").matches) closeMobileSidebar();
+      closeTopicChecklists();
 
       if (tabName === "recordings") {
         loadBagTopics();
         drawLidar();
       }
 
-      if (tabName === "recorded-bags") {
-        if (bagsData) renderBags();
-        else loadBags();
-        stopBagsAutoRefresh();
-      } else {
-        stopBagsAutoRefresh();
-      }
+      // Recorded bags refresh only when the page is opened or Refresh is pressed.
+      // There is intentionally no timer, so the list never jumps every few seconds.
+      if (tabName === "recorded-bags" && !bagsData) loadBags();
 
       if (tabName === "network") loadNetwork();
-      if (tabName !== "recordings") {
-        if (camStreaming) stopCamera();
-        if (lidarScanning) stopLidar();
-      }
+      if (tabName !== "recordings" && camStreaming) stopCamera();
+      if (window.matchMedia("(max-width: 900px)").matches) closeSidebar();
     });
   });
 }
 
+function closeTopicChecklist(profile) {
+  const checklist = document.querySelector(`.topic-checklist[data-topic-profile="${profile}"]`);
+  if (!checklist) return;
+  const trigger = checklist.querySelector(".topic-checklist-trigger");
+  const panel = checklist.querySelector(".topic-checklist-body");
+  checklist.classList.remove("is-open");
+  if (trigger) trigger.setAttribute("aria-expanded", "false");
+  if (panel) panel.hidden = true;
+}
 
-// ─── Collapsible navigation and floating topic menus ─────────────
+function closeTopicChecklists(exceptProfile = null) {
+  document.querySelectorAll(".topic-checklist[data-topic-profile]").forEach(checklist => {
+    const profile = checklist.dataset.topicProfile;
+    if (profile !== exceptProfile) closeTopicChecklist(profile);
+  });
+}
 
-const _sidebarMedia = window.matchMedia("(max-width: 900px)");
+function toggleTopicChecklist(profile) {
+  const checklist = document.querySelector(`.topic-checklist[data-topic-profile="${profile}"]`);
+  if (!checklist) return;
+  const trigger = checklist.querySelector(".topic-checklist-trigger");
+  const panel = checklist.querySelector(".topic-checklist-body");
+  if (!trigger || !panel) return;
 
-function updateSidebarAria() {
+  const shouldOpen = panel.hidden;
+  closeTopicChecklists(profile);
+  checklist.classList.toggle("is-open", shouldOpen);
+  trigger.setAttribute("aria-expanded", String(shouldOpen));
+  panel.hidden = !shouldOpen;
+}
+
+function initTopicChecklists() {
+  document.querySelectorAll(".topic-checklist[data-topic-profile]").forEach(checklist => {
+    const profile = checklist.dataset.topicProfile;
+    closeTopicChecklist(profile);
+    const trigger = checklist.querySelector(".topic-checklist-trigger");
+    trigger?.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleTopicChecklist(profile);
+    });
+  });
+
+  document.addEventListener("click", event => {
+    if (!event.target.closest(".topic-checklist")) closeTopicChecklists();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeTopicChecklists();
+  });
+}
+
+function syncSidebarAria() {
   const toggle = document.getElementById("sidebar-toggle");
   if (!toggle) return;
-  const expanded = _sidebarMedia.matches
+  const mobile = window.matchMedia("(max-width: 900px)").matches;
+  const expanded = mobile
     ? document.body.classList.contains("sidebar-open")
     : !document.body.classList.contains("sidebar-collapsed");
   toggle.setAttribute("aria-expanded", String(expanded));
 }
 
-function closeMobileSidebar() {
+function closeSidebar() {
   document.body.classList.remove("sidebar-open");
-  updateSidebarAria();
+  syncSidebarAria();
 }
 
 function toggleSidebar() {
-  if (_sidebarMedia.matches) {
+  const mobile = window.matchMedia("(max-width: 900px)").matches;
+  if (mobile) {
     document.body.classList.toggle("sidebar-open");
   } else {
     document.body.classList.toggle("sidebar-collapsed");
+    try {
+      localStorage.setItem("hsb-sidebar-collapsed", document.body.classList.contains("sidebar-collapsed") ? "1" : "0");
+    } catch (_) { /* storage is optional */ }
   }
-  updateSidebarAria();
-}
-
-function syncSidebarMode() {
-  if (_sidebarMedia.matches) {
-    document.body.classList.remove("sidebar-collapsed");
-    document.body.classList.remove("sidebar-open");
-  } else {
-    document.body.classList.remove("sidebar-open");
-  }
-  updateSidebarAria();
+  syncSidebarAria();
 }
 
 function initSidebar() {
-  document.getElementById("sidebar-toggle")?.addEventListener("click", toggleSidebar);
-  document.getElementById("sidebar-backdrop")?.addEventListener("click", closeMobileSidebar);
-  _sidebarMedia.addEventListener?.("change", syncSidebarMode);
-  document.addEventListener("keydown", event => {
-    if (event.key === "Escape") {
-      closeMobileSidebar();
-      document.querySelectorAll(".topic-checklist[open]").forEach(menu => { menu.open = false; });
-    }
-  });
-  syncSidebarMode();
-}
+  const toggle = document.getElementById("sidebar-toggle");
+  const close = document.getElementById("sidebar-close");
+  const backdrop = document.getElementById("sidebar-backdrop");
 
-function initTopicDropdowns() {
-  const menus = Array.from(document.querySelectorAll(".topic-checklist"));
-  for (const menu of menus) {
-    menu.open = false;
-    menu.addEventListener("toggle", () => {
-      if (!menu.open) return;
-      for (const other of menus) {
-        if (other !== menu) other.open = false;
-      }
-    });
+  if (!window.matchMedia("(max-width: 900px)").matches) {
+    try {
+      document.body.classList.toggle("sidebar-collapsed", localStorage.getItem("hsb-sidebar-collapsed") === "1");
+    } catch (_) { /* storage is optional */ }
   }
 
-  document.addEventListener("pointerdown", event => {
-    for (const menu of menus) {
-      if (menu.open && !menu.contains(event.target)) menu.open = false;
+  toggle?.addEventListener("click", toggleSidebar);
+  close?.addEventListener("click", closeSidebar);
+  backdrop?.addEventListener("click", closeSidebar);
+
+  window.addEventListener("resize", () => {
+    if (!window.matchMedia("(max-width: 900px)").matches) {
+      document.body.classList.remove("sidebar-open");
     }
+    syncSidebarAria();
   });
+  syncSidebarAria();
 }
 
 // ─── Gamepad Bluetooth Reconnect ─────────────────────────────────
@@ -2106,9 +2003,9 @@ async function pollBtGamepad() {
   } catch (e) { /* ignore */ }
 }
 
-initTabs();
 initSidebar();
-initTopicDropdowns();
+initTopicChecklists();
+initTabs();
 connectWs();
 loadCtrlConfig();
 pollBtGamepad();

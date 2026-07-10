@@ -14,10 +14,13 @@
         <div class="brand-mark">
           <img src="/static/favicon.png" alt="HorseShitBot">
         </div>
-        <div>
+        <div class="brand-copy">
           <div class="brand-name">HorseShitBot</div>
           <div class="brand-subtitle">Robot Control</div>
         </div>
+        <button id="sidebar-close" class="sidebar-close" type="button" aria-label="Close navigation" title="Close navigation">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
       </div>
 
       <nav class="tabs sidebar-nav" aria-label="Main navigation">
@@ -29,7 +32,7 @@
         </button>
         <button class="tab" data-tab="recordings" type="button">
           <span class="nav-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
           </span>
           <span>Recordings</span>
         </button>
@@ -77,9 +80,13 @@
         </div>
       </div>
     </aside>
+    <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="Close navigation"></button>
 
     <main class="app-main">
       <header class="topbar">
+        <button id="sidebar-toggle" class="menu-button" type="button" aria-label="Toggle navigation" aria-expanded="true" title="Toggle navigation">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
         <div class="page-heading">
           <span class="page-heading-icon" aria-hidden="true">
             <svg id="page-heading-svg" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -244,7 +251,11 @@
         <!-- Recordings -->
         <section id="tab-recordings" class="tab-content">
           <div class="recordings-page">
-            <section class="recording-section" aria-label="Perception recording workspace">
+            <section class="recording-section" aria-labelledby="perception-heading">
+              <div class="recording-section-heading">
+                <span class="section-number">1</span>
+                <h2 id="perception-heading">Perception</h2>
+              </div>
 
               <div class="recording-layout">
                 <article class="recording-panel preview-panel">
@@ -319,16 +330,19 @@
                     </button>
                   </div>
 
-                  <details class="topic-checklist" open>
-                    <summary><span>Topic checklist</span><span class="topic-picker-hint" id="topic-picker-hint-perception"></span></summary>
-                    <div class="topic-checklist-body">
+                  <div class="topic-checklist" data-topic-profile="perception">
+                    <button class="topic-checklist-trigger" type="button" aria-expanded="false" aria-controls="topic-checklist-panel-perception">
+                      <span>Topic checklist</span>
+                      <span class="topic-picker-hint" id="topic-picker-hint-perception"></span>
+                    </button>
+                    <div class="topic-checklist-body" id="topic-checklist-panel-perception" hidden>
                       <div id="topic-groups-perception"></div>
                       <div class="topic-actions-row">
                         <button type="button" onclick="saveBagTopics('perception')">Apply selected topics</button>
                         <div id="topic-msg-perception" class="ctrl-msg"></div>
                       </div>
                     </div>
-                  </details>
+                  </div>
 
                   <div class="recorder-status-row">
                     <span class="rec-dot-lg" id="rec-dot-lg-perception"></span>
@@ -336,16 +350,15 @@
                     <span class="rec-bar-detail" id="rec-bar-time-perception">--</span>
                     <span class="rec-bar-detail" id="rec-bar-frames-perception">-- frames</span>
                   </div>
-
-                  <div class="topic-counts-block">
-                    <span class="block-label">Topic counts</span>
-                    <div id="rec-topic-counts-perception" class="topic-counts-empty">Waiting for recorder status...</div>
-                  </div>
                 </article>
               </div>
             </section>
 
-            <section class="recording-section" aria-label="Mapping recording workspace">
+            <section class="recording-section" aria-labelledby="mapping-heading">
+              <div class="recording-section-heading">
+                <span class="section-number">2</span>
+                <h2 id="mapping-heading">Mapping</h2>
+              </div>
 
               <div class="recording-layout">
                 <article class="recording-panel preview-panel">
@@ -369,14 +382,14 @@
                     <div class="lidar-view">
                       <canvas id="lidar-canvas" width="700" height="700"></canvas>
                     </div>
-
                     <label class="lidar-range-control">
-                      <span class="range-control-heading">
-                        <span>Lidar Range</span>
-                        <output id="lidar-range-val">8.0 m</output>
-                      </span>
-                      <input type="range" id="lidar-range" min="1" max="20" value="8" step="1">
-                      <span class="range-endpoints"><span>1 m</span><span>20 m</span></span>
+                      <span>Lidar Range (m)</span>
+                      <div class="vertical-range-wrap">
+                        <span>20</span>
+                        <input type="range" id="lidar-range" min="1" max="20" value="8" step="1" orient="vertical">
+                        <span>1</span>
+                      </div>
+                      <output id="lidar-range-val">8.0 m</output>
                     </label>
                   </div>
                 </article>
@@ -397,16 +410,19 @@
                     </button>
                   </div>
 
-                  <details class="topic-checklist" open>
-                    <summary><span>Topic checklist</span><span class="topic-picker-hint" id="topic-picker-hint-mapping"></span></summary>
-                    <div class="topic-checklist-body">
+                  <div class="topic-checklist" data-topic-profile="mapping">
+                    <button class="topic-checklist-trigger" type="button" aria-expanded="false" aria-controls="topic-checklist-panel-mapping">
+                      <span>Topic checklist</span>
+                      <span class="topic-picker-hint" id="topic-picker-hint-mapping"></span>
+                    </button>
+                    <div class="topic-checklist-body" id="topic-checklist-panel-mapping" hidden>
                       <div id="topic-groups-mapping"></div>
                       <div class="topic-actions-row">
                         <button type="button" onclick="saveBagTopics('mapping')">Apply selected topics</button>
                         <div id="topic-msg-mapping" class="ctrl-msg"></div>
                       </div>
                     </div>
-                  </details>
+                  </div>
 
                   <div class="recorder-status-row">
                     <span class="rec-dot-lg" id="rec-dot-lg-mapping"></span>
@@ -415,26 +431,21 @@
                     <span class="rec-bar-detail" id="rec-bar-frames-mapping">-- frames</span>
                   </div>
 
-                  <div class="topic-counts-block">
-                    <span class="block-label">Topic counts</span>
-                    <div id="rec-topic-counts-mapping" class="topic-counts-empty">Waiting for recorder status...</div>
-                  </div>
-
-                  <section class="motion-preview-card mapping-motion-card" aria-labelledby="motion-preview-title">
-                    <div class="motion-preview-heading">
+                  <section class="motion-panel" aria-labelledby="motion-panel-title">
+                    <div class="motion-panel-header">
                       <div>
                         <span class="block-label">Motion / IMU</span>
-                        <strong id="motion-preview-title">Live movement</strong>
+                        <h4 id="motion-panel-title">Live movement</h4>
                       </div>
-                      <span id="imu-preview-status" class="motion-status">Waiting for /imu/data_raw</span>
+                      <span id="imu-state" class="motion-state">Waiting for /imu/data_raw</span>
                     </div>
                     <div class="motion-metrics">
-                      <div class="motion-metric"><span>Linear speed</span><strong id="motion-linear-speed">--</strong><small>m/s</small></div>
+                      <div class="motion-metric"><span>Linear speed</span><strong id="motion-linear-speed">0.00</strong><small>m/s</small></div>
                       <div class="motion-metric"><span>Yaw rate</span><strong id="motion-yaw-rate">--</strong><small>rad/s</small></div>
-                      <div class="motion-metric"><span>Accel X</span><strong id="imu-accel-x">--</strong><small>m/s²</small></div>
-                      <div class="motion-metric"><span>Accel Y</span><strong id="imu-accel-y">--</strong><small>m/s²</small></div>
-                      <div class="motion-metric"><span>Roll</span><strong id="imu-roll">--</strong><small>°</small></div>
-                      <div class="motion-metric"><span>Pitch</span><strong id="imu-pitch">--</strong><small>°</small></div>
+                      <div class="motion-metric"><span>Accel X</span><strong id="motion-accel-x">--</strong><small>m/s²</small></div>
+                      <div class="motion-metric"><span>Accel Y</span><strong id="motion-accel-y">--</strong><small>m/s²</small></div>
+                      <div class="motion-metric"><span>Roll</span><strong id="motion-roll">--</strong><small>°</small></div>
+                      <div class="motion-metric"><span>Pitch</span><strong id="motion-pitch">--</strong><small>°</small></div>
                     </div>
                   </section>
                 </article>
@@ -449,22 +460,26 @@
             <div class="bags-header">
               <div>
                 <h2>Recorded Bags</h2>
-                <p>Perception and mapping recordings are listed separately and sorted by date.</p>
+                <p>Saved perception and mapping recordings, grouped by recording date.</p>
               </div>
               <span class="bags-summary" id="bags-summary"></span>
-              <label class="bags-date-control">
+              <button id="bags-refresh" class="primary" onclick="loadBags()" type="button">Refresh</button>
+            </div>
+
+            <div class="bags-toolbar card">
+              <label class="bags-filter-field">
                 <span>Recording date</span>
-                <input type="date" id="bags-date-filter" onchange="renderBags()">
+                <input id="bags-date-filter" type="date" onchange="renderBags()">
               </label>
-              <button class="bags-clear-date" id="bags-clear-date" type="button" onclick="clearBagDateFilter()">Clear date</button>
-              <label class="bags-sort-control">
+              <label class="bags-filter-field">
                 <span>Sort</span>
                 <select id="bags-sort" onchange="renderBags()">
                   <option value="desc">Newest first</option>
                   <option value="asc">Oldest first</option>
                 </select>
               </label>
-              <button class="primary" onclick="loadBags()">Refresh</button>
+              <button id="bags-clear-date" type="button" onclick="clearBagDateFilter()">Clear date</button>
+              <span id="bags-last-updated" class="bags-last-updated">Not loaded yet</span>
             </div>
 
             <div class="disk-bar-wrap card" id="disk-bar-wrap" style="display:none">
@@ -472,34 +487,34 @@
               <div class="disk-bar"><div class="disk-bar-bags" id="disk-bar-bags"></div><div class="disk-bar-other" id="disk-bar-other"></div></div>
             </div>
 
-            <div id="bags-loading" class="ctrl-hint">Loading...</div>
-            <div id="bags-empty" class="empty-state" style="display:none">No recordings found.</div>
+            <div id="bags-loading" class="ctrl-hint">Select Refresh to load recordings.</div>
 
-            <div class="bag-groups" id="bag-groups">
-              <section class="bag-group card" aria-labelledby="perception-bags-heading">
-                <div class="bag-group-header">
-                  <div>
-                    <span class="bag-profile-dot perception"></span>
-                    <h3 id="perception-bags-heading">Perception bags</h3>
-                  </div>
-                  <span id="bags-count-perception" class="bag-count">0 recordings</span>
-                </div>
-                <div id="bags-list-perception" class="dated-bag-list"></div>
-                <div id="bags-empty-perception" class="bag-group-empty">No perception recordings for this date.</div>
+            <div class="bag-profile-grid" id="bags-profile-grid" style="display:none">
+              <section class="bag-profile-card">
+                <header class="bag-profile-header">
+                  <div><span class="bag-profile-dot perception"></span><h3>Perception</h3></div>
+                  <span id="bags-count-perception">0 recordings</span>
+                </header>
+                <div id="bags-perception" class="bag-date-list"></div>
               </section>
 
-              <section class="bag-group card" aria-labelledby="mapping-bags-heading">
-                <div class="bag-group-header">
-                  <div>
-                    <span class="bag-profile-dot mapping"></span>
-                    <h3 id="mapping-bags-heading">Mapping bags</h3>
-                  </div>
-                  <span id="bags-count-mapping" class="bag-count">0 recordings</span>
-                </div>
-                <div id="bags-list-mapping" class="dated-bag-list"></div>
-                <div id="bags-empty-mapping" class="bag-group-empty">No mapping recordings for this date.</div>
+              <section class="bag-profile-card">
+                <header class="bag-profile-header">
+                  <div><span class="bag-profile-dot mapping"></span><h3>Mapping</h3></div>
+                  <span id="bags-count-mapping">0 recordings</span>
+                </header>
+                <div id="bags-mapping" class="bag-date-list"></div>
+              </section>
+
+              <section class="bag-profile-card" id="bags-other-card" style="display:none">
+                <header class="bag-profile-header">
+                  <div><span class="bag-profile-dot other"></span><h3>Other</h3></div>
+                  <span id="bags-count-other">0 recordings</span>
+                </header>
+                <div id="bags-other" class="bag-date-list"></div>
               </section>
             </div>
+            <div id="bags-empty" class="empty-state" style="display:none">No recordings match the selected date.</div>
           </div>
         </section>
 
@@ -509,7 +524,7 @@
             <div class="ctrl-img-wrap"><img src="/static/controller.png" alt="Data Frog Controller"></div>
             <div class="card ctrl-panel">
               <div class="card-title-row"><h2>Button Assignments</h2><span class="card-kicker">Live input</span></div>
-              <p class="ctrl-hint">Press a button on the controller to see it light up. Change assignments with the dropdowns, then save.</p>
+              <p class="ctrl-hint">Press a control to highlight it. Choose an action, then save.</p>
               <div id="ctrl-loading" class="ctrl-hint">Loading config...</div>
               <table class="ctrl-table" id="ctrl-table" style="display:none">
                 <thead><tr><th></th><th>Button</th><th>Action</th></tr></thead>
