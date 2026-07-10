@@ -2406,3 +2406,665 @@ body.sidebar-collapsed .sidebar {
   .bag-date-table .bag-meta-cell { display: none; }
   .bag-date-table .bag-action-cell { width: 48%; }
 }
+
+
+/* ── Layout and stopped-preview corrections (v5) ───────────────────── */
+/* Keep the tall Hardware card in its own column. This prevents CSS Grid's
+   tallest first-row item from creating a large blank area under Lift/Brush. */
+.dashboard-shell {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(370px, 32%);
+  gap: 12px;
+  align-items: start;
+}
+
+.dashboard-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dashboard-controls-grid,
+.dashboard-status-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.dashboard-shell .card {
+  min-width: 0;
+  align-self: start;
+  padding: 14px;
+}
+
+.dashboard-shell .card-title-row { margin-bottom: 9px; }
+.dashboard-shell .kv { padding: 5px 0; }
+.dashboard-shell .btn-row,
+.dashboard-shell .jog-row { gap: 6px; margin-top: 8px; }
+.dashboard-shell button { min-height: 32px; padding: 6px 10px; font-size: 12px; }
+
+.dashboard-hardware-column,
+.dashboard-hardware-column #card-hardware {
+  width: 100%;
+  min-width: 0;
+}
+
+.dashboard-hardware-column #card-hardware {
+  grid-column: auto;
+  margin: 0;
+}
+
+/* Do not render a broken-image glyph before an MJPEG stream has loaded. */
+.preview-frame img {
+  visibility: hidden;
+}
+
+.preview-frame img.stream-visible {
+  visibility: visible;
+}
+
+/* Keep the stopped lidar canvas visually unambiguous. */
+.lidar-view.is-stopped {
+  border-color: #3a4656;
+}
+
+@media (max-width: 1450px) {
+  .dashboard-controls-grid,
+  .dashboard-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .dashboard-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-hardware-column {
+    order: 2;
+  }
+}
+
+@media (max-width: 680px) {
+  .dashboard-controls-grid,
+  .dashboard-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Compact dashboard masonry and recording preview proportions (v6) ── */
+/* Pair each compact status card directly below its related control card.
+   This removes the blank row-height gaps caused by a conventional grid. */
+.dashboard-main {
+  display: block;
+}
+
+.dashboard-card-columns {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.dashboard-card-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dashboard-card-column > .card {
+  width: 100%;
+  margin: 0;
+}
+
+/* Camera frames are less panoramic and closer to the physical sensor view. */
+.perception-recording-section .preview-frame {
+  aspect-ratio: 4 / 3;
+}
+
+/* Keep the LiDAR plot useful without dominating the entire mapping row. */
+.mapping-recording-section .lidar-preview-layout {
+  grid-template-columns: minmax(0, 1fr) 112px;
+  align-items: center;
+}
+
+.mapping-recording-section .lidar-view {
+  width: min(100%, 330px);
+}
+
+.mapping-recording-section .lidar-range-control {
+  min-height: 330px;
+  padding: 12px 8px;
+}
+
+.mapping-recording-section .vertical-range-wrap {
+  min-height: 180px;
+}
+
+.mapping-recording-section #lidar-range {
+  height: 165px;
+}
+
+@media (max-width: 1320px) {
+  .dashboard-card-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboard-card-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .perception-recording-section .preview-frame {
+    aspect-ratio: 4 / 3;
+  }
+
+  .mapping-recording-section .lidar-view {
+    width: min(100%, 300px);
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────
+   Recordings page — final two-column preview/recorder layout
+   ──────────────────────────────────────────────────────────────── */
+#tab-recordings.active {
+  display: block !important;
+}
+
+#tab-recordings .recordings-page {
+  width: 100%;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+#tab-recordings .recordings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+#tab-recordings .recording-panel {
+  min-width: 0;
+  padding: 16px;
+  overflow: visible;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 3px 12px rgba(31, 52, 86, 0.07);
+}
+
+#tab-recordings .preview-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 410px;
+}
+
+#tab-recordings .recorder-panel {
+  min-height: 250px;
+}
+
+#tab-recordings .panel-header {
+  min-height: 40px;
+  margin-bottom: 14px;
+}
+
+#tab-recordings .panel-title h3 {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 780;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+#tab-recordings .panel-icon {
+  width: 25px;
+  height: 25px;
+}
+
+#tab-recordings .preview-panel .cam-state,
+#tab-recordings .preview-panel .lidar-status,
+#tab-recordings .preview-panel .lidar-stats {
+  display: none;
+}
+
+#tab-recordings .preview-toggle {
+  min-height: 40px;
+  padding: 8px 16px;
+  color: var(--blue);
+  border-color: #7eaaff;
+  background: #fff;
+  box-shadow: none;
+}
+
+#tab-recordings .preview-toggle:hover {
+  color: #fff;
+  border-color: var(--blue);
+  background: var(--blue);
+}
+
+#tab-recordings .preview-toggle.danger,
+#tab-recordings button.danger.preview-toggle {
+  color: var(--red);
+  border-color: #f0a4a7;
+  background: #fff;
+}
+
+#tab-recordings .preview-toggle.danger:hover,
+#tab-recordings button.danger.preview-toggle:hover {
+  color: #fff;
+  border-color: var(--red);
+  background: var(--red);
+}
+
+#tab-recordings .camera-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+#tab-recordings .camera-feed-card {
+  padding: 11px;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+
+#tab-recordings .feed-label {
+  margin-bottom: 8px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 740;
+  text-transform: none;
+}
+
+#tab-recordings .camera-preview-panel .preview-frame {
+  aspect-ratio: 4 / 3;
+  border: 1px solid #273548;
+  border-radius: 7px;
+  background: linear-gradient(145deg, #1b2635, #202d3e);
+}
+
+#tab-recordings .preview-empty svg {
+  width: 52px;
+  height: 52px;
+}
+
+#tab-recordings .preview-empty strong {
+  font-size: 13px;
+}
+
+#tab-recordings .preview-empty span {
+  font-size: 11px;
+}
+
+#tab-recordings .camera-controls {
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+  gap: 16px;
+  margin-top: auto;
+  padding: 11px 13px;
+  border-radius: 9px;
+  background: #fbfcfe;
+}
+
+#tab-recordings .slider-control {
+  grid-template-columns: auto minmax(80px, 1fr) 38px;
+}
+
+#tab-recordings .slider-control output {
+  min-width: 36px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #344054;
+  text-align: center;
+}
+
+#tab-recordings .lidar-preview-layout,
+#tab-recordings .mapping-recording-section .lidar-preview-layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 126px;
+  gap: 16px;
+  align-items: stretch;
+}
+
+#tab-recordings .lidar-view,
+#tab-recordings .mapping-recording-section .lidar-view {
+  width: min(100%, 360px);
+  aspect-ratio: 1;
+  align-self: center;
+  margin: 0 auto;
+  border-radius: 8px;
+}
+
+#tab-recordings .lidar-range-control,
+#tab-recordings .mapping-recording-section .lidar-range-control {
+  min-height: 100%;
+  padding: 14px 10px;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+
+#tab-recordings .vertical-range-wrap,
+#tab-recordings .mapping-recording-section .vertical-range-wrap {
+  min-height: 230px;
+}
+
+#tab-recordings #lidar-range,
+#tab-recordings .mapping-recording-section #lidar-range {
+  width: 20px;
+  height: 180px;
+}
+
+#tab-recordings .lidar-range-output {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+#tab-recordings #lidar-range-val {
+  min-width: 72px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#tab-recordings .recorder-heading {
+  margin-bottom: 14px;
+}
+
+#tab-recordings .topic-checklist-trigger {
+  min-height: 44px;
+  gap: 10px;
+  padding: 10px 13px;
+  border-color: var(--line);
+  background: #fff;
+}
+
+#tab-recordings .topic-checklist-trigger::before {
+  content: none;
+}
+
+#tab-recordings .topic-trigger-icon {
+  color: #475467;
+  font-size: 19px;
+  line-height: 1;
+}
+
+#tab-recordings .topic-trigger-chevron {
+  margin-left: auto;
+  color: #475467;
+  font-size: 18px;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+#tab-recordings .topic-checklist-trigger[aria-expanded="true"] .topic-trigger-chevron {
+  transform: rotate(180deg);
+}
+
+#tab-recordings .topic-picker-hint {
+  margin-left: auto;
+}
+
+#tab-recordings .topic-picker-hint:not(:empty) + .topic-trigger-chevron {
+  margin-left: 0;
+}
+
+#tab-recordings .topic-checklist-body {
+  z-index: 100;
+  top: calc(100% + 7px);
+}
+
+#tab-recordings .recorder-status-row {
+  min-height: 58px;
+  margin-top: 12px;
+  padding: 12px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+}
+
+#tab-recordings .rec-bar-frames {
+  justify-self: end;
+}
+
+#tab-recordings .recorder-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fbfcfe;
+}
+
+#tab-recordings .topic-counts-block {
+  min-width: 0;
+}
+
+#tab-recordings .topic-counts-title {
+  display: block;
+  margin-bottom: 7px;
+  color: #536176;
+  font-size: 10px;
+  font-weight: 780;
+}
+
+#tab-recordings .topic-counts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+#tab-recordings .topic-counts-list > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 29px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: #f3f6fa;
+  color: #667085;
+  font-size: 10px;
+}
+
+#tab-recordings .topic-counts-list strong {
+  color: #344054;
+  font-size: 11px;
+}
+
+#tab-recordings .recording-action {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  white-space: nowrap;
+}
+
+#tab-recordings .recording-action-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+@media (max-width: 1220px) {
+  #tab-recordings .recordings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-recordings .preview-panel {
+    min-height: auto;
+  }
+
+  #tab-recordings .lidar-view,
+  #tab-recordings .mapping-recording-section .lidar-view {
+    width: min(100%, 420px);
+  }
+}
+
+@media (max-width: 680px) {
+  #tab-recordings .recording-panel {
+    padding: 13px;
+  }
+
+  #tab-recordings .camera-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-recordings .camera-controls {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-recordings .lidar-preview-layout,
+  #tab-recordings .mapping-recording-section .lidar-preview-layout {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-recordings .lidar-range-control,
+  #tab-recordings .mapping-recording-section .lidar-range-control {
+    min-height: auto;
+    flex-direction: row;
+  }
+
+  #tab-recordings .vertical-range-wrap,
+  #tab-recordings .mapping-recording-section .vertical-range-wrap {
+    min-height: 0;
+  }
+
+  #tab-recordings #lidar-range,
+  #tab-recordings .mapping-recording-section #lidar-range {
+    width: 100%;
+    height: auto;
+    writing-mode: horizontal-tb;
+    direction: ltr;
+    -webkit-appearance: auto;
+    appearance: auto;
+  }
+
+  #tab-recordings .recorder-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  #tab-recordings .recorder-button-wrap,
+  #tab-recordings .recording-action {
+    width: 100%;
+  }
+}
+
+/* Keep active recording controls visually stable. The recorder state is
+   maintained in app.js while the backend confirms start/stop requests. */
+#tab-recordings button.danger.recording-action,
+#tab-recordings button.danger.recording-action:hover,
+#tab-recordings button.danger.recording-action:focus {
+  color: #fff;
+  border-color: var(--red);
+  background: var(--red);
+  animation: none !important;
+  opacity: 1;
+}
+
+/* ── Navigation collapse and Recorded Bags action refinements (v8) ── */
+/* On desktop the sidebar must disappear as one complete unit. Without these
+   constraints, its intrinsic padding/content can overflow the zero-width grid
+   track and leave a clipped logo/navigation rail visible. */
+@media (min-width: 901px) {
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      transform 0.22s ease,
+      opacity 0.16s ease,
+      visibility 0s linear 0s,
+      box-shadow 0.22s ease;
+  }
+
+  body.sidebar-collapsed .sidebar {
+    width: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    border-right: 0;
+    overflow: hidden;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition:
+      transform 0.22s ease,
+      opacity 0.14s ease,
+      visibility 0s linear 0.22s,
+      box-shadow 0.22s ease;
+  }
+}
+
+/* Give recording-date headers a clear profile colour while keeping the bag
+   count visually secondary. */
+#bags-perception .bag-date-heading > span:first-child {
+  color: var(--blue);
+}
+
+#bags-mapping .bag-date-heading > span:first-child {
+  color: #7a5af8;
+}
+
+#bags-other .bag-date-heading > span:first-child {
+  color: #667085;
+}
+
+.bag-date-heading > span:first-child {
+  font-weight: 800;
+}
+
+/* Compact icon-only actions for recorded bags. */
+.bag-dl,
+.bag-del {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 8px;
+  line-height: 1;
+}
+
+.bag-dl svg,
+.bag-del svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.bag-dl:focus-visible,
+.bag-del:focus-visible {
+  outline: 3px solid rgba(23, 105, 255, 0.18);
+  outline-offset: 2px;
+}
+
+.bag-del:focus-visible {
+  outline-color: rgba(229, 72, 77, 0.2);
+}

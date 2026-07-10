@@ -32,6 +32,115 @@ let activeInputs = [];    // live from WebSocket
 let lastGamepad = {};     // last gamepad status from WS
 let _cachedBtInfo = { mac: "", battery: null, connected: false };
 
+
+const RECORDER_PROFILES = ["perception", "mapping"];
+const RECORDER_PENDING_TIMEOUT_MS = 5000;
+const recorderUiState = Object.fromEntries(
+  RECORDER_PROFILES.map(profile => [profile, {
+    recording: false,
+    pending: null,
+    pendingSince: 0,
+    lastData: {},
+  }])
+);
+
+function formatRecorderDuration(seconds) {
+  const duration = Number(seconds) || 0;
+  const minutes = Math.floor(duration / 60);
+  const remainingSeconds = Math.floor(duration % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
+function renderRecorderState(profile, recording, rec = {}) {
+  const isRecording = Boolean(recording);
+  const duration = formatRecorderDuration(rec.duration_sec);
+  const frameCount = rec.frame_count != null ? Number(rec.frame_count) : null;
+
+  // Compact recorder cards on the Dashboard page.
+  const dashboardDot = document.getElementById(`rec-dot-${profile}`);
+  const dashboardLabel = document.getElementById(`rec-label-${profile}`);
+  if (dashboardDot && dashboardLabel) {
+    dashboardDot.classList.toggle("recording", isRecording);
+    dashboardLabel.textContent = isRecording ? "RECORDING" : "Idle";
+    dashboardLabel.style.color = isRecording ? "var(--red)" : "";
+  }
+  setText(`rec-duration-${profile}`, isRecording ? duration : "--");
+  setText(`rec-frames-${profile}`, frameCount != null ? frameCount : "--");
+
+  // Main Recordings page controls.
+  const statusDot = document.getElementById(`rec-dot-lg-${profile}`);
+  const statusLabel = document.getElementById(`rec-bar-label-${profile}`);
+  const startButton = document.getElementById(`rec-bar-start-${profile}`);
+  const stopButton = document.getElementById(`rec-bar-stop-${profile}`);
+
+  statusDot?.classList.toggle("recording", isRecording);
+  if (statusLabel) {
+    statusLabel.textContent = isRecording ? "RECORDING" : "Idle";
+    statusLabel.style.color = isRecording ? "var(--red)" : "";
+  }
+
+  setText(`rec-bar-time-${profile}`, isRecording ? duration : "--");
+  setText(
+    `rec-bar-frames-${profile}`,
+    isRecording ? `${frameCount ?? 0} frames` : "-- frames"
+  );
+
+  // Only one action button is visible. Once Start is pressed, the red Stop
+  // button stays visible while the backend confirms the new state.
+  if (startButton) startButton.style.display = isRecording ? "none" : "inline-flex";
+  if (stopButton) stopButton.style.display = isRecording ? "inline-flex" : "none";
+}
+
+function updateRecorderFromMessage(profile, data) {
+  const key = `${profile}_recorder`;
+
+  // WebSocket packets do not always contain every subsystem. Missing recorder
+  // data must not be interpreted as "recording stopped", otherwise the blue
+  // Start and red Stop buttons alternate on every partial status packet.
+  if (!Object.prototype.hasOwnProperty.call(data, key)) return;
+
+  const rec = data[key] && typeof data[key] === "object" ? data[key] : {};
+  const incomingRecording = Boolean(rec.recording);
+  const state = recorderUiState[profile];
+  const pendingAge = Date.now() - state.pendingSince;
+  const pendingStillValid = state.pending && pendingAge < RECORDER_PENDING_TIMEOUT_MS;
+
+  state.lastData = rec;
+
+  if (pendingStillValid) {
+    const requestedRecording = state.pending === "start";
+
+    // Ignore stale packets that still report the state from before the click.
+    if (incomingRecording !== requestedRecording) {
+      renderRecorderState(profile, requestedRecording, rec);
+      return;
+    }
+  }
+
+  state.pending = null;
+  state.pendingSince = 0;
+  state.recording = incomingRecording;
+  renderRecorderState(profile, incomingRecording, rec);
+}
+
+function setRecorderPending(profile, recording) {
+  const state = recorderUiState[profile];
+  if (!state) return;
+  state.pending = recording ? "start" : "stop";
+  state.pendingSince = Date.now();
+  state.recording = recording;
+  renderRecorderState(profile, recording, state.lastData);
+}
+
+function revertRecorderPending(profile, recording) {
+  const state = recorderUiState[profile];
+  if (!state) return;
+  state.pending = null;
+  state.pendingSince = 0;
+  state.recording = recording;
+  renderRecorderState(profile, recording, state.lastData);
+}
+
 // ─── WebSocket ───────────────────────────────────────────────────
 
 function connectWs() {
@@ -256,58 +365,8 @@ function updateDashboard(data) {
     reconRow.style.display = (!gp.connected && mac) ? "" : "none";
   }
 
-  for (const profile of ["perception", "mapping"]) {
-    const rec = data[profile + "_recorder"] || {};
-    const dot = document.getElementById(`rec-dot-${profile}`);
-    const label = document.getElementById(`rec-label-${profile}`);
-    if (dot && label) {
-      if (rec.recording) {
-        dot.classList.add("recording");
-        label.textContent = "RECORDING";
-        label.style.color = "#e94560";
-      } else {
-        dot.classList.remove("recording");
-        label.textContent = "Idle";
-        label.style.color = "";
-      }
-    }
-    if (rec.recording) {
-      const dur = rec.duration_sec || 0;
-      const m = Math.floor(dur / 60);
-      const s = Math.floor(dur % 60);
-      setText(`rec-duration-${profile}`, `${m}:${s.toString().padStart(2, "0")}`);
-    } else {
-      setText(`rec-duration-${profile}`, "--");
-    }
-    setText(`rec-frames-${profile}`, rec.frame_count != null ? rec.frame_count : "--");
-
-    // Recordings tab controls
-    const dotLg = document.getElementById(`rec-dot-lg-${profile}`);
-    const barLabel = document.getElementById(`rec-bar-label-${profile}`);
-    const barStart = document.getElementById(`rec-bar-start-${profile}`);
-    const barStop = document.getElementById(`rec-bar-stop-${profile}`);
-    if (dotLg && barLabel) {
-      if (rec.recording) {
-        dotLg.classList.add("recording");
-        const dur = rec.duration_sec || 0;
-        const m = Math.floor(dur / 60);
-        const s = Math.floor(dur % 60);
-        barLabel.textContent = "RECORDING";
-        barLabel.style.color = "var(--red)";
-        setText(`rec-bar-time-${profile}`, `${m}:${s.toString().padStart(2, "0")}`);
-        setText(`rec-bar-frames-${profile}`, `${rec.frame_count || 0} frames`);
-        if (barStart) barStart.style.display = "none";
-        if (barStop) barStop.style.display = "";
-      } else {
-        dotLg.classList.remove("recording");
-        barLabel.textContent = "Idle";
-        barLabel.style.color = "";
-        setText(`rec-bar-time-${profile}`, "--");
-        setText(`rec-bar-frames-${profile}`, "-- frames");
-        if (barStart) barStart.style.display = "";
-        if (barStop) barStop.style.display = "none";
-      }
-    }
+  for (const profile of RECORDER_PROFILES) {
+    updateRecorderFromMessage(profile, data);
   }
 
   updateMotionTelemetry(data);
@@ -316,22 +375,32 @@ function updateDashboard(data) {
   // Lidar
   const lidar = data.lidar || {};
   const lidarPts = data.lidar_points;
-  if (lidarPts && Array.isArray(lidarPts) && lidarPts.length > 0) {
+
+  // The robot may publish lidar points continuously for ROS. The web preview is
+  // independent: ignore those points unless the user explicitly started it.
+  if (lidarScanning && Array.isArray(lidarPts)) {
     lidarPoints = lidarPts;
+  } else if (!lidarScanning && lidarPoints.length) {
+    lidarPoints = [];
+    drawLidar();
   }
+
   const lidarStatusEl = document.getElementById("lidar-status");
-  // The backend may keep the lidar sensor process alive. That must not open the
-  // browser preview: only the user's Start Preview button controls lidarScanning.
   if (lidarStatusEl && !lidarScanning) {
     lidarStatusEl.textContent = lidar.connected === false ? "Disconnected" : "Stopped";
     lidarStatusEl.className = lidar.connected === false ? "lidar-status err" : "lidar-status";
   }
+
   const statsEl = document.getElementById("lidar-stats");
   if (statsEl && lidar.connected != null) {
     const parts = [];
-    if (!lidar.connected) parts.push("Disconnected");
-    else {
-      parts.push(`${lidar.point_count || 0} pts`);
+    if (!lidar.connected) {
+      parts.push("Disconnected");
+    } else if (lidarScanning) {
+      parts.push(`${lidar.point_count || lidarPoints.length || 0} pts`);
+      if (lidar.firmware) parts.push(`fw ${lidar.firmware}`);
+    } else {
+      parts.push("Sensor ready");
       if (lidar.firmware) parts.push(`fw ${lidar.firmware}`);
     }
     statsEl.textContent = parts.join(" · ");
@@ -657,10 +726,15 @@ let camStreaming = false;
 
 function setCameraPlaceholder(stream, visible, message = "Start preview to see feed") {
   const placeholder = document.getElementById(`cam-${stream}-empty`);
-  if (!placeholder) return;
-  placeholder.classList.toggle("hidden", !visible);
-  const messageEl = placeholder.querySelector("span");
-  if (messageEl) messageEl.textContent = message;
+  const image = document.getElementById(`cam-${stream}`);
+  if (placeholder) {
+    placeholder.classList.toggle("hidden", !visible);
+    const messageEl = placeholder.querySelector("span");
+    if (messageEl) messageEl.textContent = message;
+  }
+  // Empty <img> elements show a broken-image glyph in Chromium. Keep the
+  // element invisible until the MJPEG stream has emitted its first frame.
+  if (image) image.classList.toggle("stream-visible", !visible);
 }
 
 function startCamera() {
@@ -691,7 +765,7 @@ function startCamera() {
   depthImg.src = `/api/stream/depth?${qs}`;
   camStreaming = true;
   toggle.innerHTML = '<span class="button-play">■</span> Stop Preview';
-  toggle.className = "danger compact";
+  toggle.className = "danger compact preview-toggle";
   if (stateEl) { stateEl.textContent = "Streaming"; stateEl.className = "cam-state ok"; }
 }
 
@@ -717,7 +791,7 @@ function stopCamera() {
   camStreaming = false;
   if (toggle) {
     toggle.innerHTML = '<span class="button-play">▶</span> Start Preview';
-    toggle.className = "primary compact";
+    toggle.className = "compact preview-toggle";
   }
   if (stateEl) { stateEl.textContent = "Stopped"; stateEl.className = "cam-state"; }
 }
@@ -743,6 +817,26 @@ async function loadBagTopics() {
   }
   renderTopicPicker("perception");
   renderTopicPicker("mapping");
+}
+
+function updateTopicCounts(profile) {
+  const data = _bagTopicData[profile] || {};
+  const groups = data.topic_groups || {};
+  const allTopics = new Set(Object.values(groups).flat());
+  const rendered = document.querySelectorAll(`#topic-groups-${profile} .topic-cb`);
+  let enabled;
+
+  if (rendered.length) {
+    enabled = Array.from(rendered).filter(cb => cb.checked).length;
+  } else {
+    enabled = new Set(data.selected_topics || []).size;
+  }
+
+  const total = allTopics.size;
+  const disabled = Math.max(0, total - enabled);
+  setText(`topic-count-total-${profile}`, total || "--");
+  setText(`topic-count-enabled-${profile}`, total ? enabled : "--");
+  setText(`topic-count-disabled-${profile}`, total ? disabled : "--");
 }
 
 function renderTopicPicker(profile) {
@@ -780,6 +874,7 @@ function renderTopicPicker(profile) {
       cb.checked = selected.includes(topic);
       cb.disabled = recording;
       cb.className = "topic-cb";
+      cb.addEventListener("change", () => updateTopicCounts(profile));
       lbl.appendChild(cb);
       const span = document.createElement("span");
       span.textContent = topic.split("/").pop();
@@ -789,6 +884,7 @@ function renderTopicPicker(profile) {
     }
     container.appendChild(group);
   }
+  updateTopicCounts(profile);
 }
 
 async function saveBagTopics(profile) {
@@ -806,6 +902,8 @@ async function saveBagTopics(profile) {
     });
     const result = await resp.json();
     if (result.success) {
+      if (_bagTopicData[profile]) _bagTopicData[profile].selected_topics = topics;
+      updateTopicCounts(profile);
       showTopicMsg(profile, `Applied ${topics.length} topic(s). Takes effect on next recording.`, "ok");
       closeTopicChecklist(profile);
     } else {
@@ -1049,13 +1147,28 @@ function buildBagRow(bag) {
   const download = document.createElement("a");
   download.href = `/api/bags/${encodeURIComponent(bag.name)}/download`;
   download.className = "bag-dl";
-  download.textContent = "Download";
   download.setAttribute("download", "");
+  download.setAttribute("aria-label", `Download ${bag.name || "recording"}`);
+  download.title = "Download recording";
+  download.innerHTML = `
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M12 3v12"></path>
+      <path d="m7 10 5 5 5-5"></path>
+      <path d="M5 20h14"></path>
+    </svg>`;
 
   const remove = document.createElement("button");
   remove.className = "danger bag-del";
   remove.type = "button";
-  remove.textContent = "Delete";
+  remove.setAttribute("aria-label", `Delete ${bag.name || "recording"}`);
+  remove.title = "Delete recording";
+  remove.innerHTML = `
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M4 7h16"></path>
+      <path d="M9 7V4h6v3"></path>
+      <path d="m6 7 1 13h10l1-13"></path>
+      <path d="M10 11v5M14 11v5"></path>
+    </svg>`;
   remove.onclick = () => deleteBag(bag.name);
 
   actions.append(download, remove);
@@ -1551,7 +1664,7 @@ async function startLidar() {
 
   lidarScanning = true;
   document.getElementById("lidar-toggle").innerHTML = '<span class="button-play">■</span> Stop Preview';
-  document.getElementById("lidar-toggle").className = "danger compact";
+  document.getElementById("lidar-toggle").className = "danger compact preview-toggle";
   const el = document.getElementById("lidar-status");
   if (el) { el.textContent = "Scanning"; el.className = "lidar-status ok"; }
   if (!lidarAnimFrame) lidarAnimFrame = requestAnimationFrame(drawLidar);
@@ -1563,7 +1676,7 @@ async function stopLidar() {
   lidarScanning = false;
   lidarPoints = [];
   document.getElementById("lidar-toggle").innerHTML = '<span class="button-play">▶</span> Start Preview';
-  document.getElementById("lidar-toggle").className = "primary compact";
+  document.getElementById("lidar-toggle").className = "compact preview-toggle";
   const el = document.getElementById("lidar-status");
   if (el) { el.textContent = "Stopped"; el.className = "lidar-status"; }
   if (lidarAnimFrame) { cancelAnimationFrame(lidarAnimFrame); lidarAnimFrame = null; }
@@ -1579,6 +1692,7 @@ function drawLidar() {
   const canvas = document.getElementById("lidar-canvas");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
+  canvas.parentElement?.classList.toggle("is-stopped", !lidarScanning);
   const W = canvas.width, H = canvas.height;
   const cx = W / 2, cy = H / 2;
   const rangeM = parseFloat(document.getElementById("lidar-range")?.value || "8");
@@ -1616,8 +1730,8 @@ function drawLidar() {
   ctx.arc(cx, cy, 4, 0, Math.PI * 2);
   ctx.fill();
 
-  // Points
-  if (lidarPoints.length > 0) {
+  // Points are drawn only while the browser preview is explicitly active.
+  if (lidarScanning && lidarPoints.length > 0) {
     ctx.fillStyle = "#4ecca3";
     for (const pt of lidarPoints) {
       const angleDeg = pt[0];
@@ -1661,7 +1775,7 @@ function drawLidar() {
   ctx.fillText("RIGHT", W - 2, cy - 3);
   ctx.textAlign = "left";
 
-  if (!lidarScanning && lidarPoints.length === 0) {
+  if (!lidarScanning) {
     ctx.fillStyle = "#d0d5dd";
     ctx.font = "16px ui-sans-serif, system-ui, sans-serif";
     ctx.textAlign = "center";
@@ -1733,6 +1847,7 @@ function initTabs() {
 
       if (tabName === "network") loadNetwork();
       if (tabName !== "recordings" && camStreaming) stopCamera();
+      if (tabName !== "recordings" && lidarScanning) stopLidar();
       if (window.matchMedia("(max-width: 900px)").matches) closeSidebar();
     });
   });
@@ -1976,13 +2091,31 @@ async function jogMotor(motorId, inputId, speedInputId, accInputId) {
 }
 
 async function startRecording(profile) {
-  try { await fetch(`/api/recording/${profile}/start`, { method: "POST" }); }
-  catch (e) { console.error(`Start ${profile} recording failed:`, e); }
+  if (!RECORDER_PROFILES.includes(profile)) return;
+
+  // Switch to the stable red Stop button immediately. Status packets arriving
+  // before the recorder starts are treated as stale for a short grace period.
+  setRecorderPending(profile, true);
+  try {
+    const response = await fetch(`/api/recording/${profile}/start`, { method: "POST" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  } catch (e) {
+    revertRecorderPending(profile, false);
+    console.error(`Start ${profile} recording failed:`, e);
+  }
 }
 
 async function stopRecording(profile) {
-  try { await fetch(`/api/recording/${profile}/stop`, { method: "POST" }); }
-  catch (e) { console.error(`Stop ${profile} recording failed:`, e); }
+  if (!RECORDER_PROFILES.includes(profile)) return;
+
+  setRecorderPending(profile, false);
+  try {
+    const response = await fetch(`/api/recording/${profile}/stop`, { method: "POST" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  } catch (e) {
+    revertRecorderPending(profile, true);
+    console.error(`Stop ${profile} recording failed:`, e);
+  }
 }
 
 // ─── Init ────────────────────────────────────────────────────────
@@ -2026,5 +2159,5 @@ if (_qualSlider && _qualVal) {
 const _lidarRange = document.getElementById("lidar-range");
 const _lidarRangeVal = document.getElementById("lidar-range-val");
 if (_lidarRange && _lidarRangeVal) {
-  _lidarRange.addEventListener("input", () => { _lidarRangeVal.textContent = Number(_lidarRange.value).toFixed(1) + " m"; });
+  _lidarRange.addEventListener("input", () => { _lidarRangeVal.textContent = Number(_lidarRange.value).toFixed(0); });
 }
