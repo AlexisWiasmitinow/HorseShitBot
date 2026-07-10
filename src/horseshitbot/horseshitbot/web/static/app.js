@@ -695,7 +695,13 @@ function renderTopicPicker(profile) {
       cb.className = "topic-cb";
       lbl.appendChild(cb);
       const span = document.createElement("span");
-      span.textContent = topic.split("/").pop();
+
+      if (topic.startsWith("/imu/")) {
+        span.textContent = topic.slice(1);
+      } else {
+        span.textContent = topic.split("/").pop();
+      }
+
       span.title = topic;
       lbl.appendChild(span);
       group.appendChild(lbl);
