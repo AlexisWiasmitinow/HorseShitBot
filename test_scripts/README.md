@@ -314,6 +314,14 @@ python test_scripts/gim8115_rs485_test.py --port COM9 --velocity 20
 python test_scripts/gim8115_rs485_test.py --port COM9 --velocity 15 --until-deg 360 --accel 30
 python test_scripts/gim8115_rs485_test.py --port COM9 --velocity -10 --duration 5
 
+# Torture / endurance: ±DEG back-and-forth until Ctrl+C (temp every 10 cycles)
+python test_scripts/gim8115_rs485_test.py --port COM9 --torture 90 --speed 20
+python test_scripts/gim8115_rs485_test.py --port COM9 --torture 180 --speed 30 --temp-every 10 --cycles 100
+
+# Bus reliability: poll status only (no motion) until Ctrl+C
+python test_scripts/gim8115_rs485_test.py --port COM9 --bus-test
+python test_scripts/gim8115_rs485_test.py --port COM9 --bus-test --rate 5 --duration 60
+
 # Linux
 python3 test_scripts/gim8115_rs485_test.py -p /dev/ttyUSB0 --info
 python3 test_scripts/gim8115_rs485_test.py -p /dev/ttyUSB0 --velocity 20
@@ -329,11 +337,15 @@ Defaults from the PDF: baud **115200** 8N1, address **1**. `--port` is required.
 
 - **`--move`**: trapezoid position cmd `0x26` with `--speed` (RPM, default 30). Optional `--accel`/`--decel` (RPM/s). `--speed 0` = simple `0x23`.
 - **`--velocity`**: velocity cmd `0x21` — hold signed RPM and stream encoder Δ (counts / degrees / revs). Stop with Ctrl+C, `--duration SEC`, or `--until-deg DEG`. Optional `--accel` (RPM/s; omit = max). `--rate` sets print Hz.
+- **`--torture DEG`**: oscillate `+DEG` then `-DEG` at `--speed` until Ctrl+C (or `--cycles N`). Counts cycles; prints temperature every `--temp-every` cycles (default 10). Ends with a summary (cycles, temps, encoder drift).
+- **`--bus-test`**: poll status (`0x0B`) only — no enable/move. Measures RS485 OK/fail rate. `--rate` (default 10 Hz), `--duration`, optional `--gap` for inter-frame spacing.
 
 **What to look for:**
 - `--info` prints versions; `RS485 Modbus: v0` means Modbus is not available on that driver
 - `--move 90` increases multi-turn angle by ~90° then velocity returns near 0
 - `--velocity` prints rising Δ counts while measured vel tracks the command; Ctrl+C disables cleanly
+- `--torture` cycle count climbs; temp log every N cycles; encoder drift stays small if the joint is free
+- `--bus-test` success rate stays near 100%; FAIL lines / error breakdown show truncated or timed-out replies if the link is flaky
 
 ---
 
