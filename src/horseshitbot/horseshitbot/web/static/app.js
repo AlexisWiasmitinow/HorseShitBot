@@ -39,15 +39,18 @@ function connectWs() {
   ws = new WebSocket(`${proto}//${location.host}/ws`);
 
   const badge = document.getElementById("ws-status");
+  const badgeText = badge?.querySelector(".connection-text");
 
   ws.onopen = () => {
-    badge.textContent = "Connected";
-    badge.classList.add("connected");
+    if (badgeText) badgeText.textContent = "Connected";
+    else if (badge) badge.textContent = "Connected";
+    badge?.classList.add("connected");
   };
 
   ws.onclose = () => {
-    badge.textContent = "Disconnected";
-    badge.classList.remove("connected");
+    if (badgeText) badgeText.textContent = "Disconnected";
+    else if (badge) badge.textContent = "Disconnected";
+    badge?.classList.remove("connected");
     setTimeout(connectWs, 2000);
   };
 
@@ -290,7 +293,7 @@ function updateDashboard(data) {
         const m = Math.floor(dur / 60);
         const s = Math.floor(dur % 60);
         barLabel.textContent = "RECORDING";
-        barLabel.style.color = "#e94560";
+        barLabel.style.color = "var(--red)";
         setText(`rec-bar-time-${profile}`, `${m}:${s.toString().padStart(2, "0")}`);
         setText(`rec-bar-frames-${profile}`, `${rec.frame_count || 0} frames`);
         if (barStart) barStart.style.display = "none";
@@ -305,39 +308,128 @@ function updateDashboard(data) {
         if (barStop) barStop.style.display = "none";
       }
     }
-    updateRecordingTopicCounts(profile, rec);
   }
 
   updateThermals(data.thermals || []);
 
-// Lidar
+  // Lidar preview is controlled only by the preview button. The backend may
+  // keep the physical lidar node running for navigation, which must not reopen
+  // the UI preview after the operator has stopped it.
   const lidar = data.lidar || {};
   const lidarPts = data.lidar_points;
-
-  if (Array.isArray(lidarPts)) {
+  if (lidarScanning && Array.isArray(lidarPts)) {
     lidarPoints = lidarPts;
-  }
-
-  // Do not auto-enable LiDAR preview because backend reports scanning.
-  // Preview must start only after the user clicks "Start Preview".
-
-  if (!lidar.scanning && lidarScanning) {
-    lidarScanning = false;
-    setLidarStatusUi(false);
-    setPreviewButtons(camStreaming || lidarScanning);
-    drawLidar();
   }
 
   const statsEl = document.getElementById("lidar-stats");
   if (statsEl && lidar.connected != null) {
     const parts = [];
-    if (!lidar.connected) {
-      parts.push("Disconnected");
-    } else {
-      parts.push(`${lidar.point_count || 0} pts`);
+    if (!lidar.connected) parts.push("Sensor disconnected");
+    else {
+      parts.push("Sensor ready");
+      if (lidarScanning) parts.push(`${lidar.point_count || lidarPoints.length || 0} pts`);
       if (lidar.firmware) parts.push(`fw ${lidar.firmware}`);
     }
     statsEl.textContent = parts.join(" · ");
+  }
+
+  updateMotionPreview(data, leftMs, rightMs);
+}
+
+function _finiteNumber(...values) {
+  for (const value of values) {
+    if (value == null || value === "") continue;
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return null;
+}
+
+function _getPath(source, path) {
+  let value = source;
+  for (const key of path) {
+    if (value == null || typeof value !== "object") return undefined;
+    value = value[key];
+  }
+  return value;
+}
+
+function _setMotionValue(id, value, digits = 2) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = Number.isFinite(value) ? value.toFixed(digits) : "--";
+}
+
+function _quaternionToRollPitch(orientation) {
+  if (!orientation) return { roll: null, pitch: null };
+  const x = _finiteNumber(orientation.x, orientation.qx);
+  const y = _finiteNumber(orientation.y, orientation.qy);
+  const z = _finiteNumber(orientation.z, orientation.qz);
+  const w = _finiteNumber(orientation.w, orientation.qw);
+  if ([x, y, z, w].some(v => v == null)) return { roll: null, pitch: null };
+
+  const sinrCosp = 2 * (w * x + y * z);
+  const cosrCosp = 1 - 2 * (x * x + y * y);
+  const roll = Math.atan2(sinrCosp, cosrCosp) * 180 / Math.PI;
+
+  const sinp = 2 * (w * y - z * x);
+  const pitch = (Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp)) * 180 / Math.PI;
+  return { roll, pitch };
+}
+
+function updateMotionPreview(data, leftWheelMs, rightWheelMs) {
+  const imu = data.imu || data.imu_data || data.imu_status || data.imu_raw || {};
+  const odom = data.odom || data.odometry || data.robot_odom || {};
+
+  const linearSpeed = _finiteNumber(
+    _getPath(odom, ["twist", "twist", "linear", "x"]),
+    _getPath(odom, ["twist", "linear", "x"]),
+    _getPath(odom, ["linear_velocity", "x"]),
+    odom.linear_speed,
+    data.linear_velocity,
+    (Number.isFinite(leftWheelMs) && Number.isFinite(rightWheelMs))
+      ? (leftWheelMs + rightWheelMs) / 2
+      : null
+  );
+
+  const angularVelocity = imu.angular_velocity || imu.gyro || imu.angular || {};
+  const linearAcceleration = imu.linear_acceleration || imu.acceleration || imu.accel || {};
+  const yawRate = _finiteNumber(
+    angularVelocity.z,
+    imu.gyro_z,
+    imu.angular_velocity_z,
+    _getPath(odom, ["twist", "twist", "angular", "z"]),
+    _getPath(odom, ["twist", "angular", "z"]),
+    odom.angular_velocity
+  );
+  const accelX = _finiteNumber(linearAcceleration.x, imu.accel_x, imu.linear_acceleration_x);
+  const accelY = _finiteNumber(linearAcceleration.y, imu.accel_y, imu.linear_acceleration_y);
+
+  const orientation = imu.orientation || imu.quaternion || imu.pose?.orientation || null;
+  const quaternionAngles = _quaternionToRollPitch(orientation);
+  const roll = _finiteNumber(
+    imu.roll_deg,
+    quaternionAngles.roll,
+    Number.isFinite(Number(imu.roll_rad)) ? Number(imu.roll_rad) * 180 / Math.PI : null
+  );
+  const pitch = _finiteNumber(
+    imu.pitch_deg,
+    quaternionAngles.pitch,
+    Number.isFinite(Number(imu.pitch_rad)) ? Number(imu.pitch_rad) * 180 / Math.PI : null
+  );
+
+  _setMotionValue("motion-linear-speed", linearSpeed);
+  _setMotionValue("motion-yaw-rate", yawRate, 3);
+  _setMotionValue("imu-accel-x", accelX);
+  _setMotionValue("imu-accel-y", accelY);
+  _setMotionValue("imu-roll", roll, 1);
+  _setMotionValue("imu-pitch", pitch, 1);
+
+  const imuLive = [yawRate, accelX, accelY, roll, pitch].some(Number.isFinite);
+  const status = document.getElementById("imu-preview-status");
+  if (status) {
+    status.textContent = imuLive ? "IMU live" : "Waiting for /imu/data_raw";
+    status.className = "motion-status" + (imuLive ? " live" : "");
   }
 }
 
@@ -357,9 +449,16 @@ function updateThermals(zones) {
   const container = document.getElementById("thermal-zones");
   if (!container) return;
 
+  const sidebarTemp = document.getElementById("sidebar-jetson-temp");
   if (!zones || zones.length === 0) {
     container.innerHTML = '<span class="thermal-placeholder">No thermal zones detected</span>';
+    if (sidebarTemp) sidebarTemp.textContent = "No thermal data";
     return;
+  }
+
+  const representative = zones.find(z => /cpu|gpu|soc|thermal/i.test(z.type || "")) || zones[0];
+  if (sidebarTemp && representative?.temp_c != null) {
+    sidebarTemp.textContent = `${Number(representative.temp_c).toFixed(1)}°C`;
   }
 
   container.innerHTML = "";
@@ -578,63 +677,71 @@ function showCtrlMsg(text, type) {
 
 let camStreaming = false;
 
-function getPreviewFps() {
-  const el = document.getElementById("cam-fps");
-  return el ? el.value : "10";
-}
-
-function getPreviewQuality() {
-  const el = document.getElementById("cam-quality");
-  return el ? el.value : "50";
-}
-
-function setCameraStatus(text, cls = "") {
-  const stateEl = document.getElementById("cam-state");
-  if (!stateEl) return;
-  stateEl.textContent = text;
-  stateEl.className = "cam-state" + (cls ? " " + cls : "");
+function setCameraPlaceholder(stream, visible, message = "Start preview to see feed") {
+  const placeholder = document.getElementById(`cam-${stream}-empty`);
+  if (!placeholder) return;
+  placeholder.classList.toggle("hidden", !visible);
+  const messageEl = placeholder.querySelector("span");
+  if (messageEl) messageEl.textContent = message;
 }
 
 function startCamera() {
-  const fps = getPreviewFps();
-  const quality = getPreviewQuality();
+  const fps = document.getElementById("cam-fps")?.value || "10";
+  const quality = document.getElementById("cam-quality")?.value || "50";
+  const colorImg = document.getElementById("cam-color");
+  const depthImg = document.getElementById("cam-depth");
+  const stateEl = document.getElementById("cam-state");
+  const toggle = document.getElementById("cam-toggle");
+  if (!colorImg || !depthImg || !toggle) return;
 
-  const colorImgs = [
-    document.getElementById("cam-color"),
-    document.getElementById("rec-preview-color"),
-  ].filter(Boolean);
+  const qs = `fps=${encodeURIComponent(fps)}&quality=${encodeURIComponent(quality)}&_=${Date.now()}`;
+  setCameraPlaceholder("color", true, "Connecting to color stream...");
+  setCameraPlaceholder("depth", true, "Connecting to depth stream...");
 
-  const depthImgs = [
-    document.getElementById("cam-depth"),
-    document.getElementById("rec-preview-depth"),
-  ].filter(Boolean);
+  colorImg.onload = () => setCameraPlaceholder("color", false);
+  depthImg.onload = () => setCameraPlaceholder("depth", false);
+  colorImg.onerror = () => {
+    setCameraPlaceholder("color", true, "Color stream unavailable");
+    if (stateEl) { stateEl.textContent = "Stream error"; stateEl.className = "cam-state err"; }
+  };
+  depthImg.onerror = () => {
+    setCameraPlaceholder("depth", true, "Depth stream unavailable");
+    if (stateEl) { stateEl.textContent = "Stream error"; stateEl.className = "cam-state err"; }
+  };
 
-  const qs = `fps=${encodeURIComponent(fps)}&quality=${encodeURIComponent(quality)}`;
-
-  for (const img of colorImgs) {
-    img.src = `/api/stream/color?${qs}&t=${Date.now()}`;
-    img.onerror = () => setCameraStatus("Color stream error", "err");
-  }
-
-  for (const img of depthImgs) {
-    img.src = `/api/stream/depth?${qs}&t=${Date.now()}`;
-    img.onerror = () => setCameraStatus("Depth stream error", "err");
-  }
-
+  colorImg.src = `/api/stream/color?${qs}`;
+  depthImg.src = `/api/stream/depth?${qs}`;
   camStreaming = true;
-  setCameraStatus("Streaming", "ok");
-  setPreviewButtons(camStreaming || lidarScanning);
+  toggle.innerHTML = '<span class="button-play">■</span> Stop Preview';
+  toggle.className = "danger compact";
+  if (stateEl) { stateEl.textContent = "Streaming"; stateEl.className = "cam-state ok"; }
 }
 
 function stopCamera() {
-  for (const id of ["cam-color", "rec-preview-color", "cam-depth", "rec-preview-depth"]) {
-    const img = document.getElementById(id);
-    if (img) img.src = "";
+  const colorImg = document.getElementById("cam-color");
+  const depthImg = document.getElementById("cam-depth");
+  const stateEl = document.getElementById("cam-state");
+  const toggle = document.getElementById("cam-toggle");
+
+  if (colorImg) {
+    colorImg.onload = null;
+    colorImg.onerror = null;
+    colorImg.removeAttribute("src");
+  }
+  if (depthImg) {
+    depthImg.onload = null;
+    depthImg.onerror = null;
+    depthImg.removeAttribute("src");
   }
 
+  setCameraPlaceholder("color", true);
+  setCameraPlaceholder("depth", true);
   camStreaming = false;
-  setCameraStatus("Stopped");
-  setPreviewButtons(camStreaming || lidarScanning);
+  if (toggle) {
+    toggle.innerHTML = '<span class="button-play">▶</span> Start Preview';
+    toggle.className = "primary compact";
+  }
+  if (stateEl) { stateEl.textContent = "Stopped"; stateEl.className = "cam-state"; }
 }
 
 function toggleCamera() {
@@ -647,31 +754,64 @@ function toggleCamera() {
 const _bagTopicData = {};
 
 async function loadBagTopics() {
-  for (const profile of ["perception", "mapping"]) {
+  const profiles = ["perception", "mapping"];
+  for (const profile of profiles) {
+    const container = document.getElementById(`topic-groups-${profile}`);
+    if (container) container.innerHTML = '<div class="topic-load-state">Loading topics…</div>';
+  }
+
+  await Promise.all(profiles.map(async profile => {
     try {
       const resp = await fetch(`/api/bag-topics/${profile}`);
-      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       _bagTopicData[profile] = await resp.json();
     } catch (e) {
       console.error(`Failed to load ${profile} bag topics:`, e);
+      _bagTopicData[profile] = { _error: e.message };
     }
+    renderTopicPicker(profile);
+  }));
+}
+
+function _normaliseTopicGroups(data) {
+  const raw = data.topic_groups ?? data.groups ?? data.available_topics ?? data.topics ?? {};
+  if (Array.isArray(raw)) return { Topics: raw };
+  if (!raw || typeof raw !== "object") return {};
+
+  const groups = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (Array.isArray(value)) groups[name] = value;
+    else if (typeof value === "string") groups[name] = [value];
+    else if (value && Array.isArray(value.topics)) groups[name] = value.topics;
   }
-  renderTopicPicker("perception");
-  renderTopicPicker("mapping");
+  return groups;
 }
 
 function renderTopicPicker(profile) {
   const container = document.getElementById(`topic-groups-${profile}`);
   const hint = document.getElementById(`topic-picker-hint-${profile}`);
   const data = _bagTopicData[profile];
-  if (!container || !data) return;
+  if (!container) return;
 
-  const groups = data.topic_groups || {};
-  const selected = data.selected_topics || [];
-  const recording = data.recording;
+  if (!data) {
+    container.innerHTML = '<div class="topic-load-state">Loading topics…</div>';
+    return;
+  }
+  if (data._error) {
+    container.innerHTML = `<div class="topic-load-state error">Could not load topics: ${data._error}</div>`;
+    return;
+  }
 
-  if (hint) {
-    hint.textContent = recording ? "(locked while recording)" : "";
+  const groups = _normaliseTopicGroups(data);
+  const selected = data.selected_topics || data.selected || data.enabled_topics || [];
+  const recording = Boolean(data.recording);
+
+  if (hint) hint.textContent = recording ? "Locked while recording" : "";
+
+  if (Object.keys(groups).length === 0 && selected.length > 0) groups.Selected = selected;
+  if (Object.keys(groups).length === 0) {
+    container.innerHTML = '<div class="topic-load-state error">No topics were returned by the recorder API.</div>';
+    return;
   }
 
   container.innerHTML = "";
@@ -684,26 +824,29 @@ function renderTopicPicker(profile) {
     label.textContent = groupName;
     group.appendChild(label);
 
-    for (const topic of topics) {
+    for (const topicValue of topics) {
+      const topic = typeof topicValue === "string"
+        ? topicValue
+        : (topicValue?.name || topicValue?.topic || "");
+      if (!topic) continue;
+
       const lbl = document.createElement("label");
       lbl.className = "topic-cb-label";
+      lbl.dataset.topic = topic;
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.value = topic;
-      cb.checked = selected.includes(topic);
+      cb.checked = selected.includes(topic) || Boolean(topicValue?.selected);
       cb.disabled = recording;
       cb.className = "topic-cb";
       lbl.appendChild(cb);
+
       const span = document.createElement("span");
-
-      if (topic.startsWith("/imu/")) {
-        span.textContent = topic.slice(1);
-      } else {
-        span.textContent = topic.split("/").pop();
-      }
-
+      span.textContent = topic.split("/").filter(Boolean).pop() || topic;
       span.title = topic;
       lbl.appendChild(span);
+
+
       group.appendChild(lbl);
     }
     container.appendChild(group);
@@ -743,115 +886,25 @@ function showTopicMsg(profile, text, type) {
   el._timer = setTimeout(() => { el.textContent = ""; el.className = "ctrl-msg"; }, 4000);
 }
 
-
 // ─── Recordings ──────────────────────────────────────────────────
 
 let bagsData = null;
 let bagsAutoRefresh = null;
-let bagsSearchTerm = "";
-
-function normalizeTopicCounts(rawCounts) {
-  if (!rawCounts) return null;
-
-  if (!Array.isArray(rawCounts) && typeof rawCounts === "object") {
-    return rawCounts;
-  }
-
-  if (Array.isArray(rawCounts)) {
-    const out = {};
-    for (const item of rawCounts) {
-      if (!item || typeof item !== "object") continue;
-      const topic = item.topic || item.name;
-      const count = item.count ?? item.messages ?? item.msg_count ?? item.value;
-      if (topic) out[topic] = count;
-    }
-    return out;
-  }
-
-  return null;
-}
-
-function getTopicShortName(topic) {
-  if (!topic) return "--";
-  const parts = String(topic).split("/").filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : topic;
-}
-
-function updateRecordingTopicCounts(profile, rec) {
-  const body = document.getElementById(`rec-topic-counts-body-${profile}`);
-  if (!body) return;
-
-  const rawCounts =
-    rec.topic_counts ||
-    rec.topic_message_counts ||
-    rec.topic_counts_by_name ||
-    rec.counts_by_topic ||
-    rec.counts ||
-    null;
-
-  const counts = normalizeTopicCounts(rawCounts);
-  const selectedTopics = (_bagTopicData[profile] && _bagTopicData[profile].selected_topics) || [];
-
-  body.innerHTML = "";
-
-  if (!counts) {
-    const msg = document.createElement("div");
-    msg.className = "rec-topic-count-empty";
-    msg.textContent = rec.recording
-      ? "Recording, but backend is not sending per-topic counts yet."
-      : "No per-topic count data yet.";
-    body.appendChild(msg);
-    return;
-  }
-
-  const topics = selectedTopics.length > 0
-    ? selectedTopics
-    : Object.keys(counts).sort();
-
-  for (const topic of topics) {
-    const value = Number(counts[topic] ?? counts[getTopicShortName(topic)] ?? 0) || 0;
-
-    const row = document.createElement("div");
-    row.className = "rec-topic-count-row";
-
-    const name = document.createElement("div");
-    name.className = "rec-topic-count-name";
-    name.textContent = getTopicShortName(topic);
-    name.title = topic;
-
-    const count = document.createElement("div");
-    count.className = "rec-topic-count-value";
-    count.textContent = value;
-
-    row.appendChild(name);
-    row.appendChild(count);
-    body.appendChild(row);
-  }
-}
 
 async function loadBags() {
   const loading = document.getElementById("bags-loading");
-  const columns = document.getElementById("bags-columns");
   const empty = document.getElementById("bags-empty");
-
+  const isInitialLoad = !bagsData;
+  if (loading) {
+    loading.style.display = isInitialLoad ? "" : "none";
+    loading.textContent = "Loading...";
+  }
   try {
     const resp = await fetch("/api/bags");
     if (!resp.ok) throw new Error("HTTP " + resp.status);
-
     bagsData = await resp.json();
     renderBags();
-
-    const bags = bagsData.bags || [];
-
     if (loading) loading.style.display = "none";
-
-    if (bags.length === 0) {
-      if (columns) columns.style.display = "none";
-      if (empty) empty.style.display = "";
-    } else {
-      if (columns) columns.style.display = "grid";
-      if (empty) empty.style.display = "none";
-    }
   } catch (e) {
     console.error("Failed to load bags:", e);
     if (loading) loading.textContent = "Failed to load: " + e.message;
@@ -859,22 +912,26 @@ async function loadBags() {
 }
 
 function formatBytes(bytes) {
-  const n = Number(bytes) || 0;
-  if (n === 0) return "0 B";
-
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), units.length - 1);
-  const val = n / Math.pow(1024, i);
-
+  const safeBytes = Number(bytes) || 0;
+  if (safeBytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(Math.floor(Math.log(safeBytes) / Math.log(1024)), units.length - 1);
+  const val = safeBytes / Math.pow(1024, i);
   return val.toFixed(i === 0 ? 0 : 1) + " " + units[i];
+}
+
+function _bagDateValue(bag) {
+  const value = bag.modified || bag.created || bag.date || bag.timestamp || 0;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function formatDate(isoStr) {
   try {
     const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return isoStr || "--";
-
+    if (Number.isNaN(d.getTime())) return isoStr || "--";
     return d.toLocaleDateString(undefined, {
+      year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
@@ -885,245 +942,215 @@ function formatDate(isoStr) {
   }
 }
 
-function formatBagDateGroup(isoStr) {
-  try {
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return "Unknown date";
+function _bagProfile(bag) {
+  const explicit = String(bag.profile || bag.type || bag.category || "").toLowerCase();
+  const name = String(bag.name || "").toLowerCase();
+  if (explicit.includes("perception") || name.startsWith("perception") || name.includes("_perception")) return "perception";
+  if (explicit.includes("mapping") || name.startsWith("mapping") || name.includes("_mapping")) return "mapping";
 
-    return d.toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  } catch {
-    return "Unknown date";
-  }
+  const topics = Array.isArray(bag.topics) ? bag.topics.join(" ").toLowerCase() : "";
+  if (/camera|image_raw|depth/.test(topics)) return "perception";
+  if (/scan|odom|\/tf|imu/.test(topics)) return "mapping";
+  return "mapping";
 }
 
-function getBagProfile(bag) {
-  const raw = `${bag.profile || ""} ${bag.type || ""} ${bag.name || ""}`.toLowerCase();
-
-  if (raw.includes("perception")) return "perception";
-  if (raw.includes("mapping")) return "mapping";
-
-  return "other";
+function _bagDateObject(bag) {
+  const value = bag.modified || bag.created || bag.date || bag.timestamp;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function getBagSearchText(bag) {
-  return [
-    bag.name || "",
-    bag.profile || "",
-    bag.type || "",
-    bag.modified || "",
-    formatDate(bag.modified || ""),
-    formatBagDateGroup(bag.modified || ""),
-    (bag.files || []).join(" "),
-  ].join(" ").toLowerCase();
+function _localDateKey(date) {
+  if (!date) return "unknown";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-function renderBagCard(bag) {
-  const card = document.createElement("div");
-  card.className = "bag-card";
+function _formatBagDay(date) {
+  if (!date) return "Unknown date";
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const key = _localDateKey(date);
+  const prefix = key === _localDateKey(today)
+    ? "Today"
+    : key === _localDateKey(yesterday)
+      ? "Yesterday"
+      : date.toLocaleDateString(undefined, { weekday: "long" });
+  return `${prefix}, ${date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })}`;
+}
 
-  const name = document.createElement("div");
-  name.className = "bag-card-name";
-  name.textContent = bag.name || "(unnamed bag)";
-  card.appendChild(name);
+function _formatBagTime(bag) {
+  const date = _bagDateObject(bag);
+  return date
+    ? date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "--";
+}
 
-  const meta = document.createElement("div");
-  meta.className = "bag-card-meta";
+function _createBagTableRow(bag) {
+  const tr = document.createElement("tr");
 
-  const date = document.createElement("span");
-  date.textContent = formatDate(bag.modified);
+  const tdTime = document.createElement("td");
+  tdTime.className = "bag-time";
+  tdTime.textContent = _formatBagTime(bag);
+  tr.appendChild(tdTime);
 
-  const size = document.createElement("span");
-  size.textContent = formatBytes(bag.size_bytes || 0);
+  const tdName = document.createElement("td");
+  tdName.className = "bag-name";
+  tdName.textContent = bag.name || "Unnamed recording";
+  tdName.title = bag.name || "";
+  tr.appendChild(tdName);
 
-  const files = document.createElement("span");
-  const fileCount = (bag.files || []).length;
-  files.textContent = `${fileCount} file${fileCount === 1 ? "" : "s"}`;
+  const tdSize = document.createElement("td");
+  tdSize.textContent = formatBytes(bag.size_bytes);
+  tr.appendChild(tdSize);
 
-  meta.appendChild(date);
-  meta.appendChild(size);
-  meta.appendChild(files);
-  card.appendChild(meta);
+  const tdFiles = document.createElement("td");
+  tdFiles.className = "bag-files";
+  const files = bag.files || [];
+  const exts = [...new Set(files.map(f => f.includes(".") ? "." + f.split(".").pop() : f))];
+  tdFiles.textContent = `${files.length} files${exts.length ? ` (${exts.join(", ")})` : ""}`;
+  tr.appendChild(tdFiles);
 
-  const exts = [...new Set((bag.files || []).map(f => f.includes(".") ? "." + f.split(".").pop() : f))];
-  if (exts.length > 0) {
-    const fileInfo = document.createElement("div");
-    fileInfo.className = "bag-card-files";
-    fileInfo.textContent = exts.join(", ");
-    card.appendChild(fileInfo);
-  }
-
-  const actions = document.createElement("div");
-  actions.className = "bag-card-actions";
+  const tdActions = document.createElement("td");
+  tdActions.className = "bag-actions";
 
   const dlBtn = document.createElement("a");
   dlBtn.href = `/api/bags/${encodeURIComponent(bag.name)}/download`;
-  dlBtn.className = "bag-icon-btn bag-icon-download";
-  dlBtn.title = "Download";
-  dlBtn.setAttribute("aria-label", "Download");
+  dlBtn.className = "bag-dl";
+  dlBtn.textContent = "Download";
   dlBtn.setAttribute("download", "");
-  dlBtn.innerHTML = "<span>⬇</span>";
-  actions.appendChild(dlBtn);
+  tdActions.appendChild(dlBtn);
 
   const delBtn = document.createElement("button");
-  delBtn.type = "button";
-  delBtn.className = "bag-icon-btn bag-icon-delete";
-  delBtn.title = "Delete";
-  delBtn.setAttribute("aria-label", "Delete");
-  delBtn.innerHTML = "<span>🗑</span>";
+  delBtn.className = "danger bag-del";
+  delBtn.textContent = "Delete";
   delBtn.onclick = () => deleteBag(bag.name);
-  actions.appendChild(delBtn);
+  tdActions.appendChild(delBtn);
 
-  card.appendChild(actions);
-  return card;
+  tr.appendChild(tdActions);
+  return tr;
 }
 
-function ensureBagsSearchBox() {
-  const columns = document.getElementById("bags-columns");
-  if (!columns) return;
+function _renderBagRows(profile, bags) {
+  const container = document.getElementById(`bags-list-${profile}`);
+  const empty = document.getElementById(`bags-empty-${profile}`);
+  const count = document.getElementById(`bags-count-${profile}`);
+  if (!container || !empty) return;
 
-  let row = document.getElementById("bags-search-row");
+  container.innerHTML = "";
+  const label = `${bags.length} recording${bags.length === 1 ? "" : "s"}`;
+  if (count) count.textContent = label;
+  empty.style.display = bags.length ? "none" : "block";
+  if (!bags.length) return;
 
-  if (!row) {
-    row = document.createElement("div");
-    row.id = "bags-search-row";
-    row.className = "bags-search-row";
-    row.innerHTML = `
-      <label for="bags-search">Search</label>
-      <input id="bags-search" type="search" placeholder="Search bags by name, date, type, files...">
-    `;
-    columns.parentElement.insertBefore(row, columns);
+  const groups = new Map();
+  for (const bag of bags) {
+    const date = _bagDateObject(bag);
+    const key = _localDateKey(date);
+    if (!groups.has(key)) groups.set(key, { date, bags: [] });
+    groups.get(key).bags.push(bag);
   }
 
-  const input = document.getElementById("bags-search");
-  if (input && !input.dataset.bound) {
-    input.dataset.bound = "1";
-    input.value = bagsSearchTerm;
-    input.addEventListener("input", () => {
-      bagsSearchTerm = input.value.trim().toLowerCase();
-      renderBags();
-    });
+  for (const { date, bags: dayBags } of groups.values()) {
+    const section = document.createElement("section");
+    section.className = "bag-date-section";
+
+    const heading = document.createElement("div");
+    heading.className = "bag-date-heading";
+    const title = document.createElement("h4");
+    title.textContent = _formatBagDay(date);
+    const dayCount = document.createElement("span");
+    dayCount.textContent = `${dayBags.length} bag${dayBags.length === 1 ? "" : "s"}`;
+    heading.append(title, dayCount);
+
+    const shell = document.createElement("div");
+    shell.className = "table-shell";
+    const table = document.createElement("table");
+    table.className = "bags-table dated-bags-table";
+    table.innerHTML = '<thead><tr><th>Time</th><th>Name</th><th>Size</th><th>Files</th><th></th></tr></thead>';
+    const tbody = document.createElement("tbody");
+    for (const bag of dayBags) tbody.appendChild(_createBagTableRow(bag));
+    table.appendChild(tbody);
+    shell.appendChild(table);
+
+    section.append(heading, shell);
+    container.appendChild(section);
   }
 }
 
-function renderBagDateGroups(listEl, items) {
-  listEl.innerHTML = "";
-
-  const groups = {};
-
-  for (const bag of items) {
-    const key = formatBagDateGroup(bag.modified);
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(bag);
-  }
-
-  for (const [dateLabel, bags] of Object.entries(groups)) {
-    const group = document.createElement("div");
-    group.className = "bag-date-group";
-
-    const title = document.createElement("div");
-    title.className = "bag-date-title";
-    title.innerHTML = `<span>${dateLabel}</span><span class="bag-date-count">${bags.length}</span>`;
-    group.appendChild(title);
-
-    for (const bag of bags) {
-      group.appendChild(renderBagCard(bag));
-    }
-
-    listEl.appendChild(group);
-  }
+function clearBagDateFilter() {
+  const input = document.getElementById("bags-date-filter");
+  if (input) input.value = "";
+  renderBags();
 }
 
 function renderBags() {
-  ensureBagsSearchBox();
-
-  const summary = document.getElementById("bags-summary");
   if (!bagsData) return;
+  const summary = document.getElementById("bags-summary");
+  const allBags = [...(bagsData.bags || [])];
+  const selectedDate = document.getElementById("bags-date-filter")?.value || "";
+  const clearButton = document.getElementById("bags-clear-date");
+  if (clearButton) clearButton.disabled = !selectedDate;
 
-  const allBags = [...(bagsData.bags || [])].sort((a, b) => {
-    const da = new Date(a.modified || 0).getTime();
-    const db = new Date(b.modified || 0).getTime();
-    return db - da;
-  });
+  const sortDirection = document.getElementById("bags-sort")?.value || "desc";
+  allBags.sort((a, b) => sortDirection === "asc"
+    ? _bagDateValue(a) - _bagDateValue(b)
+    : _bagDateValue(b) - _bagDateValue(a));
 
-  const bags = bagsSearchTerm
-    ? allBags.filter(bag => getBagSearchText(bag).includes(bagsSearchTerm))
+  const bags = selectedDate
+    ? allBags.filter(bag => _localDateKey(_bagDateObject(bag)) === selectedDate)
     : allBags;
 
   if (summary) {
-    const totalText = `${allBags.length} recording${allBags.length !== 1 ? "s" : ""} · ${formatBytes(bagsData.total_bytes || 0)}`;
-    summary.textContent = bagsSearchTerm ? `${bags.length}/${totalText}` : totalText;
+    const filteredText = selectedDate ? `${bags.length} of ${allBags.length}` : `${bags.length}`;
+    const visibleBytes = bags.reduce((sum, bag) => sum + (Number(bag.size_bytes) || 0), 0);
+    summary.textContent = `${filteredText} recording${bags.length === 1 ? "" : "s"} · ${formatBytes(visibleBytes)}`;
   }
 
   const diskWrap = document.getElementById("disk-bar-wrap");
   if (diskWrap && bagsData.disk_total) {
     diskWrap.style.display = "";
-
-    const total = bagsData.disk_total;
-    const free = bagsData.disk_free;
-    const used = bagsData.disk_used;
-    const bagBytes = bagsData.total_bytes || 0;
+    const total = Number(bagsData.disk_total) || 1;
+    const free = Number(bagsData.disk_free) || 0;
+    const used = Number(bagsData.disk_used) || 0;
+    const bagBytes = Number(bagsData.total_bytes) || 0;
     const otherUsed = Math.max(0, used - bagBytes);
 
-    const pctBags = Math.max(0.5, (bagBytes / total) * 100);
-    const pctOther = Math.max(0.5, (otherUsed / total) * 100);
-
-    document.getElementById("disk-bar-bags").style.width = pctBags + "%";
-    document.getElementById("disk-bar-other").style.width = pctOther + "%";
+    document.getElementById("disk-bar-bags").style.width = Math.max(0.5, (bagBytes / total) * 100) + "%";
+    document.getElementById("disk-bar-other").style.width = Math.max(0.5, (otherUsed / total) * 100) + "%";
     document.getElementById("disk-label-used").textContent =
       `Bags: ${formatBytes(bagBytes)} · Other: ${formatBytes(otherUsed)} · Total: ${formatBytes(total)}`;
-    document.getElementById("disk-label-free").textContent =
-      `${formatBytes(free)} free`;
+    document.getElementById("disk-label-free").textContent = `${formatBytes(free)} free`;
   } else if (diskWrap) {
     diskWrap.style.display = "none";
   }
 
-  const grouped = {
-    perception: [],
-    mapping: [],
-    other: [],
-  };
+  const perception = bags.filter(bag => _bagProfile(bag) === "perception");
+  const mapping = bags.filter(bag => _bagProfile(bag) === "mapping");
+  _renderBagRows("perception", perception);
+  _renderBagRows("mapping", mapping);
 
-  for (const bag of bags) {
-    grouped[getBagProfile(bag)].push(bag);
-  }
-
-  for (const profile of ["perception", "mapping", "other"]) {
-    const list = document.getElementById(`bags-list-${profile}`);
-    const count = document.getElementById(`bags-count-${profile}`);
-    const empty = document.getElementById(`bags-empty-${profile}`);
-    const column = document.getElementById(`bag-column-${profile}`);
-    const items = grouped[profile];
-
-    if (count) count.textContent = String(items.length);
-
-    if (list) {
-      renderBagDateGroups(list, items);
-    }
-
-    if (empty) {
-      empty.style.display = items.length === 0 ? "" : "none";
-      empty.textContent = bagsSearchTerm
-        ? `No ${profile} bags match the search.`
-        : `No ${profile} bags.`;
-    }
-
-    if (profile === "other" && column) {
-      column.style.display = items.length === 0 ? "none" : "";
-    }
+  const globalEmpty = document.getElementById("bags-empty");
+  if (globalEmpty) {
+    globalEmpty.style.display = bags.length ? "none" : "block";
+    globalEmpty.textContent = selectedDate
+      ? "No recordings were found on the selected date."
+      : "No recordings found.";
   }
 }
 
 async function deleteBag(name) {
   if (!confirm(`Delete recording "${name}"?\nThis cannot be undone.`)) return;
-
   try {
     const resp = await fetch(`/api/bags/${encodeURIComponent(name)}`, { method: "DELETE" });
     const result = await resp.json();
-
     if (result.success || resp.ok) {
       loadBags();
     } else {
@@ -1592,89 +1619,85 @@ function showApMsg(text, type) {
   el.className = "ctrl-msg " + (type || "");
 }
 
-// ─── Lidar / Preview ─────────────────────────────────────────────
+// ─── Lidar ───────────────────────────────────────────────────────
 
 let lidarScanning = false;
 let lidarPoints = [];
 let lidarAnimFrame = null;
 
-function setPreviewButtons(running) {
-  for (const id of ["preview-toggle", "recording-preview-toggle"]) {
-    const btn = document.getElementById(id);
-    if (!btn) continue;
+let lidarRequestPending = false;
 
-    btn.textContent = running ? "Stop Preview" : "Start Preview";
-    btn.className = running ? "danger" : "primary";
-  }
-}
-
-function setLidarStatusUi(running, message = null) {
+function _setLidarPreviewUi(active, message = active ? "Previewing" : "Stopped", error = false) {
+  const toggle = document.getElementById("lidar-toggle");
   const status = document.getElementById("lidar-status");
+  if (toggle) {
+    toggle.innerHTML = active
+      ? '<span class="button-play">■</span> Stop Preview'
+      : '<span class="button-play">▶</span> Start Preview';
+    toggle.className = (active ? "danger" : "primary") + " compact";
+    toggle.disabled = lidarRequestPending;
+  }
   if (status) {
-    status.textContent = message || (running ? "Scanning" : "Stopped");
-    status.className = running ? "lidar-status ok" : "lidar-status";
+    status.textContent = message;
+    status.className = "lidar-status" + (error ? " err" : active ? " ok" : "");
   }
-}
-
-async function togglePreview() {
-  if (camStreaming || lidarScanning) {
-    stopCamera();
-    await stopLidar();
-    setPreviewButtons(false);
-    drawLidar();
-    return;
-  }
-
-  startCamera();
-  await startLidar();
-
-  setPreviewButtons(camStreaming || lidarScanning);
-  drawLidar();
 }
 
 async function startLidar() {
+  if (lidarScanning || lidarRequestPending) return;
+  lidarRequestPending = true;
+  _setLidarPreviewUi(false, "Starting...");
+
   try {
     const resp = await fetch("/api/lidar/start", { method: "POST" });
-    const r = await resp.json();
-
-    if (!r.success) {
-      console.warn("Lidar start failed:", r);
-      setLidarStatusUi(false, r.message || "Lidar failed");
-      drawLidar();
-      return;
+    const text = await resp.text();
+    let result = {};
+    try { result = text ? JSON.parse(text) : {}; } catch { result = {}; }
+    if (!resp.ok || result.success === false) {
+      throw new Error(result.message || `HTTP ${resp.status}`);
     }
+
+    lidarScanning = true;
+    lidarPoints = [];
+    _setLidarPreviewUi(true, "Previewing");
+    if (!lidarAnimFrame) lidarAnimFrame = requestAnimationFrame(drawLidar);
   } catch (e) {
-    console.error("Lidar start failed:", e);
-    setLidarStatusUi(false, "Lidar start failed");
+    lidarScanning = false;
+    lidarPoints = [];
+    _setLidarPreviewUi(false, e.message || "Failed to start", true);
     drawLidar();
-    return;
-  }
-
-  lidarScanning = true;
-  setLidarStatusUi(true);
-  setPreviewButtons(camStreaming || lidarScanning);
-
-  if (!lidarAnimFrame) {
-    lidarAnimFrame = requestAnimationFrame(drawLidar);
+  } finally {
+    lidarRequestPending = false;
+    const toggle = document.getElementById("lidar-toggle");
+    if (toggle) toggle.disabled = false;
   }
 }
 
 async function stopLidar() {
-  try {
-    await fetch("/api/lidar/stop", { method: "POST" });
-  } catch (e) {
-    console.warn("Lidar stop failed:", e);
-  }
+  if (lidarRequestPending) return;
 
+  // Stop the UI immediately. WebSocket lidar.scanning status is deliberately
+  // ignored, so the preview cannot turn itself back on.
   lidarScanning = false;
-  setLidarStatusUi(false);
-
+  lidarPoints = [];
   if (lidarAnimFrame) {
     cancelAnimationFrame(lidarAnimFrame);
     lidarAnimFrame = null;
   }
-
+  _setLidarPreviewUi(false, "Stopped");
   drawLidar();
+
+  lidarRequestPending = true;
+  const toggle = document.getElementById("lidar-toggle");
+  if (toggle) toggle.disabled = true;
+  try {
+    await fetch("/api/lidar/stop", { method: "POST" });
+  } catch (e) {
+    console.warn("Lidar stop request failed; preview remains stopped:", e);
+  } finally {
+    lidarRequestPending = false;
+    if (toggle) toggle.disabled = false;
+  }
 }
 
 function toggleLidar() {
@@ -1682,72 +1705,63 @@ function toggleLidar() {
   else startLidar();
 }
 
-function drawLidarCanvas(canvas) {
+function drawLidar() {
+  const canvas = document.getElementById("lidar-canvas");
   if (!canvas) return;
-
   const ctx = canvas.getContext("2d");
-  const W = canvas.width;
-  const H = canvas.height;
-  const cx = W / 2;
-  const cy = H / 2;
-
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
   const rangeM = parseFloat(document.getElementById("lidar-range")?.value || "8");
   const rangeMax = rangeM * 1000;
-  const radius = Math.min(cx, cy) - 18;
+  const radius = Math.min(cx, cy) - 20;
 
   ctx.fillStyle = "#0a0e17";
   ctx.fillRect(0, 0, W, H);
 
-  const ringCount = 8;
+  // Distance rings
+  const ringCount = 4;
   ctx.strokeStyle = "#1a2035";
   ctx.lineWidth = 1;
-  ctx.font = "10px monospace";
-  ctx.fillStyle = "#5c6688";
-
+  ctx.font = "11px monospace";
+  ctx.fillStyle = "#3a4565";
   for (let i = 1; i <= ringCount; i++) {
     const r = (radius / ringCount) * i;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
-
-    const label = ((rangeM / ringCount) * i).toFixed(1) + "m";
-    ctx.fillText(label, cx + r + 4, cy - 4);
+    const mLabel = ((rangeM / ringCount) * i).toFixed(1) + "m";
+    ctx.fillText(mLabel, cx + r + 3, cy - 3);
   }
 
+  // Cross-hairs
   ctx.strokeStyle = "#1a2035";
   ctx.beginPath();
-  ctx.moveTo(cx, 8);
-  ctx.lineTo(cx, H - 8);
-  ctx.moveTo(8, cy);
-  ctx.lineTo(W - 8, cy);
+  ctx.moveTo(cx, 10); ctx.lineTo(cx, H - 10);
+  ctx.moveTo(10, cy); ctx.lineTo(W - 10, cy);
   ctx.stroke();
 
+  // Robot marker
   ctx.fillStyle = "#e94560";
   ctx.beginPath();
   ctx.arc(cx, cy, 4, 0, Math.PI * 2);
   ctx.fill();
 
-  let visiblePoints = 0;
-
-  if (Array.isArray(lidarPoints) && lidarPoints.length > 0) {
+  // Points
+  if (lidarPoints.length > 0) {
     ctx.fillStyle = "#4ecca3";
-
     for (const pt of lidarPoints) {
       const angleDeg = pt[0];
       const distMm = pt[1];
-
       if (distMm <= 0 || distMm > rangeMax) continue;
-
       const angleRad = (angleDeg - 90) * Math.PI / 180;
       const r = (distMm / rangeMax) * radius;
       const px = cx + r * Math.cos(angleRad);
       const py = cy + r * Math.sin(angleRad);
-
       ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
-      visiblePoints++;
     }
   }
 
+  // Forward arrow
   ctx.save();
   ctx.strokeStyle = "#4ecca3";
   ctx.lineWidth = 2;
@@ -1755,7 +1769,6 @@ function drawLidarCanvas(canvas) {
   ctx.moveTo(cx, cy - 8);
   ctx.lineTo(cx, 24);
   ctx.stroke();
-
   ctx.beginPath();
   ctx.moveTo(cx - 5, 30);
   ctx.lineTo(cx, 22);
@@ -1764,85 +1777,170 @@ function drawLidarCanvas(canvas) {
   ctx.fill();
   ctx.restore();
 
+  // Direction labels
   ctx.fillStyle = "#4ecca3";
-  ctx.font = "bold 10px monospace";
+  ctx.font = "bold 11px monospace";
   ctx.textAlign = "center";
   ctx.fillText("FWD", cx, 14);
-
   ctx.fillStyle = "#4ecca366";
-  ctx.font = "10px monospace";
+  ctx.font = "11px monospace";
   ctx.fillText("BACK", cx, H - 6);
-
   ctx.textAlign = "left";
   ctx.fillText("LEFT", 2, cy - 3);
-
   ctx.textAlign = "right";
   ctx.fillText("RIGHT", W - 2, cy - 3);
-
   ctx.textAlign = "left";
 
-  if (visiblePoints === 0) {
-    ctx.fillStyle = "#8a8a9a";
-    ctx.font = "12px monospace";
+  if (!lidarScanning && lidarPoints.length === 0) {
+    ctx.fillStyle = "#d0d5dd";
+    ctx.font = "16px ui-sans-serif, system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(lidarScanning ? "Waiting for lidar points..." : "Lidar preview stopped", cx, cy + 24);
+    ctx.fillText("Lidar preview stopped", cx, cy + 34);
     ctx.textAlign = "left";
   }
-}
 
-function drawLidar() {
-  const canvases = [
-    document.getElementById("lidar-canvas"),
-    document.getElementById("rec-lidar-canvas"),
-  ].filter(Boolean);
-
-  for (const canvas of canvases) {
-    drawLidarCanvas(canvas);
-  }
-
-  if (lidarScanning) {
-    lidarAnimFrame = requestAnimationFrame(drawLidar);
-  } else {
-    lidarAnimFrame = null;
-  }
+  if (lidarScanning) lidarAnimFrame = requestAnimationFrame(drawLidar);
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────
 
+const PAGE_META = {
+  dashboard: {
+    title: "Dashboard",
+    subtitle: "Monitor robot systems and hardware status",
+    icon: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'
+  },
+  recordings: {
+    title: "Recordings",
+    subtitle: "Configure topics, preview sensors, and record data",
+    icon: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/>'
+  },
+  "recorded-bags": {
+    title: "Recorded Bags",
+    subtitle: "Manage saved ROS bag recordings",
+    icon: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v8A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"/>'
+  },
+  controller: {
+    title: "Controller",
+    subtitle: "Inspect input and configure button assignments",
+    icon: '<path d="M8 8h8a5 5 0 0 1 4.8 3.6l1 3.4a3 3 0 0 1-5.2 2.8L14.8 16H9.2l-1.8 1.8A3 3 0 0 1 2.2 15l1-3.4A5 5 0 0 1 8 8z"/><path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"/>'
+  },
+  network: {
+    title: "Network",
+    subtitle: "Manage robot connectivity and access-point settings",
+    icon: '<path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><path d="M12 20h.01"/>'
+  }
+};
+
+function updatePageHeading(tabName) {
+  const meta = PAGE_META[tabName] || PAGE_META.dashboard;
+  setText("page-title", meta.title);
+  setText("page-subtitle", meta.subtitle);
+  const svg = document.getElementById("page-heading-svg");
+  if (svg) svg.innerHTML = meta.icon;
+}
+
 function initTabs() {
   const tabs = document.querySelectorAll(".tabs .tab");
-
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
+      const tabName = tab.dataset.tab;
       tabs.forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
-
       document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+      document.getElementById("tab-" + tabName)?.classList.add("active");
+      updatePageHeading(tabName);
+      if (window.matchMedia("(max-width: 900px)").matches) closeMobileSidebar();
 
-      const target = document.getElementById("tab-" + tab.dataset.tab);
-      if (target) target.classList.add("active");
-
-      if (tab.dataset.tab === "recordings") {
+      if (tabName === "recordings") {
         loadBagTopics();
-        loadBags();
-        startBagsAutoRefresh();
+        drawLidar();
+      }
+
+      if (tabName === "recorded-bags") {
+        if (bagsData) renderBags();
+        else loadBags();
+        stopBagsAutoRefresh();
       } else {
         stopBagsAutoRefresh();
       }
 
-      if (tab.dataset.tab === "network") {
-        loadNetwork();
-      }
-
-      if (tab.dataset.tab === "preview" || tab.dataset.tab === "recordings") {
-        drawLidar();
-        setPreviewButtons(camStreaming || lidarScanning);
-      }
-
-      if (tab.dataset.tab !== "preview" && tab.dataset.tab !== "recordings" && camStreaming) {
-        stopCamera();
+      if (tabName === "network") loadNetwork();
+      if (tabName !== "recordings") {
+        if (camStreaming) stopCamera();
+        if (lidarScanning) stopLidar();
       }
     });
+  });
+}
+
+
+// ─── Collapsible navigation and floating topic menus ─────────────
+
+const _sidebarMedia = window.matchMedia("(max-width: 900px)");
+
+function updateSidebarAria() {
+  const toggle = document.getElementById("sidebar-toggle");
+  if (!toggle) return;
+  const expanded = _sidebarMedia.matches
+    ? document.body.classList.contains("sidebar-open")
+    : !document.body.classList.contains("sidebar-collapsed");
+  toggle.setAttribute("aria-expanded", String(expanded));
+}
+
+function closeMobileSidebar() {
+  document.body.classList.remove("sidebar-open");
+  updateSidebarAria();
+}
+
+function toggleSidebar() {
+  if (_sidebarMedia.matches) {
+    document.body.classList.toggle("sidebar-open");
+  } else {
+    document.body.classList.toggle("sidebar-collapsed");
+  }
+  updateSidebarAria();
+}
+
+function syncSidebarMode() {
+  if (_sidebarMedia.matches) {
+    document.body.classList.remove("sidebar-collapsed");
+    document.body.classList.remove("sidebar-open");
+  } else {
+    document.body.classList.remove("sidebar-open");
+  }
+  updateSidebarAria();
+}
+
+function initSidebar() {
+  document.getElementById("sidebar-toggle")?.addEventListener("click", toggleSidebar);
+  document.getElementById("sidebar-backdrop")?.addEventListener("click", closeMobileSidebar);
+  _sidebarMedia.addEventListener?.("change", syncSidebarMode);
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      closeMobileSidebar();
+      document.querySelectorAll(".topic-checklist[open]").forEach(menu => { menu.open = false; });
+    }
+  });
+  syncSidebarMode();
+}
+
+function initTopicDropdowns() {
+  const menus = Array.from(document.querySelectorAll(".topic-checklist"));
+  for (const menu of menus) {
+    menu.open = false;
+    menu.addEventListener("toggle", () => {
+      if (!menu.open) return;
+      for (const other of menus) {
+        if (other !== menu) other.open = false;
+      }
+    });
+  }
+
+  document.addEventListener("pointerdown", event => {
+    for (const menu of menus) {
+      if (menu.open && !menu.contains(event.target)) menu.open = false;
+    }
   });
 }
 
@@ -2009,6 +2107,8 @@ async function pollBtGamepad() {
 }
 
 initTabs();
+initSidebar();
+initTopicDropdowns();
 connectWs();
 loadCtrlConfig();
 pollBtGamepad();
@@ -2029,6 +2129,5 @@ if (_qualSlider && _qualVal) {
 const _lidarRange = document.getElementById("lidar-range");
 const _lidarRangeVal = document.getElementById("lidar-range-val");
 if (_lidarRange && _lidarRangeVal) {
-  _lidarRange.addEventListener("input", () => { _lidarRangeVal.textContent = _lidarRange.value; });
+  _lidarRange.addEventListener("input", () => { _lidarRangeVal.textContent = Number(_lidarRange.value).toFixed(1) + " m"; });
 }
-
