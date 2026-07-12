@@ -28,7 +28,7 @@ from rclpy.qos import (
     QoSHistoryPolicy,
     QoSDurabilityPolicy,
 )
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32
 
 from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
 from horseshitbot_interfaces.srv import MksSetSpeed, MksMoveTurns, MksSetCurrent, ActuatorCommand, SwitchBackend
@@ -39,6 +39,12 @@ try:
     _HAS_SENSOR_MSGS = True
 except ImportError:
     _HAS_SENSOR_MSGS = False
+
+try:
+    from sensor_msgs.msg import BatteryState as RosBatteryState
+    _HAS_BATTERY_MSG = True
+except ImportError:
+    _HAS_BATTERY_MSG = False
 
 try:
     import cv2
@@ -387,6 +393,7 @@ class _RosBridge:
             "network": [],
             "thermals": [],
             "system_metrics": {},
+            "battery": {},
             "lidar": {},
             "lidar_points": [],
         }
@@ -410,6 +417,19 @@ class _RosBridge:
         ros_node.create_subscription(String, "/mapping_recorder/status",
                                      lambda m: self._cb_bag_recorder("mapping_recorder", m), 10)
         ros_node.create_subscription(String, "/gamepad/status", self._cb_gamepad, 10)
+
+        # Optional robot-power inputs. These subscriptions are harmless when
+        # no battery/Modbus node is publishing yet.
+        ros_node.create_subscription(Float32, "/battery/voltage", self._cb_battery_voltage, 10)
+        ros_node.create_subscription(String, "/battery/status_json", self._cb_battery_json, 10)
+        if _HAS_BATTERY_MSG:
+            ros_node.create_subscription(
+                RosBatteryState,
+                "/battery/status",
+                self._cb_battery_state,
+                10,
+            )
+
         ros_node.create_subscription(String, "/lidar/status", self._cb_lidar_status, 10)
         ros_node.create_subscription(String, "/lidar/points", self._cb_lidar_points, 10)
 
@@ -519,6 +539,79 @@ class _RosBridge:
             data = {"raw": msg.data}
         with self._lock:
             self._state["gamepad"] = data
+
+    def _merge_battery(self, update: dict):
+        with self._lock:
+            current = dict(self._state.get("battery", {}))
+            current.update(update)
+            current["updated_at"] = time.time()
+            self._state["battery"] = current
+
+    def _cb_battery_voltage(self, msg: Float32):
+        self._merge_battery({
+            "voltage": float(msg.data),
+            "source": "/battery/voltage",
+        })
+
+    def _cb_battery_json(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            data = {"raw": msg.data}
+
+        percentage = data.get("percentage", data.get("percent"))
+        try:
+            if percentage is not None:
+                percentage = float(percentage)
+                if 0.0 <= percentage <= 1.0:
+                    percentage *= 100.0
+                data["percent"] = round(percentage, 1)
+        except Exception:
+            pass
+
+        data.setdefault("source", "/battery/status_json")
+        self._merge_battery(data)
+
+    def _cb_battery_state(self, msg):
+        percentage = None
+        try:
+            raw_percentage = float(msg.percentage)
+            if np.isfinite(raw_percentage) and raw_percentage >= 0:
+                percentage = (
+                    raw_percentage * 100.0
+                    if raw_percentage <= 1.0
+                    else raw_percentage
+                )
+        except Exception:
+            pass
+
+        data = {
+            "source": "/battery/status",
+            "voltage": (
+                float(msg.voltage)
+                if np.isfinite(float(msg.voltage))
+                else None
+            ),
+            "current": (
+                float(msg.current)
+                if np.isfinite(float(msg.current))
+                else None
+            ),
+            "temperature": (
+                float(msg.temperature)
+                if np.isfinite(float(msg.temperature))
+                else None
+            ),
+            "percent": (
+                round(percentage, 1)
+                if percentage is not None
+                else None
+            ),
+            "present": bool(msg.present),
+            "power_supply_status": int(msg.power_supply_status),
+            "power_supply_health": int(msg.power_supply_health),
+        }
+        self._merge_battery(data)
 
     def _cb_lidar_status(self, msg: String):
         try:
@@ -683,6 +776,27 @@ class WebDashboardNode(Node):
             """Current Jetson/Linux host metrics used by the dashboard."""
             with bridge._lock:
                 return dict(bridge._state.get("system_metrics", {}))
+
+        @app.get("/api/power-status")
+        async def power_status():
+            """Robot battery data when available, plus ODrive fallback values."""
+            with bridge._lock:
+                battery = dict(bridge._state.get("battery", {}))
+                wheel = dict(bridge._state.get("wheel_status", {}))
+
+            diag = wheel.get("diag") or {}
+            return {
+                "battery": battery,
+                "battery_available": bool(battery),
+                "drive_bus_voltage": diag.get("vbus"),
+                "left_motor_current": wheel.get("current_left"),
+                "right_motor_current": wheel.get("current_right"),
+                "note": (
+                    "Robot battery percentage requires a publisher on "
+                    "/battery/status or /battery/status_json. "
+                    "ODrive bus voltage is not the same as battery percentage."
+                ),
+            }
 
         @app.get("/api/controller-config")
         async def get_controller_config():

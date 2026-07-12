@@ -218,7 +218,11 @@
       <article class="dashboard-card system-health-card">
         <header class="dashboard-simple-heading system-health-heading">
           <h2>System Health</h2>
-          <span class="system-health-state" id="system-health-state">Loading host metrics…</span>
+          <div class="system-health-actions">
+            <span class="system-health-state" id="system-health-state">Loading host metrics…</span>
+            <a class="system-data-link" href="/api/system-health" target="_blank" rel="noopener">Metrics JSON</a>
+            <a class="system-data-link" href="/api/power-status" target="_blank" rel="noopener">Power JSON</a>
+          </div>
         </header>
         <div class="health-list">
           <div class="health-row health-spark-row">
@@ -890,6 +894,33 @@
 </section>
 <!-- Controller -->
 <section class="tab-content" id="tab-controller">
+<div class="controller-gamepad-card card">
+  <div class="controller-gamepad-main">
+    <span class="controller-gamepad-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <path d="M8 8h8a5 5 0 0 1 4.8 3.6l1 3.4a3 3 0 0 1-5.2 2.8L14.8 16H9.2l-1.8 1.8A3 3 0 0 1 2.2 15l1-3.4A5 5 0 0 1 8 8z"></path>
+        <path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"></path>
+      </svg>
+    </span>
+    <div>
+      <strong>Gamepad connection</strong>
+      <span id="controller-gamepad-name">Searching for a paired gamepad…</span>
+    </div>
+  </div>
+
+  <div class="controller-gamepad-meta">
+    <span><i id="controller-gamepad-dot"></i><b id="controller-gamepad-status">Checking</b></span>
+    <span>Battery <b id="controller-gamepad-battery">--</b></span>
+    <span>Bluetooth <b id="controller-gamepad-mac">--</b></span>
+  </div>
+
+  <div class="controller-gamepad-actions">
+    <button class="primary" id="gp-reconnect-btn" type="button" onclick="reconnectGamepad()">
+      Connect gamepad
+    </button>
+    <span class="ctrl-msg" id="gp-reconnect-msg"></span>
+  </div>
+</div>
 <div class="ctrl-center">
 <div class="ctrl-img-wrap"><img alt="Data Frog Controller" src="/static/controller.png"/></div>
 <div class="card ctrl-panel">

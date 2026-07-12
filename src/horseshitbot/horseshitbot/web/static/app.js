@@ -109,6 +109,8 @@ function connectWs() {
   ws.onmessage = (evt) => {
     try {
       const data = JSON.parse(evt.data);
+      dashboardRuntime.telemetryLastSeenAt = Date.now();
+      dashboardRuntime.telemetryConnected = true;
       updateDashboard(data);
       lastGamepad = data.gamepad || {};
       activeInputs = lastGamepad.active_inputs || [];
@@ -315,6 +317,13 @@ function updateDashboard(data) {
   if (reconRow) {
     reconRow.style.display = (!gp.connected && mac) ? "" : "none";
   }
+
+  updateControllerGamepadCard({
+    connected: Boolean(gp.connected || _cachedBtInfo.connected),
+    name: gp.name || "Paired gamepad",
+    mac,
+    battery: batt,
+  });
 
   for (const profile of ["perception", "mapping"]) {
     const rec = resolveRecorderState(profile, data[profile + "_recorder"]);
@@ -1959,6 +1968,38 @@ function initSidebar() {
 
 // ─── Gamepad Bluetooth Reconnect ─────────────────────────────────
 
+function updateControllerGamepadCard(info = {}) {
+  const connected = Boolean(info.connected);
+  const name = document.getElementById("controller-gamepad-name");
+  const status = document.getElementById("controller-gamepad-status");
+  const dot = document.getElementById("controller-gamepad-dot");
+  const battery = document.getElementById("controller-gamepad-battery");
+  const mac = document.getElementById("controller-gamepad-mac");
+  const button = document.getElementById("gp-reconnect-btn");
+
+  if (name) {
+    name.textContent = info.name || (
+      info.mac ? "Paired gamepad found" : "No paired gamepad found"
+    );
+  }
+  if (status) status.textContent = connected ? "Connected" : "Disconnected";
+  dot?.classList.toggle("connected", connected);
+
+  if (battery) {
+    battery.textContent =
+      info.battery == null ? "Not reported" : `${info.battery}%`;
+  }
+  if (mac) mac.textContent = info.mac || "Not reported";
+
+  if (button) {
+    button.textContent = connected ? "Reconnect gamepad" : "Connect gamepad";
+    button.disabled = connected;
+    button.title = connected
+      ? "The gamepad is already connected"
+      : "Connect the most recently paired Bluetooth gamepad";
+  }
+}
+
 async function reconnectGamepad() {
   const btn = document.getElementById("gp-reconnect-btn");
   const msg = document.getElementById("gp-reconnect-msg");
@@ -1975,6 +2016,7 @@ async function reconnectGamepad() {
     const result = await resp.json();
     if (result.success) {
       if (msg) { msg.textContent = "Connected!"; msg.className = "ctrl-msg ok"; }
+      await pollBtGamepad();
     } else {
       if (msg) { msg.textContent = result.message || "Failed"; msg.className = "ctrl-msg err"; }
     }
@@ -1993,6 +2035,9 @@ async function reconnectGamepad() {
 const dashboardRuntime = {
   startedAt: Date.now(),
   lastMessageAt: Date.now(),
+  telemetryLastSeenAt: 0,
+  telemetryConnected: false,
+  disconnectTimer: null,
   runtimeSeconds: 0,
   distanceMeters: 0,
   systemUptimeSeconds: null,
@@ -2284,22 +2329,72 @@ function actuatorDashboardState(actuator, label) {
 }
 
 function updateDashboardConnection(connected) {
+  if (dashboardRuntime.disconnectTimer) {
+    clearTimeout(dashboardRuntime.disconnectTimer);
+    dashboardRuntime.disconnectTimer = null;
+  }
+
+  dashboardRuntime.telemetryConnected = connected;
+
+  if (connected) {
+    dashboardService(
+      "dash-service-network",
+      "ok",
+      "Dashboard WebSocket connected"
+    );
+    dashboardService("dash-service-ros", "ok");
+    dashboardText("dash-service-network-note", "Dashboard connected");
+    dashboardText("dash-service-ros-note", "Telemetry connected");
+
+    const ready = document.getElementById("dashboard-readiness");
+    if (!dashboardRuntime.lastData) {
+      ready?.classList.remove("ready", "error");
+      ready?.classList.add("warning");
+      dashboardText("dashboard-ready-title", "WAITING FOR ROBOT TELEMETRY");
+      dashboardText(
+        "dashboard-ready-subtitle",
+        "The dashboard connection is open; waiting for the first robot status packet."
+      );
+    } else {
+      updateDashboardOverview(dashboardRuntime.lastData);
+    }
+    return;
+  }
+
   dashboardService(
     "dash-service-network",
-    connected ? "ok" : "err",
-    connected ? "WebSocket connected" : "WebSocket disconnected"
+    "warn",
+    "Dashboard WebSocket reconnecting"
   );
-  dashboardService("dash-service-ros", connected ? "ok" : "err");
-  dashboardText("dash-service-network-note", connected ? "Connected" : "Disconnected");
-  dashboardText("dash-service-ros-note", connected ? "Online" : "Offline");
+  dashboardService("dash-service-ros", "warn");
+  dashboardText("dash-service-network-note", "Reconnecting");
+  dashboardText("dash-service-ros-note", "Telemetry interrupted");
 
-  if (!connected) {
+  // A brief WebSocket restart should not label the whole robot as offline.
+  // Wait five seconds before showing a persistent connection warning.
+  dashboardRuntime.disconnectTimer = setTimeout(() => {
+    if (ws?.readyState === WebSocket.OPEN) return;
+
+    const hostMetricsAreLive =
+      Date.now() - dashboardRuntime.systemHealthLastSuccess < 7000;
     const ready = document.getElementById("dashboard-readiness");
-    ready?.classList.remove("ready", "warning");
-    ready?.classList.add("error");
-    dashboardText("dashboard-ready-title", "ROBOT OFFLINE");
-    dashboardText("dashboard-ready-subtitle", "Dashboard WebSocket connection was lost");
-  }
+
+    ready?.classList.remove("ready", "error");
+    ready?.classList.add("warning");
+
+    dashboardText(
+      "dashboard-ready-title",
+      hostMetricsAreLive
+        ? "HOST ONLINE · LIVE TELEMETRY DISCONNECTED"
+        : "DASHBOARD LIVE DATA DISCONNECTED"
+    );
+    dashboardText(
+      "dashboard-ready-subtitle",
+      hostMetricsAreLive
+        ? "The Jetson and REST metrics endpoint are reachable, but /ws robot telemetry is reconnecting."
+        : "The browser cannot currently receive the /ws robot-status stream. This does not by itself prove that the robot is powered off."
+    );
+  }, 5000);
 }
 
 
@@ -3222,6 +3317,20 @@ async function pollBtGamepad() {
           battery: data.battery,
           connected: data.connected || false,
         };
+        updateControllerGamepadCard({
+          connected: data.connected || false,
+          name: data.name || "Paired gamepad",
+          mac: data.mac || "",
+          battery: data.battery,
+        });
+      } else {
+        _cachedBtInfo = { mac: "", battery: null, connected: false };
+        updateControllerGamepadCard({
+          connected: false,
+          name: "No paired gamepad found",
+          mac: "",
+          battery: null,
+        });
       }
     }
   } catch (e) { /* ignore */ }

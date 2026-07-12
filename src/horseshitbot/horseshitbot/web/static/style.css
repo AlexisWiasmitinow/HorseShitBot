@@ -5120,3 +5120,175 @@ body.sidebar-collapsed .sidebar {
     width: 100%;
   }
 }
+
+
+/* ==================================================================
+   Connectivity wording, metric links, Controller gamepad card,
+   and unified recorded-bag date colors
+   ================================================================== */
+
+#tab-dashboard .system-health-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+#tab-dashboard .system-data-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid #d5deea;
+  border-radius: 7px;
+  color: #475467;
+  background: #ffffff;
+  font-size: 8.5px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+#tab-dashboard .system-data-link:hover {
+  color: #1769ff;
+  border-color: #a9c4f8;
+  background: #f4f8ff;
+}
+
+/* Controller connection belongs on the Controller page. */
+.controller-gamepad-card {
+  width: 100%;
+  max-width: 1250px;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  margin: 0 auto 14px;
+  padding: 13px 15px;
+}
+
+.controller-gamepad-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.controller-gamepad-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  padding: 8px;
+  border-radius: 9px;
+  color: #1769ff;
+  background: #edf4ff;
+}
+
+.controller-gamepad-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.controller-gamepad-main strong,
+.controller-gamepad-main span {
+  display: block;
+}
+
+.controller-gamepad-main strong {
+  color: #172033;
+  font-size: 12px;
+}
+
+.controller-gamepad-main span {
+  margin-top: 2px;
+  overflow: hidden;
+  color: #667085;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.controller-gamepad-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #667085;
+  font-size: 9px;
+}
+
+.controller-gamepad-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.controller-gamepad-meta b {
+  color: #344054;
+  font-size: 9px;
+}
+
+#controller-gamepad-dot {
+  width: 9px;
+  height: 9px;
+  display: inline-block;
+  border-radius: 50%;
+  background: #98a2b3;
+  box-shadow: 0 0 0 3px rgba(152, 162, 179, 0.10);
+}
+
+#controller-gamepad-dot.connected {
+  background: #0fb65a;
+  box-shadow: 0 0 0 3px rgba(15, 182, 90, 0.10);
+}
+
+.controller-gamepad-actions {
+  min-width: 170px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.controller-gamepad-actions button {
+  min-height: 34px;
+  white-space: nowrap;
+}
+
+/* All recorded-bag date headers use one blue visual language. */
+.bag-profile-card:has(.bag-profile-dot.perception) .bag-date-heading,
+.bag-profile-card:has(.bag-profile-dot.mapping) .bag-date-heading,
+.bag-profile-card:has(.bag-profile-dot.other) .bag-date-heading {
+  color: #1769ff;
+  background: #edf4ff;
+}
+
+@media (max-width: 980px) {
+  .controller-gamepad-card {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .controller-gamepad-meta {
+    flex-wrap: wrap;
+  }
+
+  .controller-gamepad-actions {
+    min-width: 0;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 680px) {
+  #tab-dashboard .system-health-actions {
+    align-items: flex-end;
+    flex-direction: column;
+  }
+}
