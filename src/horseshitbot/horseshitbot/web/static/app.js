@@ -2301,12 +2301,22 @@ function toggleDashboardDetail(name, sourceButton = null) {
 
   const opening = target.hidden;
   closeDashboardDetails();
+
   if (opening) {
     target.hidden = false;
-    sourceButton?.classList.add("is-active");
+
+    const tile =
+      sourceButton ||
+      document.querySelector(
+        `.dashboard-component-tile[data-dashboard-component="${name}"]`
+      );
+
+    tile?.classList.add("is-active");
+
     document.getElementById("dashboard-components-body").hidden = false;
     document.querySelector("#dashboard-components-section .dashboard-accordion-heading")
       ?.setAttribute("aria-expanded", "true");
+
     target.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 }

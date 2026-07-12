@@ -338,108 +338,137 @@
 
       <div class="dashboard-accordion-body" id="dashboard-components-body">
         <div class="dashboard-component-grid">
-          <button class="dashboard-component-tile" id="card-wheels" type="button" onclick="toggleDashboardDetail('wheels', this)">
-            <span class="component-icon">◉</span>
-            <span><strong>Wheels</strong><small id="dash-wheels-sub">Drive: --</small></span>
-            <b id="dash-wheels-state">CHECKING</b><em>›</em>
-          </button>
-          <button class="dashboard-component-tile" type="button" onclick="toggleDashboardDetail('brush', this)">
-            <span class="component-icon">♨</span>
-            <span><strong>Brush</strong><small id="dash-brush-sub">State: --</small></span>
-            <b id="dash-brush-state">CHECKING</b><em>›</em>
-          </button>
-          <button class="dashboard-component-tile" type="button" onclick="toggleDashboardDetail('lift', this)">
-            <span class="component-icon">↕</span>
-            <span><strong>Lift</strong><small id="dash-lift-sub">State: --</small></span>
-            <b id="dash-lift-state">CHECKING</b><em>›</em>
-          </button>
-          <button class="dashboard-component-tile" type="button" onclick="toggleDashboardDetail('bin-door', this)">
-            <span class="component-icon">▯</span>
-            <span><strong>Bin Door</strong><small id="dash-bin-sub">State: --</small></span>
-            <b id="dash-bin-state">CHECKING</b><em>›</em>
-          </button>
-        </div>
+          <div class="dashboard-component-slot" data-component="wheels">
+            <button class="dashboard-component-tile" id="card-wheels" type="button"
+                    data-dashboard-component="wheels"
+                    onclick="toggleDashboardDetail('wheels', this)">
+              <span class="component-icon">◉</span>
+              <span><strong>Wheels</strong><small id="dash-wheels-sub">Drive: --</small></span>
+              <b id="dash-wheels-state">CHECKING</b><em>›</em>
+            </button>
 
-        <div class="dashboard-component-details" id="dashboard-component-details">
-          <article class="dashboard-component-detail" id="dashboard-detail-wheels" hidden>
-            <header><h3>Wheels</h3><button type="button" onclick="closeDashboardDetails()" aria-label="Close wheel controls">×</button></header>
-            <div class="dashboard-detail-grid">
-              <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
-              <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
-              <div class="kv"><span class="label">Left speed</span><span class="value"><span id="w-left">0</span> m/s</span></div>
-              <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
-              <div class="kv"><span class="label">Right speed</span><span class="value"><span id="w-right">0</span> m/s</span></div>
-              <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
-              <div class="kv"><span class="label">Left current</span><span class="value"><span id="w-current-left">--</span> A</span></div>
-              <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-left" style="width:0%"></div></div>
-              <div class="kv"><span class="label">Right current</span><span class="value"><span id="w-current-right">--</span> A</span></div>
-              <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-right" style="width:0%"></div></div>
-            </div>
-            <div class="btn-row">
-              <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
-              <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
-              <button onclick="switchBackend()">Switch Backend</button>
-            </div>
-          </article>
+            <article class="dashboard-component-detail" id="dashboard-detail-wheels" hidden>
+              <header>
+                <h3>Wheels</h3>
+                <button type="button" onclick="closeDashboardDetails()" aria-label="Close wheel controls">×</button>
+              </header>
+              <div class="dashboard-detail-grid">
+                <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
+                <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
+                <div class="kv"><span class="label">Left speed</span><span class="value"><span id="w-left">0</span> m/s</span></div>
+                <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
+                <div class="kv"><span class="label">Right speed</span><span class="value"><span id="w-right">0</span> m/s</span></div>
+                <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
+                <div class="kv"><span class="label">Left current</span><span class="value"><span id="w-current-left">--</span> A</span></div>
+                <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-left" style="width:0%"></div></div>
+                <div class="kv"><span class="label">Right current</span><span class="value"><span id="w-current-right">--</span> A</span></div>
+                <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-right" style="width:0%"></div></div>
+              </div>
+              <div class="btn-row">
+                <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
+                <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
+                <button onclick="switchBackend()">Switch Backend</button>
+              </div>
+            </article>
+          </div>
 
-          <article class="dashboard-component-detail" id="dashboard-detail-brush" hidden>
-            <header><h3>Brush</h3><button type="button" onclick="closeDashboardDetails()" aria-label="Close brush controls">×</button></header>
-            <div class="dashboard-detail-grid">
-              <div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
-              <div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
-              <div class="kv"><span class="label">Referenced</span><span class="value" id="brush-ref">No</span></div>
-            </div>
-            <div class="btn-row">
-              <button onclick="cmd('brush_node','open')">Open</button>
-              <button onclick="cmd('brush_node','close')">Close</button>
-              <button onclick="cmd('brush_node','stop')">Stop</button>
-              <button onclick="cmd('brush_node','reference')">Reference</button>
-            </div>
-            <div class="jog-row">
-              <input class="jog-input" id="jog-brush" step="0.1" type="number" value="1"/>
-              <span class="jog-unit">turns</span>
-              <button class="primary" onclick="jogMotor(4, 'jog-brush')">Move</button>
-            </div>
-          </article>
+          <div class="dashboard-component-slot" data-component="brush">
+            <button class="dashboard-component-tile" type="button"
+                    data-dashboard-component="brush"
+                    onclick="toggleDashboardDetail('brush', this)">
+              <span class="component-icon">♨</span>
+              <span><strong>Brush</strong><small id="dash-brush-sub">State: --</small></span>
+              <b id="dash-brush-state">CHECKING</b><em>›</em>
+            </button>
 
-          <article class="dashboard-component-detail" id="dashboard-detail-lift" hidden>
-            <header><h3>Lift</h3><button type="button" onclick="closeDashboardDetails()" aria-label="Close lift controls">×</button></header>
-            <div class="dashboard-detail-grid">
-              <div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
-              <div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
-              <div class="kv"><span class="label">Referenced</span><span class="value" id="lift-ref">No</span></div>
-            </div>
-            <div class="btn-row">
-              <button onclick="cmd('lift_node','open')">Open</button>
-              <button onclick="cmd('lift_node','close')">Close</button>
-              <button onclick="cmd('lift_node','stop')">Stop</button>
-              <button onclick="cmd('lift_node','reference')">Reference</button>
-            </div>
-          </article>
+            <article class="dashboard-component-detail" id="dashboard-detail-brush" hidden>
+              <header>
+                <h3>Brush</h3>
+                <button type="button" onclick="closeDashboardDetails()" aria-label="Close brush controls">×</button>
+              </header>
+              <div class="dashboard-detail-grid">
+                <div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
+                <div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
+                <div class="kv"><span class="label">Referenced</span><span class="value" id="brush-ref">No</span></div>
+              </div>
+              <div class="btn-row">
+                <button onclick="cmd('brush_node','open')">Open</button>
+                <button onclick="cmd('brush_node','close')">Close</button>
+                <button onclick="cmd('brush_node','stop')">Stop</button>
+                <button onclick="cmd('brush_node','reference')">Reference</button>
+              </div>
+              <div class="jog-row">
+                <input class="jog-input" id="jog-brush" step="0.1" type="number" value="1"/>
+                <span class="jog-unit">turns</span>
+                <button class="primary" onclick="jogMotor(4, 'jog-brush')">Move</button>
+              </div>
+            </article>
+          </div>
 
-          <article class="dashboard-component-detail" id="dashboard-detail-bin-door" hidden>
-            <header><h3>Bin Door</h3><button type="button" onclick="closeDashboardDetails()" aria-label="Close bin-door controls">×</button></header>
-            <div class="dashboard-detail-grid">
-              <div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
-              <div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
-              <div class="kv"><span class="label">Referenced</span><span class="value" id="bin_door-ref">No</span></div>
-            </div>
-            <div class="btn-row">
-              <button onclick="cmd('bin_door_node','open')">Open</button>
-              <button onclick="cmd('bin_door_node','close')">Close</button>
-              <button onclick="cmd('bin_door_node','stop')">Stop</button>
-              <button onclick="cmd('bin_door_node','reference')">Reference</button>
-            </div>
-            <div class="jog-row">
-              <input class="jog-input" id="jog-door" step="0.1" type="number" value="1"/>
-              <span class="jog-unit">turns</span>
-              <input class="jog-input" id="jog-door-speed" max="1500" min="1" step="10" type="number" value="300"/>
-              <span class="jog-unit">RPM</span>
-              <input class="jog-input" id="jog-door-acc" max="255" min="0" step="1" type="number" value="3"/>
-              <span class="jog-unit">acc</span>
-              <button class="primary" onclick="jogMotor(6, 'jog-door', 'jog-door-speed', 'jog-door-acc')">Move</button>
-            </div>
-          </article>
+          <div class="dashboard-component-slot" data-component="lift">
+            <button class="dashboard-component-tile" type="button"
+                    data-dashboard-component="lift"
+                    onclick="toggleDashboardDetail('lift', this)">
+              <span class="component-icon">↕</span>
+              <span><strong>Lift</strong><small id="dash-lift-sub">State: --</small></span>
+              <b id="dash-lift-state">CHECKING</b><em>›</em>
+            </button>
+
+            <article class="dashboard-component-detail" id="dashboard-detail-lift" hidden>
+              <header>
+                <h3>Lift</h3>
+                <button type="button" onclick="closeDashboardDetails()" aria-label="Close lift controls">×</button>
+              </header>
+              <div class="dashboard-detail-grid">
+                <div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
+                <div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
+                <div class="kv"><span class="label">Referenced</span><span class="value" id="lift-ref">No</span></div>
+              </div>
+              <div class="btn-row">
+                <button onclick="cmd('lift_node','open')">Open</button>
+                <button onclick="cmd('lift_node','close')">Close</button>
+                <button onclick="cmd('lift_node','stop')">Stop</button>
+                <button onclick="cmd('lift_node','reference')">Reference</button>
+              </div>
+            </article>
+          </div>
+
+          <div class="dashboard-component-slot" data-component="bin-door">
+            <button class="dashboard-component-tile" type="button"
+                    data-dashboard-component="bin-door"
+                    onclick="toggleDashboardDetail('bin-door', this)">
+              <span class="component-icon">▯</span>
+              <span><strong>Bin Door</strong><small id="dash-bin-sub">State: --</small></span>
+              <b id="dash-bin-state">CHECKING</b><em>›</em>
+            </button>
+
+            <article class="dashboard-component-detail" id="dashboard-detail-bin-door" hidden>
+              <header>
+                <h3>Bin Door</h3>
+                <button type="button" onclick="closeDashboardDetails()" aria-label="Close bin-door controls">×</button>
+              </header>
+              <div class="dashboard-detail-grid">
+                <div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
+                <div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
+                <div class="kv"><span class="label">Referenced</span><span class="value" id="bin_door-ref">No</span></div>
+              </div>
+              <div class="btn-row">
+                <button onclick="cmd('bin_door_node','open')">Open</button>
+                <button onclick="cmd('bin_door_node','close')">Close</button>
+                <button onclick="cmd('bin_door_node','stop')">Stop</button>
+                <button onclick="cmd('bin_door_node','reference')">Reference</button>
+              </div>
+              <div class="jog-row">
+                <input class="jog-input" id="jog-door" step="0.1" type="number" value="1"/>
+                <span class="jog-unit">turns</span>
+                <input class="jog-input" id="jog-door-speed" max="1500" min="1" step="10" type="number" value="300"/>
+                <span class="jog-unit">RPM</span>
+                <input class="jog-input" id="jog-door-acc" max="255" min="0" step="1" type="number" value="3"/>
+                <span class="jog-unit">acc</span>
+                <button class="primary" onclick="jogMotor(6, 'jog-door', 'jog-door-speed', 'jog-door-acc')">Move</button>
+              </div>
+            </article>
+          </div>
         </div>
       </div>
     </section>

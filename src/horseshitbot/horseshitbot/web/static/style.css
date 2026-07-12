@@ -6405,3 +6405,165 @@ body.dashboard-active .page-content {
     grid-template-columns: 95px 105px minmax(75px, 1fr);
   }
 }
+
+
+/* ==================================================================
+   Recorded Bags: warm profile headers
+   ================================================================== */
+
+.bag-profile-header {
+  border-bottom-color: #ead9a7;
+  background: linear-gradient(180deg, #fff9e8 0%, #fff4cf 100%);
+}
+
+.bag-profile-header h3 {
+  color: #513b08;
+}
+
+.bag-profile-header > span {
+  color: #806826;
+}
+
+/* Keep the recording-date rows blue as requested previously. */
+.bag-profile-card:has(.bag-profile-dot.perception) .bag-date-heading,
+.bag-profile-card:has(.bag-profile-dot.mapping) .bag-date-heading,
+.bag-profile-card:has(.bag-profile-dot.other) .bag-date-heading {
+  color: #1769ff;
+  background: #edf4ff;
+}
+
+/* ==================================================================
+   Robot Components: local dropdown under each component
+   ================================================================== */
+
+#tab-dashboard .dashboard-component-grid {
+  align-items: start;
+}
+
+#tab-dashboard .dashboard-component-slot {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#tab-dashboard .dashboard-component-slot .dashboard-component-tile {
+  flex: 0 0 auto;
+}
+
+#tab-dashboard .dashboard-component-slot .dashboard-component-detail {
+  width: 100%;
+  margin: 0;
+  padding: 11px;
+  border-color: #bfcbd9;
+  background: #e8eef5;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 8px 18px rgba(31, 52, 86, 0.10);
+}
+
+#tab-dashboard .dashboard-component-detail > header {
+  margin-bottom: 7px;
+  padding-bottom: 7px;
+}
+
+#tab-dashboard .dashboard-component-detail > header h3 {
+  font-size: 12px;
+}
+
+#tab-dashboard .dashboard-component-slot .dashboard-detail-grid {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+#tab-dashboard .dashboard-component-slot .dashboard-detail-grid .kv {
+  min-height: 29px;
+  padding: 5px 0;
+}
+
+#tab-dashboard .dashboard-component-slot .dashboard-detail-grid .bar-container {
+  margin: 1px 0 5px;
+}
+
+#tab-dashboard .dashboard-component-slot .btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+#tab-dashboard .dashboard-component-slot .btn-row button {
+  min-height: 31px;
+  padding: 5px 8px;
+  font-size: 9px;
+}
+
+#tab-dashboard .dashboard-component-slot .jog-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+#tab-dashboard .dashboard-component-slot .jog-row .jog-input {
+  width: 100%;
+  min-width: 0;
+}
+
+#tab-dashboard .dashboard-component-slot[data-component="bin-door"] .jog-row {
+  grid-template-columns: minmax(55px, 1fr) auto;
+}
+
+#tab-dashboard .dashboard-component-slot[data-component="bin-door"] .jog-row button {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+#tab-dashboard .dashboard-component-details {
+  display: none !important;
+}
+
+/* ==================================================================
+   Wider site-wide navigation
+   ================================================================== */
+
+.app-shell,
+body.dashboard-active .app-shell {
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.sidebar {
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.sidebar-nav .tab {
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
+body.sidebar-collapsed .app-shell,
+body.dashboard-active.sidebar-collapsed .app-shell {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+@media (max-width: 1120px) {
+  #tab-dashboard .dashboard-component-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  #tab-dashboard .dashboard-component-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell,
+  body.dashboard-active .app-shell,
+  body.sidebar-collapsed .app-shell,
+  body.dashboard-active.sidebar-collapsed .app-shell {
+    display: block;
+  }
+}
