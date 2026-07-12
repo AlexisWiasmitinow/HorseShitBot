@@ -32,113 +32,52 @@ let activeInputs = [];    // live from WebSocket
 let lastGamepad = {};     // last gamepad status from WS
 let _cachedBtInfo = { mac: "", battery: null, connected: false };
 
+const _recorderUiState = {
+  perception: { recording: false, duration_sec: 0, frame_count: 0 },
+  mapping: { recording: false, duration_sec: 0, frame_count: 0 },
+};
+const _recorderPending = {};
 
-const RECORDER_PROFILES = ["perception", "mapping"];
-const RECORDER_PENDING_TIMEOUT_MS = 5000;
-const recorderUiState = Object.fromEntries(
-  RECORDER_PROFILES.map(profile => [profile, {
-    recording: false,
-    pending: null,
-    pendingSince: 0,
-    lastData: {},
-  }])
-);
+function resolveRecorderState(profile, payload) {
+  const current = _recorderUiState[profile] || { recording: false };
+  const pending = _recorderPending[profile];
 
-function formatRecorderDuration(seconds) {
-  const duration = Number(seconds) || 0;
-  const minutes = Math.floor(duration / 60);
-  const remainingSeconds = Math.floor(duration % 60);
-  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
-}
-
-function renderRecorderState(profile, recording, rec = {}) {
-  const isRecording = Boolean(recording);
-  const duration = formatRecorderDuration(rec.duration_sec);
-  const frameCount = rec.frame_count != null ? Number(rec.frame_count) : null;
-
-  // Compact recorder cards on the Dashboard page.
-  const dashboardDot = document.getElementById(`rec-dot-${profile}`);
-  const dashboardLabel = document.getElementById(`rec-label-${profile}`);
-  if (dashboardDot && dashboardLabel) {
-    dashboardDot.classList.toggle("recording", isRecording);
-    dashboardLabel.textContent = isRecording ? "RECORDING" : "Idle";
-    dashboardLabel.style.color = isRecording ? "var(--red)" : "";
-  }
-  setText(`rec-duration-${profile}`, isRecording ? duration : "--");
-  setText(`rec-frames-${profile}`, frameCount != null ? frameCount : "--");
-
-  // Main Recordings page controls.
-  const statusDot = document.getElementById(`rec-dot-lg-${profile}`);
-  const statusLabel = document.getElementById(`rec-bar-label-${profile}`);
-  const startButton = document.getElementById(`rec-bar-start-${profile}`);
-  const stopButton = document.getElementById(`rec-bar-stop-${profile}`);
-
-  statusDot?.classList.toggle("recording", isRecording);
-  if (statusLabel) {
-    statusLabel.textContent = isRecording ? "RECORDING" : "Idle";
-    statusLabel.style.color = isRecording ? "var(--red)" : "";
-  }
-
-  setText(`rec-bar-time-${profile}`, isRecording ? duration : "--");
-  setText(
-    `rec-bar-frames-${profile}`,
-    isRecording ? `${frameCount ?? 0} frames` : "-- frames"
-  );
-
-  // Only one action button is visible. Once Start is pressed, the red Stop
-  // button stays visible while the backend confirms the new state.
-  if (startButton) startButton.style.display = isRecording ? "none" : "inline-flex";
-  if (stopButton) stopButton.style.display = isRecording ? "inline-flex" : "none";
-}
-
-function updateRecorderFromMessage(profile, data) {
-  const key = `${profile}_recorder`;
-
-  // WebSocket packets do not always contain every subsystem. Missing recorder
-  // data must not be interpreted as "recording stopped", otherwise the blue
-  // Start and red Stop buttons alternate on every partial status packet.
-  if (!Object.prototype.hasOwnProperty.call(data, key)) return;
-
-  const rec = data[key] && typeof data[key] === "object" ? data[key] : {};
-  const incomingRecording = Boolean(rec.recording);
-  const state = recorderUiState[profile];
-  const pendingAge = Date.now() - state.pendingSince;
-  const pendingStillValid = state.pending && pendingAge < RECORDER_PENDING_TIMEOUT_MS;
-
-  state.lastData = rec;
-
-  if (pendingStillValid) {
-    const requestedRecording = state.pending === "start";
-
-    // Ignore stale packets that still report the state from before the click.
-    if (incomingRecording !== requestedRecording) {
-      renderRecorderState(profile, requestedRecording, rec);
-      return;
+  if (payload && typeof payload === "object") {
+    const incoming = { ...current, ...payload };
+    if (
+      pending &&
+      Date.now() < pending.until &&
+      typeof payload.recording === "boolean" &&
+      payload.recording !== pending.target
+    ) {
+      incoming.recording = pending.target;
+    } else if (pending && payload.recording === pending.target) {
+      delete _recorderPending[profile];
     }
+    _recorderUiState[profile] = incoming;
   }
-
-  state.pending = null;
-  state.pendingSince = 0;
-  state.recording = incomingRecording;
-  renderRecorderState(profile, incomingRecording, rec);
+  return _recorderUiState[profile];
 }
 
-function setRecorderPending(profile, recording) {
-  const state = recorderUiState[profile];
-  if (!state) return;
-  state.pending = recording ? "start" : "stop";
-  state.pendingSince = Date.now();
+function applyOptimisticRecorderState(profile, recording) {
+  const state = _recorderUiState[profile] || {};
   state.recording = recording;
-  renderRecorderState(profile, recording, state.lastData);
-}
+  state.duration_sec = recording ? (state.duration_sec || 0) : 0;
+  _recorderUiState[profile] = state;
+  _recorderPending[profile] = { target: recording, until: Date.now() + 5000 };
 
-function revertRecorderPending(profile, recording) {
-  const state = recorderUiState[profile];
-  if (!state) return;
-  state.pending = null;
-  state.pendingSince = 0;
-  state.recording = recording;
-  renderRecorderState(profile, recording, state.lastData);
+  const dot = document.getElementById(`rec-dot-lg-${profile}`);
+  const label = document.getElementById(`rec-bar-label-${profile}`);
+  const start = document.getElementById(`rec-bar-start-${profile}`);
+  const stop = document.getElementById(`rec-bar-stop-${profile}`);
+
+  dot?.classList.toggle("recording", recording);
+  if (label) {
+    label.textContent = recording ? "RECORDING" : "Idle";
+    label.style.color = recording ? "var(--red)" : "";
+  }
+  if (start) start.style.display = recording ? "none" : "";
+  if (stop) stop.style.display = recording ? "" : "none";
 }
 
 // ─── WebSocket ───────────────────────────────────────────────────
@@ -154,12 +93,14 @@ function connectWs() {
     if (badgeText) badgeText.textContent = "Connected";
     else if (badge) badge.textContent = "Connected";
     badge?.classList.add("connected");
+    updateDashboardConnection(true);
   };
 
   ws.onclose = () => {
     if (badgeText) badgeText.textContent = "Disconnected";
     else if (badge) badge.textContent = "Disconnected";
     badge?.classList.remove("connected");
+    updateDashboardConnection(false);
     setTimeout(connectWs, 2000);
   };
 
@@ -365,8 +306,58 @@ function updateDashboard(data) {
     reconRow.style.display = (!gp.connected && mac) ? "" : "none";
   }
 
-  for (const profile of RECORDER_PROFILES) {
-    updateRecorderFromMessage(profile, data);
+  for (const profile of ["perception", "mapping"]) {
+    const rec = resolveRecorderState(profile, data[profile + "_recorder"]);
+    const dot = document.getElementById(`rec-dot-${profile}`);
+    const label = document.getElementById(`rec-label-${profile}`);
+    if (dot && label) {
+      if (rec.recording) {
+        dot.classList.add("recording");
+        label.textContent = "RECORDING";
+        label.style.color = "#e94560";
+      } else {
+        dot.classList.remove("recording");
+        label.textContent = "Idle";
+        label.style.color = "";
+      }
+    }
+    if (rec.recording) {
+      const dur = rec.duration_sec || 0;
+      const m = Math.floor(dur / 60);
+      const s = Math.floor(dur % 60);
+      setText(`rec-duration-${profile}`, `${m}:${s.toString().padStart(2, "0")}`);
+    } else {
+      setText(`rec-duration-${profile}`, "--");
+    }
+    setText(`rec-frames-${profile}`, rec.frame_count != null ? rec.frame_count : "--");
+
+    // Recordings tab controls
+    const dotLg = document.getElementById(`rec-dot-lg-${profile}`);
+    const barLabel = document.getElementById(`rec-bar-label-${profile}`);
+    const barStart = document.getElementById(`rec-bar-start-${profile}`);
+    const barStop = document.getElementById(`rec-bar-stop-${profile}`);
+    if (dotLg && barLabel) {
+      if (rec.recording) {
+        dotLg.classList.add("recording");
+        const dur = rec.duration_sec || 0;
+        const m = Math.floor(dur / 60);
+        const s = Math.floor(dur % 60);
+        barLabel.textContent = "RECORDING";
+        barLabel.style.color = "var(--red)";
+        setText(`rec-bar-time-${profile}`, `${m}:${s.toString().padStart(2, "0")}`);
+        setText(`rec-bar-frames-${profile}`, `${rec.frame_count || 0} frames`);
+        if (barStart) barStart.style.display = "none";
+        if (barStop) barStop.style.display = "";
+      } else {
+        dotLg.classList.remove("recording");
+        barLabel.textContent = "Idle";
+        barLabel.style.color = "";
+        setText(`rec-bar-time-${profile}`, "--");
+        setText(`rec-bar-frames-${profile}`, "-- frames");
+        if (barStart) barStart.style.display = "";
+        if (barStop) barStop.style.display = "none";
+      }
+    }
   }
 
   updateMotionTelemetry(data);
@@ -405,6 +396,7 @@ function updateDashboard(data) {
     }
     statsEl.textContent = parts.join(" · ");
   }
+  updateDashboardOverview(data);
 }
 
 // ─── Motion / IMU ─────────────────────────────────────────────────
@@ -1147,28 +1139,17 @@ function buildBagRow(bag) {
   const download = document.createElement("a");
   download.href = `/api/bags/${encodeURIComponent(bag.name)}/download`;
   download.className = "bag-dl";
+  download.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 20h14"></path></svg>';
   download.setAttribute("download", "");
   download.setAttribute("aria-label", `Download ${bag.name || "recording"}`);
-  download.title = "Download recording";
-  download.innerHTML = `
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M12 3v12"></path>
-      <path d="m7 10 5 5 5-5"></path>
-      <path d="M5 20h14"></path>
-    </svg>`;
+  download.title = "Download";
 
   const remove = document.createElement("button");
   remove.className = "danger bag-del";
   remove.type = "button";
+  remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"></path><path d="M9 7V4h6v3"></path><path d="m7 7 1 13h8l1-13"></path><path d="M10 11v5M14 11v5"></path></svg>';
   remove.setAttribute("aria-label", `Delete ${bag.name || "recording"}`);
-  remove.title = "Delete recording";
-  remove.innerHTML = `
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M4 7h16"></path>
-      <path d="M9 7V4h6v3"></path>
-      <path d="m6 7 1 13h10l1-13"></path>
-      <path d="M10 11v5M14 11v5"></path>
-    </svg>`;
+  remove.title = "Delete";
   remove.onclick = () => deleteBag(bag.name);
 
   actions.append(download, remove);
@@ -1834,7 +1815,13 @@ function initTabs() {
       document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
       document.getElementById("tab-" + tabName)?.classList.add("active");
       updatePageHeading(tabName);
+      document.body.classList.toggle("dashboard-active", tabName === "dashboard");
       closeTopicChecklists();
+
+      if (tabName === "dashboard") {
+        loadDashboardBagStats();
+        updateDashboardClock();
+      }
 
       if (tabName === "recordings") {
         loadBagTopics();
@@ -1986,6 +1973,466 @@ async function reconnectGamepad() {
   }
 }
 
+
+// ─── Dashboard overview ───────────────────────────────────────────
+
+const dashboardRuntime = {
+  startedAt: Date.now(),
+  lastMessageAt: Date.now(),
+  runtimeSeconds: 0,
+  distanceMeters: 0,
+  systemUptimeSeconds: null,
+  cpuHistory: Array(24).fill(0),
+  gpuHistory: Array(24).fill(0),
+  lastData: null,
+  bagStatsLoadedAt: 0,
+};
+
+function openDashboardTab(tabName) {
+  const tab = document.querySelector(`.tabs .tab[data-tab="${tabName}"]`);
+  if (tab) tab.click();
+}
+
+function scrollDashboardSection(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function toggleDashboardSection(bodyId, button) {
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  const open = body.hidden;
+  body.hidden = !open;
+  button?.setAttribute("aria-expanded", String(open));
+}
+
+function closeDashboardDetails() {
+  document.querySelectorAll(".dashboard-component-detail").forEach(detail => {
+    detail.hidden = true;
+  });
+  document.querySelectorAll(".dashboard-component-tile").forEach(tile => {
+    tile.classList.remove("is-active");
+  });
+}
+
+function toggleDashboardDetail(name, sourceButton = null) {
+  const target = document.getElementById(`dashboard-detail-${name}`);
+  if (!target) return;
+
+  const opening = target.hidden;
+  closeDashboardDetails();
+  if (opening) {
+    target.hidden = false;
+    sourceButton?.classList.add("is-active");
+    document.getElementById("dashboard-components-body").hidden = false;
+    document.querySelector("#dashboard-components-section .dashboard-accordion-heading")
+      ?.setAttribute("aria-expanded", "true");
+    target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function toggleDashboardHardwareDetails(forceOpen = false) {
+  const details = document.getElementById("dashboard-hardware-details");
+  if (!details) return;
+  details.hidden = forceOpen ? false : !details.hidden;
+  if (!details.hidden) {
+    document.getElementById("dashboard-hardware-body").hidden = false;
+    document.querySelector("#dashboard-hardware-section .dashboard-accordion-heading")
+      ?.setAttribute("aria-expanded", "true");
+    if (forceOpen) details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function dashboardNumber(...values) {
+  for (const value of values) {
+    if (value == null || value === "") continue;
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return null;
+}
+
+function dashboardText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function dashboardClass(id, state) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove("ok", "warn", "err");
+  if (state) el.classList.add(state);
+}
+
+function dashboardService(id, state, title = null) {
+  dashboardClass(id, state);
+  if (title) document.getElementById(id)?.setAttribute("title", title);
+}
+
+function dashboardSensor(statusId, detailId, state, status, detail) {
+  dashboardText(statusId, status);
+  dashboardText(detailId, detail);
+  dashboardClass(statusId, state);
+}
+
+function dashboardMarker(name, state, text) {
+  dashboardClass(`marker-${name}-dot`, state);
+  const marker = document.getElementById(`marker-${name}-dot`)?.closest(".robot-marker");
+  if (marker) {
+    marker.classList.remove("ok", "warn", "err");
+    if (state) marker.classList.add(state);
+  }
+  dashboardText(`marker-${name}-state`, text);
+}
+
+function dashboardBadge(id, state, text) {
+  dashboardText(id, text);
+  dashboardClass(id, state);
+}
+
+function dashboardProgress(id, value, max = 100) {
+  const bar = document.getElementById(id);
+  if (!bar) return;
+  const number = Number(value);
+  bar.style.width = Number.isFinite(number)
+    ? `${Math.max(0, Math.min(100, number / max * 100))}%`
+    : "0%";
+}
+
+function dashboardSparkline(id, history, value) {
+  if (Number.isFinite(value)) {
+    history.push(Math.max(0, Math.min(100, value)));
+    while (history.length > 24) history.shift();
+  }
+
+  const line = document.getElementById(id);
+  if (!line) return;
+  const width = 120;
+  const height = 28;
+  const step = width / Math.max(1, history.length - 1);
+  const points = history.map((v, index) => {
+    const x = index * step;
+    const y = height - 3 - (v / 100) * (height - 6);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  line.setAttribute("points", points.join(" "));
+}
+
+function actuatorDashboardState(actuator, label) {
+  const index = Number(actuator?.state || 0);
+  const name = STATE_NAMES[index] || "UNKNOWN";
+  if (index === 5 || actuator?.error) return { css: "err", badge: "ERROR", detail: name };
+  if (index === 1 || index === 3 || index === 4) return { css: "warn", badge: name, detail: name };
+  if (actuator?.is_referenced || index === 2) return { css: "ok", badge: "REFERENCED", detail: name };
+  if (index === 0) return { css: "", badge: "IDLE", detail: name };
+  return { css: "", badge: label.toUpperCase(), detail: name };
+}
+
+function updateDashboardConnection(connected) {
+  dashboardService("dash-service-network", connected ? "ok" : "err", connected ? "WebSocket connected" : "WebSocket disconnected");
+  dashboardService("dash-service-ros", connected ? "ok" : "err");
+  if (!connected) {
+    const ready = document.getElementById("dashboard-readiness");
+    ready?.classList.remove("ready", "warning");
+    ready?.classList.add("error");
+    dashboardText("dashboard-ready-title", "ROBOT OFFLINE");
+    dashboardText("dashboard-ready-subtitle", "Dashboard connection was lost");
+  }
+}
+
+function dashboardMetricObject(data) {
+  return data.system_metrics || data.system || data.metrics || data.host || {};
+}
+
+function updateDashboardOverview(data) {
+  dashboardRuntime.lastData = data;
+  const now = Date.now();
+  const dt = Math.min(2, Math.max(0, (now - dashboardRuntime.lastMessageAt) / 1000));
+  dashboardRuntime.lastMessageAt = now;
+
+  const wheel = data.wheel_status || {};
+  const left = rpmToMs(wheel.left_rpm || 0);
+  const right = rpmToMs(wheel.right_rpm || 0);
+  const speed = Math.abs((left + right) / 2);
+  if (speed > 0.03) {
+    dashboardRuntime.runtimeSeconds += dt;
+    dashboardRuntime.distanceMeters += speed * dt;
+  }
+
+  const metrics = dashboardMetricObject(data);
+  const hw = data.mks_bus || {};
+  const lidar = data.lidar || {};
+  const camera = data.camera || data.camera_status || {};
+  const imu = data.imu || data.imu_data || data.imu_status || {};
+  const gamepad = data.gamepad || {};
+  const thermals = Array.isArray(data.thermals) ? data.thermals : [];
+
+  const cpu = dashboardNumber(metrics.cpu_percent, metrics.cpu_usage, metrics.cpu);
+  const gpu = dashboardNumber(metrics.gpu_percent, metrics.gpu_usage, metrics.gpu);
+  const memUsed = dashboardNumber(metrics.memory_used_gb, metrics.mem_used_gb, metrics.memory_used);
+  const memTotal = dashboardNumber(metrics.memory_total_gb, metrics.mem_total_gb, metrics.memory_total);
+  const storageUsed = dashboardNumber(metrics.storage_used_gb, metrics.disk_used_gb);
+  const storageTotal = dashboardNumber(metrics.storage_total_gb, metrics.disk_total_gb);
+  const battery = dashboardNumber(metrics.battery_percent, metrics.battery, data.battery?.percent);
+  const latency = dashboardNumber(metrics.network_latency_ms, metrics.latency_ms);
+  const uptime = dashboardNumber(metrics.uptime_sec, metrics.uptime_seconds, data.uptime_sec);
+  if (uptime != null) dashboardRuntime.systemUptimeSeconds = uptime;
+
+  const representativeThermal =
+    thermals.find(zone => /cpu|gpu|soc|thermal/i.test(zone.type || "")) ||
+    thermals[0];
+  const temperature = representativeThermal
+    ? dashboardNumber(representativeThermal.temp_c)
+    : dashboardNumber(metrics.temperature_c, metrics.temperature);
+
+  dashboardText("dash-cpu-value", cpu == null ? "--" : `${cpu.toFixed(0)}%`);
+  dashboardText("dash-gpu-value", gpu == null ? "--" : `${gpu.toFixed(0)}%`);
+  dashboardSparkline("dash-cpu-line", dashboardRuntime.cpuHistory, cpu);
+  dashboardSparkline("dash-gpu-line", dashboardRuntime.gpuHistory, gpu);
+
+  if (memUsed != null && memTotal != null && memTotal > 0) {
+    dashboardText("dash-memory-value", `${memUsed.toFixed(1)} / ${memTotal.toFixed(1)} GB`);
+    dashboardProgress("dash-memory-bar", memUsed, memTotal);
+  } else {
+    dashboardText("dash-memory-value", "--");
+    dashboardProgress("dash-memory-bar", null);
+  }
+
+  if (storageUsed != null && storageTotal != null && storageTotal > 0) {
+    dashboardText("dash-storage-value", `${storageUsed.toFixed(1)} / ${storageTotal.toFixed(1)} GB`);
+    dashboardProgress("dash-storage-bar", storageUsed, storageTotal);
+  } else {
+    dashboardText("dash-storage-value", "--");
+    dashboardProgress("dash-storage-bar", null);
+  }
+
+  dashboardText("dash-battery-value", battery == null ? "--" : `${battery.toFixed(0)}%`);
+  dashboardProgress("dash-battery-bar", battery);
+
+  dashboardText("dash-temperature-value", temperature == null ? "--" : `${temperature.toFixed(1)}°C`);
+  dashboardProgress("dash-temperature-bar", temperature, 100);
+  const tempValue = document.getElementById("dash-temperature-value");
+  if (tempValue) tempValue.style.color = temperature != null && temperature >= 65 ? "var(--dashboard-orange)" : "";
+
+  dashboardText("dash-latency-value", latency == null ? "--" : `${latency.toFixed(0)} ms`);
+  dashboardProgress("dash-latency-bar", latency == null ? null : Math.max(0, 100 - latency), 100);
+
+  const wheelBackend = String(wheel.backend || "").toUpperCase();
+  const wheelError = Boolean(wheel.error || wheel.estopped);
+  const wheelReady = Boolean(wheel.backend && !wheelError);
+  dashboardBadge("dash-wheels-state", wheelError ? "err" : wheelReady ? "ok" : "", wheelError ? "ERROR" : wheelReady ? "READY" : "CHECKING");
+  dashboardText("dash-wheels-sub", `Drive: ${wheelBackend || "--"}`);
+  dashboardMarker("wheels", wheelError ? "err" : wheelReady ? "ok" : "", wheelError ? "Error" : wheelReady ? "Ready" : "Checking");
+
+  const brushState = actuatorDashboardState(data.brush || {}, "Brush");
+  const liftState = actuatorDashboardState(data.lift || {}, "Lift");
+  const binState = actuatorDashboardState(data.bin_door || {}, "Bin Door");
+
+  dashboardBadge("dash-brush-state", brushState.css, brushState.badge);
+  dashboardBadge("dash-lift-state", liftState.css, liftState.badge);
+  dashboardBadge("dash-bin-state", binState.css, binState.badge);
+  dashboardText("dash-brush-sub", `State: ${brushState.detail}`);
+  dashboardText("dash-lift-sub", `State: ${liftState.detail}`);
+  dashboardText("dash-bin-sub", `State: ${binState.detail}`);
+  dashboardMarker("brush", brushState.css, brushState.badge === "REFERENCED" ? "Ready" : brushState.badge);
+  dashboardMarker("lift", liftState.css, liftState.badge);
+  dashboardMarker("bin", binState.css, binState.badge === "REFERENCED" ? "Ready" : binState.badge);
+
+  const cameraConnected =
+    camera.connected === true ||
+    camera.streaming === true ||
+    camera.active === true ||
+    camStreaming;
+  const cameraKnown = camera.connected != null || camera.streaming != null || camera.active != null || camStreaming;
+  const cameraState = cameraKnown ? (cameraConnected ? "ok" : "err") : "";
+  const cameraRate = dashboardNumber(camera.fps, camera.frame_rate, camera.hz);
+  dashboardService("dash-service-camera", cameraState);
+  dashboardSensor(
+    "dash-camera-status",
+    "dash-camera-detail",
+    cameraState,
+    cameraKnown ? (cameraConnected ? "OK" : "OFFLINE") : "--",
+    cameraRate != null ? `${cameraRate.toFixed(0)} Hz` : cameraConnected ? "Available" : "Waiting for status"
+  );
+  dashboardMarker("camera", cameraState, cameraConnected ? (camStreaming ? "Streaming" : "Ready") : cameraKnown ? "Offline" : "Checking");
+  dashboardText("dash-camera-hardware-summary", cameraConnected ? "OK" : cameraKnown ? "Offline" : "Checking");
+
+  const lidarKnown = lidar.connected != null;
+  const lidarConnected = lidar.connected === true;
+  const lidarState = lidarKnown ? (lidarConnected ? "ok" : "err") : "";
+  const lidarRate = dashboardNumber(lidar.hz, lidar.frequency, lidar.scan_rate);
+  dashboardService("dash-service-lidar", lidarState);
+  dashboardSensor(
+    "dash-lidar-status",
+    "dash-lidar-detail",
+    lidarState,
+    lidarKnown ? (lidarConnected ? "OK" : "OFFLINE") : "--",
+    lidarRate != null ? `${lidarRate.toFixed(0)} Hz` : lidarConnected ? "Sensor ready" : "Waiting for status"
+  );
+  dashboardMarker("lidar", lidarState, lidarConnected ? (lidarRate != null ? `${lidarRate.toFixed(0)} Hz` : "Ready") : lidarKnown ? "Offline" : "Checking");
+
+  const angular = imu.angular_velocity || imu.gyro || {};
+  const accel = imu.linear_acceleration || imu.acceleration || imu.accel || {};
+  const imuAvailable = [
+    angular.x, angular.y, angular.z,
+    accel.x, accel.y, accel.z,
+    imu.angular_velocity_z, imu.accel_x, imu.accel_y
+  ].some(value => Number.isFinite(Number(value)));
+  dashboardService("dash-service-imu", imuAvailable ? "ok" : "");
+  dashboardSensor(
+    "dash-imu-status",
+    "dash-imu-detail",
+    imuAvailable ? "ok" : "",
+    imuAvailable ? "OK" : "--",
+    imuAvailable ? `${dashboardNumber(imu.hz, imu.frequency) || 200} Hz` : "Waiting for /imu/data_raw"
+  );
+
+  const mksKnown = hw.bus_connected != null;
+  const mksConnected = hw.bus_connected === true;
+  dashboardService("dash-service-mks", mksKnown ? (mksConnected ? "ok" : "err") : "");
+  dashboardText("dash-mks-summary", mksKnown ? (mksConnected ? "Connected" : "Disconnected") : "Checking");
+  dashboardText("sidebar-mks-state", mksKnown ? (mksConnected ? "Connected" : "Disconnected") : "Checking");
+
+  const odriveActive = String(wheel.backend || "").toLowerCase() === "odrive";
+  dashboardText("dash-odrive-summary", odriveActive ? (wheel.error ? "Error" : "All normal") : "Not active");
+
+  dashboardService("dash-service-gamepad", gamepad.connected ? "ok" : gamepad.connected === false ? "warn" : "");
+
+  dashboardText("dash-jetson-summary", temperature == null ? "Waiting for temperature" : `${temperature.toFixed(1)}°C`);
+  dashboardText(
+    "dash-thermals-summary",
+    thermals.length
+      ? thermals.some(zone => Number(zone.temp_c) >= 85)
+        ? "Critical temperature"
+        : thermals.some(zone => Number(zone.temp_c) >= 65)
+          ? "Temperature warning"
+          : "All normal"
+      : "Waiting for data"
+  );
+  dashboardText("dash-power-summary", battery == null ? "No telemetry" : `${battery.toFixed(0)}%`);
+
+  const criticalProblems = [];
+  const warnings = [];
+  if (wheel.estopped) criticalProblems.push(["Emergency stop active", "Wheel motion is disabled until the E-stop is cleared."]);
+  if (wheel.error) criticalProblems.push(["Wheel driver error", String(wheel.error)]);
+  if (mksKnown && !mksConnected) criticalProblems.push(["MKS bus disconnected", "Stepper motor status is unavailable."]);
+  if (lidarKnown && !lidarConnected) warnings.push(["LiDAR disconnected", "Mapping preview and scan data are unavailable."]);
+  if (gamepad.connected === false) warnings.push(["Gamepad disconnected", "Manual robot control may be unavailable."]);
+  for (const zone of thermals) {
+    const temp = Number(zone.temp_c);
+    if (Number.isFinite(temp) && temp >= 85) {
+      criticalProblems.push([`${zone.type || "Thermal zone"} is hot`, `${temp.toFixed(1)}°C`]);
+    } else if (Number.isFinite(temp) && temp >= 65) {
+      warnings.push([`${zone.type || "Thermal zone"} temperature warning`, `${temp.toFixed(1)}°C`]);
+    }
+  }
+
+  const ready = document.getElementById("dashboard-readiness");
+  ready?.classList.remove("ready", "warning", "error");
+  if (criticalProblems.length) {
+    ready?.classList.add("error");
+    dashboardText("dashboard-ready-title", "ATTENTION REQUIRED");
+    dashboardText("dashboard-ready-subtitle", `${criticalProblems.length} critical issue${criticalProblems.length === 1 ? "" : "s"} detected`);
+  } else if (warnings.length) {
+    ready?.classList.add("warning");
+    dashboardText("dashboard-ready-title", "OPERATION AVAILABLE");
+    dashboardText("dashboard-ready-subtitle", `${warnings.length} non-critical warning${warnings.length === 1 ? "" : "s"}`);
+  } else if (ws?.readyState === WebSocket.OPEN) {
+    ready?.classList.add("ready");
+    dashboardText("dashboard-ready-title", "READY FOR OPERATION");
+    dashboardText("dashboard-ready-subtitle", "All reported critical systems are online");
+  }
+
+  renderDashboardAlerts([...criticalProblems, ...warnings]);
+  updateDashboardClock();
+}
+
+function renderDashboardAlerts(alerts) {
+  const container = document.getElementById("dashboard-alert-list");
+  if (!container) return;
+  container.innerHTML = "";
+
+  if (!alerts.length) {
+    container.innerHTML =
+      '<div class="dashboard-no-alerts"><span>✓</span><div><strong>No active alerts</strong><small>All reported systems are operating normally</small></div></div>';
+    return;
+  }
+
+  for (const [title, detail] of alerts.slice(0, 4)) {
+    const item = document.createElement("div");
+    item.className = "dashboard-alert-item";
+    item.innerHTML = `<span>!</span><div><strong></strong><small></small></div>`;
+    item.querySelector("strong").textContent = title;
+    item.querySelector("small").textContent = detail;
+    container.appendChild(item);
+  }
+}
+
+function formatDashboardDuration(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function updateDashboardClock() {
+  const sessionSeconds = (Date.now() - dashboardRuntime.startedAt) / 1000;
+  const uptime = dashboardRuntime.systemUptimeSeconds ?? sessionSeconds;
+  const uptimeText = formatDashboardDuration(uptime);
+  dashboardText("dash-uptime", uptimeText);
+  dashboardText("sidebar-uptime", uptimeText);
+  dashboardText("dash-runtime", formatDashboardDuration(dashboardRuntime.runtimeSeconds));
+
+  const distance = dashboardRuntime.distanceMeters;
+  dashboardText("dash-distance", distance >= 1000 ? `${(distance / 1000).toFixed(2)} km` : `${distance.toFixed(0)} m`);
+}
+
+async function loadDashboardBagStats(force = false) {
+  const now = Date.now();
+  if (!force && now - dashboardRuntime.bagStatsLoadedAt < 30000) return;
+  dashboardRuntime.bagStatsLoadedAt = now;
+
+  try {
+    const response = await fetch("/api/bags", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const bags = Array.isArray(data.bags) ? data.bags.length : 0;
+    dashboardText("dash-bags-recorded", String(bags));
+
+    const free = Number(data.disk_free || 0);
+    const total = Number(data.disk_total || 0);
+    if (free > 0) {
+      const pct = total > 0 ? Math.round(free / total * 100) : null;
+      dashboardText("dash-storage-remaining", `${formatBytes(free)}${pct == null ? "" : ` (${pct}%)`}`);
+    } else {
+      dashboardText("dash-storage-remaining", "--");
+    }
+
+    const metrics = dashboardRuntime.lastData ? dashboardMetricObject(dashboardRuntime.lastData) : {};
+    if (!dashboardNumber(metrics.storage_total_gb, metrics.disk_total_gb) && total > 0) {
+      const used = Number(data.disk_used || Math.max(0, total - free));
+      dashboardText("dash-storage-value", `${formatBytes(used)} / ${formatBytes(total)}`);
+      dashboardProgress("dash-storage-bar", used, total);
+    }
+  } catch (error) {
+    console.debug("Dashboard bag statistics unavailable:", error);
+  }
+}
+
+function initDashboardPage() {
+  document.body.classList.add("dashboard-active");
+  updateDashboardConnection(ws?.readyState === WebSocket.OPEN);
+  updateDashboardClock();
+  loadDashboardBagStats();
+  setInterval(updateDashboardClock, 1000);
+  setInterval(() => {
+    if (document.body.classList.contains("dashboard-active")) loadDashboardBagStats();
+  }, 60000);
+}
+
+
 // ─── Helpers ─────────────────────────────────────────────────────
 
 function setText(id, text) {
@@ -2091,29 +2538,23 @@ async function jogMotor(motorId, inputId, speedInputId, accInputId) {
 }
 
 async function startRecording(profile) {
-  if (!RECORDER_PROFILES.includes(profile)) return;
-
-  // Switch to the stable red Stop button immediately. Status packets arriving
-  // before the recorder starts are treated as stale for a short grace period.
-  setRecorderPending(profile, true);
+  applyOptimisticRecorderState(profile, true);
   try {
     const response = await fetch(`/api/recording/${profile}/start`, { method: "POST" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   } catch (e) {
-    revertRecorderPending(profile, false);
+    applyOptimisticRecorderState(profile, false);
     console.error(`Start ${profile} recording failed:`, e);
   }
 }
 
 async function stopRecording(profile) {
-  if (!RECORDER_PROFILES.includes(profile)) return;
-
-  setRecorderPending(profile, false);
+  applyOptimisticRecorderState(profile, false);
   try {
     const response = await fetch(`/api/recording/${profile}/stop`, { method: "POST" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   } catch (e) {
-    revertRecorderPending(profile, true);
+    applyOptimisticRecorderState(profile, true);
     console.error(`Stop ${profile} recording failed:`, e);
   }
 }
@@ -2137,6 +2578,7 @@ async function pollBtGamepad() {
 }
 
 initSidebar();
+initDashboardPage();
 initTopicChecklists();
 initTabs();
 connectWs();

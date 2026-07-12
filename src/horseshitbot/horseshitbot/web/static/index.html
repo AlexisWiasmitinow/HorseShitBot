@@ -8,7 +8,7 @@
 <link href="/static/favicon.png" rel="icon" type="image/png"/>
 <link href="/static/style.css" rel="stylesheet"/>
 </head>
-<body>
+<body class="dashboard-active">
 <div class="app-shell">
 <aside class="sidebar">
 <div class="brand">
@@ -77,6 +77,21 @@
 <span id="sidebar-jetson-temp">Waiting for temperature</span>
 </div>
 </div>
+
+<div class="sidebar-status-row dashboard-sidebar-only">
+<span class="status-glyph">▤</span>
+<div>
+<strong>MKS Bus</strong>
+<span id="sidebar-mks-state">Checking</span>
+</div>
+</div>
+<div class="sidebar-status-row dashboard-sidebar-only">
+<span class="status-glyph">◷</span>
+<div>
+<strong>Uptime</strong>
+<span id="sidebar-uptime">--</span>
+</div>
+</div>
 </div>
 </aside>
 <button aria-label="Close navigation" class="sidebar-backdrop" id="sidebar-backdrop" type="button"></button>
@@ -99,7 +114,10 @@
 <span class="status-dot"></span>
 <span class="connection-text">Disconnected</span>
 </span>
-<button aria-label="Settings" class="icon-button" title="Settings" type="button">
+<button aria-label="View alerts" class="icon-button dashboard-only-control" title="View alerts" type="button" onclick="scrollDashboardSection('dashboard-alerts-card')">
+<svg viewbox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>
+</button>
+<button aria-label="Settings" class="icon-button" title="Settings" type="button" onclick="openDashboardTab('network')">
 <svg viewbox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.97a1.7 1.7 0 0 0-.34-1.88l-.06-.06L7.03 4.2l.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03H21v4h-.08A1.7 1.7 0 0 0 19.4 15z"></path></svg>
 </button>
 </div>
@@ -109,130 +127,346 @@
 <button id="estop-resume-btn" onclick="resumeEstop()" type="button">Resume</button>
 </div>
 <div class="page-content">
+
 <!-- Dashboard -->
 <section class="tab-content active" id="tab-dashboard">
-<div class="dashboard-shell">
-<div class="dashboard-main">
-<div class="dashboard-card-columns"><div class="dashboard-card-column"><article class="card" id="card-wheels">
-<div class="card-title-row"><h2>Wheels</h2><span class="card-kicker">Drive</span></div>
-<div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
-<div class="kv"><span class="label">Left m/s</span><span class="value" id="w-left">0</span></div>
-<div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
-<div class="kv"><span class="label">Right m/s</span><span class="value" id="w-right">0</span></div>
-<div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
-<div class="kv"><span class="label">Left amps</span><span class="value" id="w-current-left">--</span></div>
-<div class="bar-container"><div class="bar-fill bar-current" id="bar-current-left" style="width:0%"></div></div>
-<div class="kv"><span class="label">Right amps</span><span class="value" id="w-current-right">--</span></div>
-<div class="bar-container"><div class="bar-fill bar-current" id="bar-current-right" style="width:0%"></div></div>
-<div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
-<div class="btn-row">
-<button onclick="cmd('wheel_driver_node','stop')">Stop</button>
-<button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
-<button onclick="switchBackend()">Switch Backend</button>
-</div>
-</article><article class="card" id="card-gamepad">
-<div class="card-title-row"><h2>Gamepad</h2><span class="card-kicker">Input</span></div>
-<div class="kv">
-<span class="label">Status</span>
-<span class="value" id="gp-status"><span class="gp-dot" id="gp-dot"></span><span id="gp-label">Disconnected</span></span>
-</div>
-<div class="kv" id="gp-battery-row" style="display:none">
-<span class="label">Battery</span>
-<span class="value" id="gp-battery-wrap"><span class="gp-battery-icon" id="gp-battery-icon"></span><span id="gp-battery-text">--</span></span>
-</div>
-<div class="kv" id="gp-bt-row" style="display:none">
-<span class="label">Bluetooth</span><span class="value small-value" id="gp-bt-mac">--</span>
-</div>
-<div class="btn-row" id="gp-reconnect-row" style="display:none">
-<button id="gp-reconnect-btn" onclick="reconnectGamepad()">Reconnect</button>
-<span class="ctrl-msg" id="gp-reconnect-msg"></span>
-</div>
-</article></div><div class="dashboard-card-column"><article class="card" id="card-lift">
-<div class="card-title-row"><h2>Lift</h2><span class="card-kicker">Actuator</span></div>
-<div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
-<div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
-<div class="kv"><span class="label">Referenced</span><span class="value" id="lift-ref">No</span></div>
-<div class="btn-row">
-<button onclick="cmd('lift_node','open')">Open</button>
-<button onclick="cmd('lift_node','close')">Close</button>
-<button onclick="cmd('lift_node','stop')">Stop</button>
-<button onclick="cmd('lift_node','reference')">Reference</button>
-</div>
-</article><article class="card" id="card-thermals">
-<div class="card-title-row"><h2>Thermals</h2><span class="card-kicker">Jetson</span></div>
-<div class="thermal-zones" id="thermal-zones"><span class="thermal-placeholder">Waiting for data...</span></div>
-</article></div><div class="dashboard-card-column"><article class="card" id="card-brush">
-<div class="card-title-row"><h2>Brush</h2><span class="card-kicker">Actuator</span></div>
-<div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
-<div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
-<div class="kv"><span class="label">Referenced</span><span class="value" id="brush-ref">No</span></div>
-<div class="btn-row">
-<button onclick="cmd('brush_node','open')">Open</button>
-<button onclick="cmd('brush_node','close')">Close</button>
-<button onclick="cmd('brush_node','stop')">Stop</button>
-<button onclick="cmd('brush_node','reference')">Reference</button>
-</div>
-<div class="jog-row">
-<input class="jog-input" id="jog-brush" step="0.1" type="number" value="1"/>
-<span class="jog-unit">turns</span>
-<button class="primary" onclick="jogMotor(4, 'jog-brush')">Move</button>
-</div>
-</article><article class="card" id="card-recording-perception">
-<div class="card-title-row"><h2>Perception Recording</h2><span class="card-kicker">ROS bag</span></div>
-<div class="kv"><span class="label">Status</span><span class="value"><span class="rec-dot" id="rec-dot-perception"></span><span id="rec-label-perception">Idle</span></span></div>
-<div class="kv"><span class="label">Duration</span><span class="value" id="rec-duration-perception">--</span></div>
-<div class="kv"><span class="label">Frames</span><span class="value" id="rec-frames-perception">--</span></div>
-<div class="btn-row">
-<button class="primary" onclick="startRecording('perception')">Start</button>
-<button class="danger" onclick="stopRecording('perception')">Stop</button>
-</div>
-</article></div><div class="dashboard-card-column"><article class="card" id="card-bin-door">
-<div class="card-title-row"><h2>Bin Door</h2><span class="card-kicker">Actuator</span></div>
-<div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
-<div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
-<div class="kv"><span class="label">Referenced</span><span class="value" id="bin_door-ref">No</span></div>
-<div class="btn-row">
-<button onclick="cmd('bin_door_node','open')">Open</button>
-<button onclick="cmd('bin_door_node','close')">Close</button>
-<button onclick="cmd('bin_door_node','stop')">Stop</button>
-<button onclick="cmd('bin_door_node','reference')">Reference</button>
-</div>
-<div class="jog-row">
-<input class="jog-input" id="jog-door" step="0.1" type="number" value="1"/>
-<span class="jog-unit">turns</span>
-<input class="jog-input" id="jog-door-speed" max="1500" min="1" step="10" type="number" value="300"/>
-<span class="jog-unit">RPM</span>
-<input class="jog-input" id="jog-door-acc" max="255" min="0" step="1" type="number" value="3"/>
-<span class="jog-unit">acc</span>
-<button class="primary" onclick="jogMotor(6, 'jog-door', 'jog-door-speed', 'jog-door-acc')">Move</button>
-</div>
-</article><article class="card" id="card-recording-mapping">
-<div class="card-title-row"><h2>Mapping Recording</h2><span class="card-kicker">ROS bag</span></div>
-<div class="kv"><span class="label">Status</span><span class="value"><span class="rec-dot" id="rec-dot-mapping"></span><span id="rec-label-mapping">Idle</span></span></div>
-<div class="kv"><span class="label">Duration</span><span class="value" id="rec-duration-mapping">--</span></div>
-<div class="kv"><span class="label">Frames</span><span class="value" id="rec-frames-mapping">--</span></div>
-<div class="btn-row">
-<button class="primary" onclick="startRecording('mapping')">Start</button>
-<button class="danger" onclick="stopRecording('mapping')">Stop</button>
-</div>
-</article></div></div>
+  <div class="dashboard-page">
+    <section class="dashboard-readiness" id="dashboard-readiness">
+      <div class="dashboard-ready-copy">
+        <span class="dashboard-ready-icon" id="dashboard-ready-icon" aria-hidden="true">✓</span>
+        <div>
+          <strong id="dashboard-ready-title">CHECKING SYSTEMS</strong>
+          <span id="dashboard-ready-subtitle">Waiting for live robot status</span>
+        </div>
+      </div>
+      <div class="dashboard-service-strip" aria-label="System service status">
+        <span class="dashboard-service-chip" id="dash-service-ros"><i></i>ROS 2</span>
+        <span class="dashboard-service-chip" id="dash-service-camera"><i></i>Camera</span>
+        <span class="dashboard-service-chip" id="dash-service-lidar"><i></i>LiDAR</span>
+        <span class="dashboard-service-chip" id="dash-service-imu"><i></i>IMU</span>
+        <span class="dashboard-service-chip" id="dash-service-mks"><i></i>MKS Bus</span>
+        <span class="dashboard-service-chip" id="dash-service-gamepad"><i></i>Gamepad</span>
+        <span class="dashboard-service-chip" id="dash-service-network"><i></i>Network</span>
+      </div>
+    </section>
 
-</div>
-<div class="dashboard-hardware-column">
-<article class="card" id="card-hardware">
-<div class="card-title-row"><h2>Hardware</h2><span class="card-kicker">Bus</span></div>
-<div class="kv"><span class="label">ODrive</span><span class="value" id="hw-odrive">--</span></div>
-<div class="kv"><span class="label">MKS Bus</span><span class="value" id="hw-mks-bus">--</span></div>
-<div id="hw-motors"></div>
-<div class="btn-row" id="hw-save-defaults-row">
-<button onclick="saveMotorDefaults()">Save as Default</button>
-<button onclick="scanMotors()">Scan Bus</button>
-<span class="ctrl-msg" id="hw-save-msg"></span>
-</div>
-</article>
-</div>
-</div>
+    <div class="dashboard-primary-grid">
+      <article class="dashboard-card robot-overview-card">
+        <header class="dashboard-card-heading">
+          <span class="dashboard-heading-icon">⌘</span>
+          <div>
+            <h2>Robot Overview</h2>
+            <p>Click a component to view controls and live details</p>
+          </div>
+        </header>
+
+        <div class="robot-overview-stage">
+          <img src="/static/robot-dashboard.png" alt="HorseShitBot robot overview" class="dashboard-robot-image"/>
+
+          <button class="robot-marker marker-bin" type="button" onclick="toggleDashboardDetail('bin-door')">
+            <span><i id="marker-bin-dot"></i>Bin Door</span>
+            <small id="marker-bin-state">Checking</small>
+          </button>
+          <button class="robot-marker marker-lift" type="button" onclick="toggleDashboardDetail('lift')">
+            <span><i id="marker-lift-dot"></i>Lift</span>
+            <small id="marker-lift-state">Checking</small>
+          </button>
+          <button class="robot-marker marker-camera" type="button" onclick="openDashboardTab('recordings')">
+            <span><i id="marker-camera-dot"></i>Camera</span>
+            <small id="marker-camera-state">Checking</small>
+          </button>
+          <button class="robot-marker marker-lidar" type="button" onclick="openDashboardTab('recordings')">
+            <span><i id="marker-lidar-dot"></i>LiDAR</span>
+            <small id="marker-lidar-state">Checking</small>
+          </button>
+          <button class="robot-marker marker-brush" type="button" onclick="toggleDashboardDetail('brush')">
+            <span><i id="marker-brush-dot"></i>Brush</span>
+            <small id="marker-brush-state">Checking</small>
+          </button>
+          <button class="robot-marker marker-wheels" type="button" onclick="toggleDashboardDetail('wheels')">
+            <span><i id="marker-wheels-dot"></i>Wheels</span>
+            <small id="marker-wheels-state">Checking</small>
+          </button>
+        </div>
+      </article>
+
+      <article class="dashboard-card system-health-card">
+        <header class="dashboard-simple-heading">
+          <h2>System Health</h2>
+        </header>
+        <div class="health-list">
+          <div class="health-row health-spark-row">
+            <span>CPU</span>
+            <strong id="dash-cpu-value">--</strong>
+            <svg viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
+              <polyline id="dash-cpu-line" points="0,22 120,22"></polyline>
+            </svg>
+          </div>
+          <div class="health-row health-spark-row">
+            <span>GPU</span>
+            <strong id="dash-gpu-value">--</strong>
+            <svg viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
+              <polyline id="dash-gpu-line" points="0,22 120,22"></polyline>
+            </svg>
+          </div>
+          <div class="health-row">
+            <span>Memory</span>
+            <strong id="dash-memory-value">--</strong>
+            <div class="health-progress"><i id="dash-memory-bar"></i></div>
+          </div>
+          <div class="health-row">
+            <span>Storage</span>
+            <strong id="dash-storage-value">--</strong>
+            <div class="health-progress"><i id="dash-storage-bar"></i></div>
+          </div>
+          <div class="health-row">
+            <span>Battery</span>
+            <strong id="dash-battery-value">--</strong>
+            <div class="health-progress health-progress-green"><i id="dash-battery-bar"></i></div>
+          </div>
+          <div class="health-row">
+            <span>Temperature</span>
+            <strong id="dash-temperature-value">--</strong>
+            <div class="health-progress health-progress-temperature"><i id="dash-temperature-bar"></i></div>
+          </div>
+          <div class="health-row">
+            <span>Network latency</span>
+            <strong id="dash-latency-value">--</strong>
+            <div class="health-progress health-progress-green"><i id="dash-latency-bar"></i></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="dashboard-card sensors-card">
+        <header class="dashboard-simple-heading">
+          <h2>Sensors</h2>
+        </header>
+        <div class="sensor-list">
+          <button class="sensor-row" type="button" onclick="openDashboardTab('recordings')">
+            <span class="sensor-icon">
+              <svg viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            </span>
+            <span><strong>Camera</strong><small id="dash-camera-detail">Waiting for status</small></span>
+            <b id="dash-camera-status">--</b><em>›</em>
+          </button>
+          <button class="sensor-row" type="button" onclick="openDashboardTab('recordings')">
+            <span class="sensor-icon">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><circle cx="12" cy="12" r="7"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+            </span>
+            <span><strong>LiDAR</strong><small id="dash-lidar-detail">Waiting for status</small></span>
+            <b id="dash-lidar-status">--</b><em>›</em>
+          </button>
+          <button class="sensor-row" type="button" onclick="openDashboardTab('recordings')">
+            <span class="sensor-icon">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"></circle><path d="M4 12a8 8 0 0 1 8-8M20 12a8 8 0 0 1-8 8M12 4v3M12 17v3M4 12h3M17 12h3"></path></svg>
+            </span>
+            <span><strong>IMU</strong><small id="dash-imu-detail">Waiting for /imu/data_raw</small></span>
+            <b id="dash-imu-status">--</b><em>›</em>
+          </button>
+        </div>
+        <button class="dashboard-secondary-button" type="button" onclick="openDashboardTab('recordings')">View all sensors</button>
+      </article>
+    </div>
+
+    <section class="dashboard-accordion" id="dashboard-components-section">
+      <button class="dashboard-accordion-heading" type="button" onclick="toggleDashboardSection('dashboard-components-body', this)" aria-expanded="true">
+        <span class="dashboard-heading-icon">◉</span>
+        <span><strong>Robot Components</strong><small>Actuators and mechanisms</small></span>
+        <em>⌃</em>
+      </button>
+
+      <div class="dashboard-accordion-body" id="dashboard-components-body">
+        <div class="dashboard-component-grid">
+          <button class="dashboard-component-tile" id="card-wheels" type="button" onclick="toggleDashboardDetail('wheels', this)">
+            <span class="component-icon">◉</span>
+            <span><strong>Wheels</strong><small id="dash-wheels-sub">Drive: --</small></span>
+            <b id="dash-wheels-state">CHECKING</b><em>›</em>
+          </button>
+          <button class="dashboard-component-tile" type="button" onclick="toggleDashboardDetail('brush', this)">
+            <span class="component-icon">♨</span>
+            <span><strong>Brush</strong><small id="dash-brush-sub">State: --</small></span>
+            <b id="dash-brush-state">CHECKING</b><em>›</em>
+          </button>
+          <button class="dashboard-component-tile" type="button" onclick="toggleDashboardDetail('lift', this)">
+            <span class="component-icon">↕</span>
+            <span><strong>Lift</strong><small id="dash-lift-sub">State: --</small></span>
+            <b id="dash-lift-state">CHECKING</b><em>›</em>
+          </button>
+          <button class="dashboard-component-tile" type="button" onclick="toggleDashboardDetail('bin-door', this)">
+            <span class="component-icon">▯</span>
+            <span><strong>Bin Door</strong><small id="dash-bin-sub">State: --</small></span>
+            <b id="dash-bin-state">CHECKING</b><em>›</em>
+          </button>
+        </div>
+
+        <div class="dashboard-component-details" id="dashboard-component-details">
+          <article class="dashboard-component-detail" id="dashboard-detail-wheels" hidden>
+            <header><h3>Wheels</h3><button type="button" onclick="closeDashboardDetails()" aria-label="Close wheel controls">×</button></header>
+            <div class="dashboard-detail-grid">
+              <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
+              <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
+              <div class="kv"><span class="label">Left speed</span><span class="value"><span id="w-left">0</span> m/s</span></div>
+              <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
+              <div class="kv"><span class="label">Right speed</span><span class="value"><span id="w-right">0</span> m/s</span></div>
+              <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
+              <div class="kv"><span class="label">Left current</span><span class="value"><span id="w-current-left">--</span> A</span></div>
+              <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-left" style="width:0%"></div></div>
+              <div class="kv"><span class="label">Right current</span><span class="value"><span id="w-current-right">--</span> A</span></div>
+              <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-right" style="width:0%"></div></div>
+            </div>
+            <div class="btn-row">
+              <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
+              <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
+              <button onclick="switchBackend()">Switch Backend</button>
+            </div>
+          </article>
+
+          <article class="dashboard-component-detail" id="dashboard-detail-brush" hidden>
+            <header><h3>Brush</h3><button type="button" onclick="closeDashboardDetails()" aria-label="Close brush controls">×</button></header>
+            <div class="dashboard-detail-grid">
+              <div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
+              <div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
+              <div class="kv"><span class="label">Referenced</span><span class="value" id="brush-ref">No</span></div>
+            </div>
+            <div class="btn-row">
+              <button onclick="cmd('brush_node','open')">Open</button>
+              <button onclick="cmd('brush_node','close')">Close</button>
+              <button onclick="cmd('brush_node','stop')">Stop</button>
+              <button onclick="cmd('brush_node','reference')">Reference</button>
+            </div>
+            <div class="jog-row">
+              <input class="jog-input" id="jog-brush" step="0.1" type="number" value="1"/>
+              <span class="jog-unit">turns</span>
+              <button class="primary" onclick="jogMotor(4, 'jog-brush')">Move</button>
+            </div>
+          </article>
+
+          <article class="dashboard-component-detail" id="dashboard-detail-lift" hidden>
+            <header><h3>Lift</h3><button type="button" onclick="closeDashboardDetails()" aria-label="Close lift controls">×</button></header>
+            <div class="dashboard-detail-grid">
+              <div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
+              <div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
+              <div class="kv"><span class="label">Referenced</span><span class="value" id="lift-ref">No</span></div>
+            </div>
+            <div class="btn-row">
+              <button onclick="cmd('lift_node','open')">Open</button>
+              <button onclick="cmd('lift_node','close')">Close</button>
+              <button onclick="cmd('lift_node','stop')">Stop</button>
+              <button onclick="cmd('lift_node','reference')">Reference</button>
+            </div>
+          </article>
+
+          <article class="dashboard-component-detail" id="dashboard-detail-bin-door" hidden>
+            <header><h3>Bin Door</h3><button type="button" onclick="closeDashboardDetails()" aria-label="Close bin-door controls">×</button></header>
+            <div class="dashboard-detail-grid">
+              <div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
+              <div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
+              <div class="kv"><span class="label">Referenced</span><span class="value" id="bin_door-ref">No</span></div>
+            </div>
+            <div class="btn-row">
+              <button onclick="cmd('bin_door_node','open')">Open</button>
+              <button onclick="cmd('bin_door_node','close')">Close</button>
+              <button onclick="cmd('bin_door_node','stop')">Stop</button>
+              <button onclick="cmd('bin_door_node','reference')">Reference</button>
+            </div>
+            <div class="jog-row">
+              <input class="jog-input" id="jog-door" step="0.1" type="number" value="1"/>
+              <span class="jog-unit">turns</span>
+              <input class="jog-input" id="jog-door-speed" max="1500" min="1" step="10" type="number" value="300"/>
+              <span class="jog-unit">RPM</span>
+              <input class="jog-input" id="jog-door-acc" max="255" min="0" step="1" type="number" value="3"/>
+              <span class="jog-unit">acc</span>
+              <button class="primary" onclick="jogMotor(6, 'jog-door', 'jog-door-speed', 'jog-door-acc')">Move</button>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="dashboard-accordion" id="dashboard-hardware-section">
+      <button class="dashboard-accordion-heading" type="button" onclick="toggleDashboardSection('dashboard-hardware-body', this)" aria-expanded="true">
+        <span class="dashboard-heading-icon">▦</span>
+        <span><strong>Hardware &amp; Diagnostics</strong><small>Hardware systems and diagnostics</small></span>
+        <em>⌃</em>
+      </button>
+
+      <div class="dashboard-accordion-body" id="dashboard-hardware-body">
+        <div class="dashboard-hardware-grid">
+          <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
+            <span>▦</span><span><strong>Jetson Orin NX</strong><small id="dash-jetson-summary">Waiting for temperature</small></span>
+          </button>
+          <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
+            <span>♨</span><span><strong>Thermals</strong><small id="dash-thermals-summary">Waiting for data</small></span>
+          </button>
+          <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
+            <span>▤</span><span><strong>MKS Bus</strong><small id="dash-mks-summary">Checking</small></span>
+          </button>
+          <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
+            <span>◉</span><span><strong>ODrive</strong><small id="dash-odrive-summary">Checking</small></span>
+          </button>
+          <button class="hardware-status-tile" type="button" onclick="openDashboardTab('recordings')">
+            <span>▣</span><span><strong>Camera Module</strong><small id="dash-camera-hardware-summary">Checking</small></span>
+          </button>
+          <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
+            <span>ϟ</span><span><strong>Power System</strong><small id="dash-power-summary">No telemetry</small></span>
+          </button>
+        </div>
+
+        <div class="dashboard-hardware-details" id="dashboard-hardware-details" hidden>
+          <div class="dashboard-diagnostic-columns">
+            <article>
+              <header><h3>Bus and drive diagnostics</h3></header>
+              <div class="kv"><span class="label">ODrive</span><span class="value" id="hw-odrive">--</span></div>
+              <div class="kv"><span class="label">MKS Bus</span><span class="value" id="hw-mks-bus">--</span></div>
+              <div id="hw-motors"></div>
+              <div class="btn-row" id="hw-save-defaults-row">
+                <button onclick="saveMotorDefaults()">Save as Default</button>
+                <button onclick="scanMotors()">Scan Bus</button>
+                <span class="ctrl-msg" id="hw-save-msg"></span>
+              </div>
+            </article>
+            <article>
+              <header><h3>Thermal zones</h3></header>
+              <div class="thermal-zones" id="thermal-zones"><span class="thermal-placeholder">Waiting for data...</span></div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="dashboard-bottom-grid">
+      <article class="dashboard-card dashboard-alerts-card" id="dashboard-alerts-card">
+        <header class="dashboard-card-heading compact-dashboard-heading">
+          <span class="dashboard-heading-icon warning-icon">△</span>
+          <div><h2>Alerts</h2><p>Active warnings and issues</p></div>
+          <button type="button" class="dashboard-secondary-button" onclick="toggleDashboardHardwareDetails(true)">View diagnostics</button>
+        </header>
+        <div class="dashboard-alert-list" id="dashboard-alert-list">
+          <div class="dashboard-no-alerts"><span>✓</span><div><strong>No active alerts</strong><small>All systems are operating normally</small></div></div>
+        </div>
+      </article>
+
+      <article class="dashboard-card dashboard-quick-stats" id="dashboard-quick-stats">
+        <header class="dashboard-card-heading compact-dashboard-heading">
+          <span class="dashboard-heading-icon">◴</span>
+          <div><h2>Quick Statistics</h2><p>Current robot and session overview</p></div>
+        </header>
+        <div class="quick-stats-grid">
+          <div><span>◷</span><small>Uptime</small><strong id="dash-uptime">--</strong></div>
+          <div><span>▷</span><small>Runtime Today</small><strong id="dash-runtime">0m</strong></div>
+          <div><span>⌁</span><small>Distance Today</small><strong id="dash-distance">0 m</strong></div>
+          <div><span>▣</span><small>Bags Recorded</small><strong id="dash-bags-recorded">--</strong></div>
+          <div><span>▤</span><small>Storage Remaining</small><strong id="dash-storage-remaining">--</strong></div>
+        </div>
+      </article>
+    </div>
+
+    <footer class="dashboard-footer">
+      <span>HorseShitBot Control Panel</span><i>•</i><span>ROS 2 Humble</span><i>•</i><span>v1.02</span>
+    </footer>
+  </div>
 </section>
+
 <!-- Recordings -->
 <section class="tab-content" id="tab-recordings">
 <div class="recordings-page">
