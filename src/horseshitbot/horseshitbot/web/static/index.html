@@ -114,7 +114,7 @@
 <span class="status-dot"></span>
 <span class="connection-text">Disconnected</span>
 </span>
-<button aria-label="View alerts" class="icon-button dashboard-only-control" title="View alerts" type="button" onclick="scrollDashboardSection('dashboard-alerts-card')">
+<button aria-label="View alerts" class="icon-button dashboard-only-control" title="View alerts" type="button" onclick="openDashboardDiagnostics()">
 <svg viewbox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>
 </button>
 <button aria-label="Settings" class="icon-button" title="Settings" type="button" onclick="openDashboardTab('network')">
@@ -133,20 +133,45 @@
   <div class="dashboard-page">
     <section class="dashboard-readiness" id="dashboard-readiness">
       <div class="dashboard-ready-copy">
-        <span class="dashboard-ready-icon" id="dashboard-ready-icon" aria-hidden="true">✓</span>
+        <span class="dashboard-ready-icon" id="dashboard-ready-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path class="ready-icon-check" d="m7 12 3 3 7-7"></path>
+            <path class="ready-icon-warning" d="M12 3 2.8 20h18.4L12 3z"></path>
+            <path class="ready-icon-warning" d="M12 9v5M12 17h.01"></path>
+          </svg>
+        </span>
         <div>
           <strong id="dashboard-ready-title">CHECKING SYSTEMS</strong>
           <span id="dashboard-ready-subtitle">Waiting for live robot status</span>
         </div>
+        <button class="readiness-diagnostics-button" id="readiness-diagnostics-button"
+                type="button" onclick="openDashboardDiagnostics()" hidden>
+          Review issue
+        </button>
       </div>
-      <div class="dashboard-service-strip" aria-label="System service status">
-        <span class="dashboard-service-chip" id="dash-service-ros"><i></i>ROS 2</span>
-        <button class="dashboard-service-chip dashboard-service-control" id="dash-service-camera" type="button" onclick="toggleDashboardSensor('camera')" aria-pressed="false" title="Start or stop the camera preview"><i></i>Camera</button>
-        <button class="dashboard-service-chip dashboard-service-control" id="dash-service-lidar" type="button" onclick="toggleDashboardSensor('lidar')" aria-pressed="false" title="Start or stop the LiDAR scan preview"><i></i>LiDAR</button>
-        <span class="dashboard-service-chip" id="dash-service-imu"><i></i>IMU</span>
-        <span class="dashboard-service-chip" id="dash-service-mks"><i></i>MKS Bus</span>
-        <span class="dashboard-service-chip" id="dash-service-gamepad"><i></i>Gamepad</span>
-        <span class="dashboard-service-chip" id="dash-service-network"><i></i>Network</span>
+
+      <div class="dashboard-service-strip" aria-label="Hardware and service availability">
+        <span class="dashboard-service-chip" id="dash-service-ros">
+          <i></i><span>ROS 2</span><small id="dash-service-ros-note">Connecting</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-camera">
+          <i></i><span>Camera</span><small id="dash-service-camera-note">Not reported</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-lidar">
+          <i></i><span>LiDAR</span><small id="dash-service-lidar-note">Checking</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-imu">
+          <i></i><span>IMU</span><small id="dash-service-imu-note">Checking</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-mks">
+          <i></i><span>MKS Bus</span><small id="dash-service-mks-note">Checking</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-gamepad">
+          <i></i><span>Gamepad</span><small id="dash-service-gamepad-note">Checking</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-network">
+          <i></i><span>Network</span><small id="dash-service-network-note">Connecting</small>
+        </span>
       </div>
     </section>
 
@@ -241,13 +266,20 @@
         <header class="dashboard-simple-heading">
           <h2>Sensors</h2>
         </header>
+        <p class="sensor-card-explanation">
+          Hardware availability and web preview are separate. A sensor can be online while its preview is off.
+        </p>
         <div class="sensor-list">
           <button class="sensor-row sensor-toggle-row" id="dash-camera-row" type="button"
                   onclick="toggleDashboardSensor('camera')" aria-pressed="false">
             <span class="sensor-icon">
               <svg viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
             </span>
-            <span><strong>Camera Preview</strong><small id="dash-camera-detail">Preview stopped</small></span>
+            <span class="sensor-row-copy">
+              <strong>Camera preview</strong>
+              <small id="dash-camera-detail">Preview off</small>
+              <em id="dash-camera-health">Hardware status not reported</em>
+            </span>
             <b id="dash-camera-status">OFF</b>
             <span class="sensor-switch" id="dash-camera-switch" aria-hidden="true"><i></i></span>
           </button>
@@ -257,7 +289,11 @@
             <span class="sensor-icon">
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><circle cx="12" cy="12" r="7"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
             </span>
-            <span><strong>LiDAR Scan</strong><small id="dash-lidar-detail">Scan stopped</small></span>
+            <span class="sensor-row-copy">
+              <strong>LiDAR preview</strong>
+              <small id="dash-lidar-detail">Preview off</small>
+              <em id="dash-lidar-health">Checking sensor availability</em>
+            </span>
             <b id="dash-lidar-status">OFF</b>
             <span class="sensor-switch" id="dash-lidar-switch" aria-hidden="true"><i></i></span>
           </button>
@@ -268,9 +304,13 @@
             <span class="sensor-icon">
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"></circle><path d="M4 12a8 8 0 0 1 8-8M20 12a8 8 0 0 1-8 8M12 4v3M12 17v3M4 12h3M17 12h3"></path></svg>
             </span>
-            <span><strong>IMU</strong><small id="dash-imu-detail">Waiting for /imu/data_raw</small></span>
+            <span class="sensor-row-copy">
+              <strong>IMU telemetry</strong>
+              <small id="dash-imu-detail">Waiting for /imu/data_raw</small>
+              <em>ROS-managed sensor; click for live values</em>
+            </span>
             <b id="dash-imu-status">--</b>
-            <em class="sensor-chevron">⌄</em>
+            <span class="sensor-chevron">⌄</span>
           </button>
 
           <div class="dashboard-imu-details" id="dashboard-imu-details" hidden>
@@ -279,7 +319,6 @@
             <div><span>Accel Y</span><strong id="dash-imu-accel-y">--</strong><small>m/s²</small></div>
             <div><span>Roll</span><strong id="dash-imu-roll">--</strong><small>°</small></div>
             <div><span>Pitch</span><strong id="dash-imu-pitch">--</strong><small>°</small></div>
-            <p>IMU is ROS-managed. The current backend provides live IMU data, but no IMU start/stop service.</p>
           </div>
         </div>
       </article>
@@ -401,49 +440,128 @@
     </section>
 
     <section class="dashboard-accordion" id="dashboard-hardware-section">
-      <button class="dashboard-accordion-heading" type="button" onclick="toggleDashboardSection('dashboard-hardware-body', this)" aria-expanded="true">
+      <button class="dashboard-accordion-heading" type="button"
+              onclick="toggleDashboardSection('dashboard-hardware-body', this)"
+              aria-expanded="false">
         <span class="dashboard-heading-icon">▦</span>
-        <span><strong>Hardware &amp; Diagnostics</strong><small>Hardware systems and diagnostics</small></span>
+        <span>
+          <strong>Hardware diagnostics</strong>
+          <small>Select one subsystem to inspect; only that diagnostic panel opens</small>
+        </span>
         <em>⌃</em>
       </button>
 
-      <div class="dashboard-accordion-body" id="dashboard-hardware-body">
-        <div class="dashboard-hardware-grid">
-          <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
-            <span>▦</span><span><strong>Jetson Orin NX</strong><small id="dash-jetson-summary">Waiting for temperature</small></span>
+      <div class="dashboard-accordion-body" id="dashboard-hardware-body" hidden>
+        <div class="dashboard-diagnostic-nav">
+          <button class="diagnostic-category-tile" id="diagnostic-tile-motors" type="button"
+                  onclick="selectDashboardDiagnostic('motors', this)">
+            <span class="diagnostic-category-icon">M</span>
+            <span><strong>Motor diagnostics</strong><small id="dash-motor-diagnostics-summary">No scan data</small></span>
+            <em>›</em>
           </button>
-          <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
-            <span>♨</span><span><strong>Thermals</strong><small id="dash-thermals-summary">Waiting for data</small></span>
+
+          <button class="diagnostic-category-tile" id="diagnostic-tile-drive" type="button"
+                  onclick="selectDashboardDiagnostic('drive', this)">
+            <span class="diagnostic-category-icon">D</span>
+            <span><strong>Drive backend</strong><small id="dash-drive-diagnostics-summary">Checking backend</small></span>
+            <em>›</em>
           </button>
-          <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
-            <span>▤</span><span><strong>MKS Bus</strong><small id="dash-mks-summary">Checking</small></span>
+
+          <button class="diagnostic-category-tile" id="diagnostic-tile-thermal" type="button"
+                  onclick="selectDashboardDiagnostic('thermal', this)">
+            <span class="diagnostic-category-icon">T</span>
+            <span><strong>Thermal zones</strong><small id="dash-thermal-diagnostics-summary">Waiting for telemetry</small></span>
+            <em>›</em>
           </button>
-          <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
-            <span>◉</span><span><strong>ODrive</strong><small id="dash-odrive-summary">Checking</small></span>
-          </button>
-          <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
-            <span>ϟ</span><span><strong>Power System</strong><small id="dash-power-summary">No telemetry</small></span>
+
+          <button class="diagnostic-category-tile" id="diagnostic-tile-power" type="button"
+                  onclick="selectDashboardDiagnostic('power', this)">
+            <span class="diagnostic-category-icon">P</span>
+            <span><strong>Power telemetry</strong><small id="dash-power-diagnostics-summary">No power telemetry</small></span>
+            <em>›</em>
           </button>
         </div>
 
-        <div class="dashboard-hardware-details" id="dashboard-hardware-details" hidden>
-          <div class="dashboard-diagnostic-columns">
-            <article>
-              <header><h3>Bus and drive diagnostics</h3></header>
-              <div class="kv"><span class="label">ODrive</span><span class="value" id="hw-odrive">--</span></div>
-              <div class="kv"><span class="label">MKS Bus</span><span class="value" id="hw-mks-bus">--</span></div>
-              <div id="hw-motors"></div>
-              <div class="btn-row" id="hw-save-defaults-row">
-                <button onclick="saveMotorDefaults()">Save as Default</button>
-                <button onclick="scanMotors()">Scan Bus</button>
-                <span class="ctrl-msg" id="hw-save-msg"></span>
+        <div class="dashboard-diagnostic-workspace" id="dashboard-diagnostic-workspace">
+          <section class="dashboard-diagnostic-panel" id="dashboard-diagnostic-motors" hidden>
+            <header>
+              <div>
+                <h3>Motor diagnostics</h3>
+                <p>Per-motor online state and current configuration</p>
               </div>
-            </article>
-            <article>
-              <header><h3>Thermal zones</h3></header>
-              <div class="thermal-zones" id="thermal-zones"><span class="thermal-placeholder">Waiting for data...</span></div>
-            </article>
-          </div>
+              <button type="button" onclick="closeDashboardDiagnostic()" aria-label="Close motor diagnostics">×</button>
+            </header>
+            <div class="diagnostic-summary-grid">
+              <div><span>Motor bus</span><strong id="hw-mks-bus">--</strong></div>
+              <div><span>Online motors</span><strong id="diag-motors-online">--</strong></div>
+              <div><span>Offline motors</span><strong id="diag-motors-offline">--</strong></div>
+            </div>
+            <div id="hw-motors" class="dashboard-motor-list"></div>
+            <div class="btn-row" id="hw-save-defaults-row">
+              <button onclick="scanMotors()">Scan motor bus</button>
+              <button onclick="saveMotorDefaults()">Save currents as default</button>
+              <span class="ctrl-msg" id="hw-save-msg"></span>
+            </div>
+          </section>
+
+          <section class="dashboard-diagnostic-panel" id="dashboard-diagnostic-drive" hidden>
+            <header>
+              <div>
+                <h3>Drive backend diagnostics</h3>
+                <p>Active wheel backend, power bus and current wheel-driver errors</p>
+              </div>
+              <button type="button" onclick="closeDashboardDiagnostic()" aria-label="Close drive diagnostics">×</button>
+            </header>
+            <div class="diagnostic-summary-grid">
+              <div><span>Backend</span><strong id="diag-drive-backend">--</strong></div>
+              <div><span>ODrive</span><strong id="hw-odrive">--</strong></div>
+              <div><span>Bus voltage</span><strong id="diag-drive-vbus">--</strong></div>
+              <div><span>Driver error</span><strong id="diag-drive-error">--</strong></div>
+            </div>
+            <div class="btn-row">
+              <button onclick="switchBackend()">Switch backend</button>
+              <button onclick="cmd('wheel_driver_node','stop')">Stop wheels</button>
+              <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">Emergency stop</button>
+            </div>
+          </section>
+
+          <section class="dashboard-diagnostic-panel" id="dashboard-diagnostic-thermal" hidden>
+            <header>
+              <div>
+                <h3>Thermal-zone diagnostics</h3>
+                <p>All Jetson thermal zones, not only the representative dashboard temperature</p>
+              </div>
+              <button type="button" onclick="closeDashboardDiagnostic()" aria-label="Close thermal diagnostics">×</button>
+            </header>
+            <div class="diagnostic-summary-grid">
+              <div><span>Zones reported</span><strong id="diag-thermal-count">--</strong></div>
+              <div><span>Maximum</span><strong id="diag-thermal-max">--</strong></div>
+              <div><span>Warning threshold</span><strong>65°C</strong></div>
+              <div><span>Critical threshold</span><strong>85°C</strong></div>
+            </div>
+            <div class="thermal-zones" id="thermal-zones">
+              <span class="thermal-placeholder">Waiting for data...</span>
+            </div>
+          </section>
+
+          <section class="dashboard-diagnostic-panel" id="dashboard-diagnostic-power" hidden>
+            <header>
+              <div>
+                <h3>Power telemetry</h3>
+                <p>Shows only values actually supplied by the robot backend</p>
+              </div>
+              <button type="button" onclick="closeDashboardDiagnostic()" aria-label="Close power diagnostics">×</button>
+            </header>
+            <div class="diagnostic-summary-grid">
+              <div><span>Battery</span><strong id="diag-power-battery">Not reported</strong></div>
+              <div><span>ODrive bus</span><strong id="diag-power-vbus">Not reported</strong></div>
+              <div><span>Left current</span><strong id="diag-power-left-current">Not reported</strong></div>
+              <div><span>Right current</span><strong id="diag-power-right-current">Not reported</strong></div>
+            </div>
+            <p class="diagnostic-unavailable-note" id="diag-power-note">
+              No dedicated battery telemetry is currently present in the WebSocket payload.
+            </p>
+          </section>
         </div>
       </div>
     </section>
@@ -451,13 +569,48 @@
     <div class="dashboard-bottom-grid">
       <article class="dashboard-card dashboard-alerts-card" id="dashboard-alerts-card">
         <header class="dashboard-card-heading compact-dashboard-heading">
-          <span class="dashboard-heading-icon warning-icon">△</span>
-          <div><h2>Alerts</h2><p>Active warnings and issues</p></div>
-          <button type="button" class="dashboard-secondary-button" onclick="toggleDashboardHardwareDetails(true)">View diagnostics</button>
+          <span class="dashboard-heading-icon warning-icon">!</span>
+          <div>
+            <h2>Alerts &amp; issue diagnostics</h2>
+            <p>Warnings include evidence, impact and a direct next action</p>
+          </div>
+          <button type="button" class="dashboard-secondary-button"
+                  id="dashboard-view-diagnostics" onclick="openDashboardDiagnostics()">
+            View issue details
+          </button>
         </header>
+
         <div class="dashboard-alert-list" id="dashboard-alert-list">
-          <div class="dashboard-no-alerts"><span>✓</span><div><strong>No active alerts</strong><small>All systems are operating normally</small></div></div>
+          <div class="dashboard-no-alerts">
+            <span>✓</span>
+            <div><strong>No active alerts</strong><small>All reported systems are operating normally</small></div>
+          </div>
         </div>
+
+        <section class="dashboard-issue-diagnostics" id="dashboard-issue-diagnostics" hidden>
+          <header>
+            <div>
+              <span class="issue-severity-label" id="issue-severity-label">DIAGNOSTIC</span>
+              <h3 id="issue-diagnostic-title">Issue details</h3>
+              <p id="issue-diagnostic-summary"></p>
+            </div>
+            <button type="button" onclick="closeDashboardDiagnostics()" aria-label="Close issue diagnostics">×</button>
+          </header>
+          <div class="issue-diagnostic-layout">
+            <div class="issue-diagnostic-evidence" id="issue-diagnostic-evidence"></div>
+            <div class="issue-diagnostic-guidance">
+              <div>
+                <span>Operational impact</span>
+                <p id="issue-diagnostic-impact">--</p>
+              </div>
+              <div>
+                <span>Recommended action</span>
+                <p id="issue-diagnostic-action-text">--</p>
+              </div>
+              <div class="issue-action-buttons" id="issue-action-buttons"></div>
+            </div>
+          </div>
+        </section>
       </article>
 
       <article class="dashboard-card dashboard-quick-stats" id="dashboard-quick-stats">

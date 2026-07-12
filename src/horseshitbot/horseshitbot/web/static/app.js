@@ -2037,22 +2037,25 @@ function syncDashboardSensorControls() {
   for (const [sensor, active] of Object.entries(states)) {
     const row = document.getElementById(`dash-${sensor}-row`);
     const toggle = document.getElementById(`dash-${sensor}-switch`);
-    const service = document.getElementById(`dash-service-${sensor}`);
 
     row?.classList.toggle("is-on", active);
     toggle?.classList.toggle("is-on", active);
     row?.setAttribute("aria-pressed", String(active));
-    service?.setAttribute("aria-pressed", String(active));
-    service?.classList.toggle("is-active", active);
   }
 
   dashboardText("dash-camera-status", camStreaming ? "ON" : "OFF");
   dashboardClass("dash-camera-status", camStreaming ? "ok" : "");
-  dashboardText("dash-camera-detail", camStreaming ? "Preview running" : "Preview stopped");
+  dashboardText(
+    "dash-camera-detail",
+    camStreaming ? "Web preview running" : "Web preview off"
+  );
 
   dashboardText("dash-lidar-status", lidarScanning ? "ON" : "OFF");
   dashboardClass("dash-lidar-status", lidarScanning ? "ok" : "");
-  dashboardText("dash-lidar-detail", lidarScanning ? "Scan preview running" : "Scan stopped");
+  dashboardText(
+    "dash-lidar-detail",
+    lidarScanning ? "Web scan preview running" : "Web preview off"
+  );
 }
 
 function toggleDashboardImuDetails() {
@@ -2087,12 +2090,12 @@ function restoreDashboardSections() {
     if (!body || !button) continue;
     try {
       const state = sessionStorage.getItem(`hsb-dashboard-section:${bodyId}`);
-      if (state === "closed") {
-        body.hidden = true;
-        button.setAttribute("aria-expanded", "false");
-      } else if (state === "open") {
+      if (state === "open") {
         body.hidden = false;
         button.setAttribute("aria-expanded", "true");
+      } else if (state === "closed" || bodyId === "dashboard-hardware-body") {
+        body.hidden = true;
+        button.setAttribute("aria-expanded", "false");
       }
     } catch (_) { /* optional */ }
   }
@@ -2123,16 +2126,53 @@ function toggleDashboardDetail(name, sourceButton = null) {
   }
 }
 
-function toggleDashboardHardwareDetails(forceOpen = false) {
-  const details = document.getElementById("dashboard-hardware-details");
-  if (!details) return;
-  details.hidden = forceOpen ? false : !details.hidden;
-  if (!details.hidden) {
-    document.getElementById("dashboard-hardware-body").hidden = false;
-    document.querySelector("#dashboard-hardware-section .dashboard-accordion-heading")
-      ?.setAttribute("aria-expanded", "true");
-    if (forceOpen) details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+function selectDashboardDiagnostic(name, sourceButton = null, forceOpen = false) {
+  const body = document.getElementById("dashboard-hardware-body");
+  const accordionButton = document.querySelector(
+    "#dashboard-hardware-section .dashboard-accordion-heading"
+  );
+  if (body) body.hidden = false;
+  accordionButton?.setAttribute("aria-expanded", "true");
+
+  const target = document.getElementById(`dashboard-diagnostic-${name}`);
+  if (!target) return;
+
+  const wasOpen = !target.hidden;
+  document.querySelectorAll(".dashboard-diagnostic-panel").forEach(panel => {
+    panel.hidden = true;
+  });
+  document.querySelectorAll(".diagnostic-category-tile").forEach(tile => {
+    tile.classList.remove("is-active");
+  });
+
+  if (wasOpen && !forceOpen) {
+    try { sessionStorage.removeItem("hsb-dashboard-diagnostic"); } catch (_) {}
+    return;
   }
+
+  target.hidden = false;
+  const tile = sourceButton || document.getElementById(`diagnostic-tile-${name}`);
+  tile?.classList.add("is-active");
+  try { sessionStorage.setItem("hsb-dashboard-diagnostic", name); } catch (_) {}
+
+  target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function closeDashboardDiagnostic() {
+  document.querySelectorAll(".dashboard-diagnostic-panel").forEach(panel => {
+    panel.hidden = true;
+  });
+  document.querySelectorAll(".diagnostic-category-tile").forEach(tile => {
+    tile.classList.remove("is-active");
+  });
+  try { sessionStorage.removeItem("hsb-dashboard-diagnostic"); } catch (_) {}
+}
+
+function restoreDashboardDiagnostic() {
+  try {
+    const saved = sessionStorage.getItem("hsb-dashboard-diagnostic");
+    if (saved) selectDashboardDiagnostic(saved, null, true);
+  } catch (_) { /* optional */ }
 }
 
 function dashboardNumber(...values) {
@@ -2159,6 +2199,10 @@ function dashboardClass(id, state) {
 function dashboardService(id, state, title = null) {
   dashboardClass(id, state);
   if (title) document.getElementById(id)?.setAttribute("title", title);
+}
+
+function dashboardServiceNote(id, text) {
+  dashboardText(`${id}-note`, text);
 }
 
 function dashboardSensor(statusId, detailId, state, status, detail) {
@@ -2221,14 +2265,21 @@ function actuatorDashboardState(actuator, label) {
 }
 
 function updateDashboardConnection(connected) {
-  dashboardService("dash-service-network", connected ? "ok" : "err", connected ? "WebSocket connected" : "WebSocket disconnected");
+  dashboardService(
+    "dash-service-network",
+    connected ? "ok" : "err",
+    connected ? "WebSocket connected" : "WebSocket disconnected"
+  );
   dashboardService("dash-service-ros", connected ? "ok" : "err");
+  dashboardText("dash-service-network-note", connected ? "Connected" : "Disconnected");
+  dashboardText("dash-service-ros-note", connected ? "Online" : "Offline");
+
   if (!connected) {
     const ready = document.getElementById("dashboard-readiness");
     ready?.classList.remove("ready", "warning");
     ready?.classList.add("error");
     dashboardText("dashboard-ready-title", "ROBOT OFFLINE");
-    dashboardText("dashboard-ready-subtitle", "Dashboard connection was lost");
+    dashboardText("dashboard-ready-subtitle", "Dashboard WebSocket connection was lost");
   }
 }
 
@@ -2330,19 +2381,38 @@ function updateDashboardOverview(data) {
   dashboardMarker("lift", liftState.css, liftState.badge);
   dashboardMarker("bin", binState.css, binState.badge === "REFERENCED" ? "Ready" : binState.badge);
 
+  // Sensor availability and browser preview are intentionally separate.
+  // "Online" describes the robot-side sensor. ON/OFF in the Sensors card
+  // describes only this browser's preview.
   const cameraConnected =
     camera.connected === true ||
     camera.streaming === true ||
     camera.active === true ||
     camStreaming;
-  const cameraKnown = camera.connected != null || camera.streaming != null || camera.active != null || camStreaming;
+  const cameraKnown =
+    camera.connected != null ||
+    camera.streaming != null ||
+    camera.active != null ||
+    camStreaming;
   const cameraState = cameraKnown ? (cameraConnected ? "ok" : "err") : "";
-  const cameraRate = dashboardNumber(camera.fps, camera.frame_rate, camera.hz);
   dashboardService("dash-service-camera", cameraState);
+  dashboardServiceNote(
+    "dash-service-camera",
+    cameraKnown ? (cameraConnected ? "Online" : "Unavailable") : "Not reported"
+  );
+  dashboardText(
+    "dash-camera-health",
+    cameraKnown
+      ? (cameraConnected ? "Hardware online" : "Hardware unavailable")
+      : "Hardware status not reported"
+  );
   dashboardMarker(
     "camera",
     cameraState,
-    camStreaming ? "Streaming" : cameraConnected ? "Ready" : cameraKnown ? "Offline" : "Checking"
+    camStreaming
+      ? "Preview on"
+      : cameraConnected ? "Online · preview off"
+      : cameraKnown ? "Unavailable" : "Status unknown"
   );
 
   const lidarKnown = lidar.connected != null;
@@ -2350,12 +2420,25 @@ function updateDashboardOverview(data) {
   const lidarState = lidarKnown ? (lidarConnected ? "ok" : "err") : "";
   const lidarRate = dashboardNumber(lidar.hz, lidar.frequency, lidar.scan_rate);
   dashboardService("dash-service-lidar", lidarState);
+  dashboardServiceNote(
+    "dash-service-lidar",
+    lidarKnown ? (lidarConnected ? "Online" : "Offline") : "Not reported"
+  );
+  dashboardText(
+    "dash-lidar-health",
+    lidarKnown
+      ? (lidarConnected
+          ? `Hardware online${lidarRate != null ? ` · ${lidarRate.toFixed(0)} Hz` : ""}`
+          : "Hardware offline")
+      : "Hardware status not reported"
+  );
   dashboardMarker(
     "lidar",
     lidarState,
     lidarScanning
-      ? (lidarRate != null ? `${lidarRate.toFixed(0)} Hz` : "Scanning")
-      : lidarConnected ? "Ready" : lidarKnown ? "Offline" : "Checking"
+      ? "Preview on"
+      : lidarConnected ? "Online · preview off"
+      : lidarKnown ? "Offline" : "Status unknown"
   );
 
   syncDashboardSensorControls();
@@ -2368,12 +2451,18 @@ function updateDashboardOverview(data) {
     imu.angular_velocity_z, imu.accel_x, imu.accel_y
   ].some(value => Number.isFinite(Number(value)));
   dashboardService("dash-service-imu", imuAvailable ? "ok" : "");
+  dashboardServiceNote(
+    "dash-service-imu",
+    imuAvailable ? "Publishing" : "No data"
+  );
   dashboardSensor(
     "dash-imu-status",
     "dash-imu-detail",
     imuAvailable ? "ok" : "",
     imuAvailable ? "LIVE" : "--",
-    imuAvailable ? `${dashboardNumber(imu.hz, imu.frequency) || 200} Hz · ROS managed` : "Waiting for /imu/data_raw"
+    imuAvailable
+      ? `${dashboardNumber(imu.hz, imu.frequency) || 200} Hz · ROS managed`
+      : "Waiting for /imu/data_raw"
   );
 
   const dashOrientation = imu.orientation || imu.quaternion || imu.q || null;
@@ -2392,81 +2481,426 @@ function updateDashboardOverview(data) {
   const mksKnown = hw.bus_connected != null;
   const mksConnected = hw.bus_connected === true;
   dashboardService("dash-service-mks", mksKnown ? (mksConnected ? "ok" : "err") : "");
-  dashboardText("dash-mks-summary", mksKnown ? (mksConnected ? "Connected" : "Disconnected") : "Checking");
-  dashboardText("sidebar-mks-state", mksKnown ? (mksConnected ? "Connected" : "Disconnected") : "Checking");
-
-  const odriveActive = String(wheel.backend || "").toLowerCase() === "odrive";
-  dashboardText("dash-odrive-summary", odriveActive ? (wheel.error ? "Error" : "All normal") : "Not active");
-
-  dashboardService("dash-service-gamepad", gamepad.connected ? "ok" : gamepad.connected === false ? "warn" : "");
-
-  dashboardText("dash-jetson-summary", temperature == null ? "Waiting for temperature" : `${temperature.toFixed(1)}°C`);
-  dashboardText(
-    "dash-thermals-summary",
-    thermals.length
-      ? thermals.some(zone => Number(zone.temp_c) >= 85)
-        ? "Critical temperature"
-        : thermals.some(zone => Number(zone.temp_c) >= 65)
-          ? "Temperature warning"
-          : "All normal"
-      : "Waiting for data"
+  dashboardServiceNote(
+    "dash-service-mks",
+    mksKnown ? (mksConnected ? "Online" : "Offline") : "Not reported"
   );
-  dashboardText("dash-power-summary", battery == null ? "No telemetry" : `${battery.toFixed(0)}%`);
+  dashboardText(
+    "sidebar-mks-state",
+    mksKnown ? (mksConnected ? "Connected" : "Disconnected") : "Checking"
+  );
 
-  const criticalProblems = [];
-  const warnings = [];
-  if (wheel.estopped) criticalProblems.push(["Emergency stop active", "Wheel motion is disabled until the E-stop is cleared."]);
-  if (wheel.error) criticalProblems.push(["Wheel driver error", String(wheel.error)]);
-  if (mksKnown && !mksConnected) criticalProblems.push(["MKS bus disconnected", "Stepper motor status is unavailable."]);
-  if (lidarKnown && !lidarConnected) warnings.push(["LiDAR disconnected", "Mapping preview and scan data are unavailable."]);
-  if (gamepad.connected === false) warnings.push(["Gamepad disconnected", "Manual robot control may be unavailable."]);
-  for (const zone of thermals) {
+  const motors = hw.motors && typeof hw.motors === "object" ? hw.motors : {};
+  const motorStates = Object.values(motors);
+  const motorTotal = motorStates.length;
+  const motorsOnline = motorStates.filter(Boolean).length;
+  const motorsOffline = Math.max(0, motorTotal - motorsOnline);
+  dashboardText(
+    "dash-motor-diagnostics-summary",
+    motorTotal
+      ? `${motorsOnline}/${motorTotal} motors online`
+      : "Run a motor-bus scan"
+  );
+  dashboardText("diag-motors-online", motorTotal ? String(motorsOnline) : "--");
+  dashboardText("diag-motors-offline", motorTotal ? String(motorsOffline) : "--");
+
+  const wheelDiag = wheel.diag || {};
+  const wheelBackendName = String(wheel.backend || "none");
+  const vbus = dashboardNumber(wheelDiag.vbus);
+  dashboardText(
+    "dash-drive-diagnostics-summary",
+    wheel.error
+      ? `${wheelBackendName.toUpperCase()} · error`
+      : `${wheelBackendName.toUpperCase()} · no reported error`
+  );
+  dashboardText("diag-drive-backend", wheelBackendName.toUpperCase());
+  dashboardText("diag-drive-vbus", vbus == null ? "Not reported" : `${vbus.toFixed(1)} V`);
+  dashboardText("diag-drive-error", wheel.error || "None");
+
+  dashboardService(
+    "dash-service-gamepad",
+    gamepad.connected ? "ok" : gamepad.connected === false ? "warn" : ""
+  );
+  dashboardServiceNote(
+    "dash-service-gamepad",
+    gamepad.connected ? "Connected" : gamepad.connected === false ? "Disconnected" : "Not reported"
+  );
+
+  const maxThermal = thermals.reduce((max, zone) => {
     const temp = Number(zone.temp_c);
-    if (Number.isFinite(temp) && temp >= 85) {
-      criticalProblems.push([`${zone.type || "Thermal zone"} is hot`, `${temp.toFixed(1)}°C`]);
-    } else if (Number.isFinite(temp) && temp >= 65) {
-      warnings.push([`${zone.type || "Thermal zone"} temperature warning`, `${temp.toFixed(1)}°C`]);
-    }
+    return Number.isFinite(temp) ? Math.max(max, temp) : max;
+  }, -Infinity);
+  dashboardText(
+    "dash-thermal-diagnostics-summary",
+    thermals.length
+      ? `${thermals.length} zones · max ${maxThermal.toFixed(1)}°C`
+      : "Waiting for thermal telemetry"
+  );
+  dashboardText("diag-thermal-count", thermals.length ? String(thermals.length) : "--");
+  dashboardText(
+    "diag-thermal-max",
+    Number.isFinite(maxThermal) ? `${maxThermal.toFixed(1)}°C` : "--"
+  );
+
+  const batteryReported = battery != null;
+  const leftCurrent = dashboardNumber(w.current_left);
+  const rightCurrent = dashboardNumber(w.current_right);
+  dashboardText(
+    "dash-power-diagnostics-summary",
+    batteryReported
+      ? `${battery.toFixed(0)}% battery`
+      : vbus != null ? `${vbus.toFixed(1)} V drive bus` : "No power telemetry"
+  );
+  dashboardText(
+    "diag-power-battery",
+    batteryReported ? `${battery.toFixed(0)}%` : "Not reported"
+  );
+  dashboardText(
+    "diag-power-vbus",
+    vbus == null ? "Not reported" : `${vbus.toFixed(1)} V`
+  );
+  dashboardText(
+    "diag-power-left-current",
+    leftCurrent == null ? "Not reported" : `${Math.abs(leftCurrent).toFixed(2)} A`
+  );
+  dashboardText(
+    "diag-power-right-current",
+    rightCurrent == null ? "Not reported" : `${Math.abs(rightCurrent).toFixed(2)} A`
+  );
+  dashboardText(
+    "diag-power-note",
+    batteryReported
+      ? "Battery telemetry is available from the current WebSocket payload."
+      : "No dedicated battery percentage is present. ODrive voltage/current values are shown when available."
+  );
+
+  const diagnosticIssues = [];
+
+  if (wheel.estopped) {
+    diagnosticIssues.push({
+      key: "estop",
+      severity: "critical",
+      subsystem: "Wheel drive",
+      title: "Emergency stop active",
+      summary: "The wheel driver reports that the E-stop latch is active.",
+      impact: "All commanded wheel motion is blocked.",
+      recommendation: "Confirm that the area is safe, then clear the E-stop using Resume or the mapped gamepad action.",
+      evidence: [
+        ["E-stop flag", "true"],
+        ["Backend", wheelBackendName.toUpperCase()],
+        ["Wheel error", wheel.error || "None"]
+      ],
+      actions: [
+        { label: "Resume", command: "resume-estop" },
+        { label: "Drive diagnostics", command: "diagnostic-drive" }
+      ]
+    });
   }
 
+  if (wheel.error) {
+    diagnosticIssues.push({
+      key: "wheel-error",
+      severity: "critical",
+      subsystem: "Wheel drive",
+      title: "Wheel-driver error",
+      summary: String(wheel.error),
+      impact: "Wheel motion may be unavailable or unsafe.",
+      recommendation: "Inspect the active backend, bus voltage and driver state before moving the robot.",
+      evidence: [
+        ["Backend", wheelBackendName.toUpperCase()],
+        ["Driver error", String(wheel.error)],
+        ["Bus voltage", vbus == null ? "Not reported" : `${vbus.toFixed(1)} V`]
+      ],
+      actions: [
+        { label: "Drive diagnostics", command: "diagnostic-drive" }
+      ]
+    });
+  }
+
+  if (mksKnown && !mksConnected) {
+    diagnosticIssues.push({
+      key: "mks-offline",
+      severity: "critical",
+      subsystem: "Motor bus",
+      title: "MKS motor bus disconnected",
+      summary: "The motor-bus connection is reported offline.",
+      impact: "Lift, brush and bin-door motor status or commands may be unavailable.",
+      recommendation: "Scan the bus and inspect per-motor online states.",
+      evidence: [
+        ["Bus connected", "No"],
+        ["Motors reported", String(motorTotal)],
+        ["Motors online", String(motorsOnline)]
+      ],
+      actions: [
+        { label: "Motor diagnostics", command: "diagnostic-motors" },
+        { label: "Scan bus", command: "scan-motors" }
+      ]
+    });
+  }
+
+  if (lidarKnown && !lidarConnected) {
+    diagnosticIssues.push({
+      key: "lidar-offline",
+      severity: "warning",
+      subsystem: "LiDAR",
+      title: "LiDAR hardware offline",
+      summary: "The robot reports that the LiDAR sensor is not connected.",
+      impact: "Mapping and scan preview are unavailable.",
+      recommendation: "Check LiDAR power and the driver node, then retry the preview.",
+      evidence: [
+        ["Connected", "No"],
+        ["Firmware", lidar.firmware || "Not reported"],
+        ["Web preview", lidarScanning ? "On" : "Off"]
+      ],
+      actions: [
+        { label: "Open Recordings", command: "tab-recordings" }
+      ]
+    });
+  }
+
+  if (gamepad.connected === false) {
+    const btMac = gamepad.bt_mac || _cachedBtInfo.mac || "Not reported";
+    const batteryText =
+      gamepad.battery != null
+        ? `${gamepad.battery}%`
+        : _cachedBtInfo.battery != null ? `${_cachedBtInfo.battery}%` : "Not reported";
+
+    diagnosticIssues.push({
+      key: "gamepad-offline",
+      severity: "warning",
+      subsystem: "Gamepad",
+      title: "Gamepad disconnected",
+      summary: "The dashboard received an explicit disconnected state from the gamepad subsystem.",
+      impact: "Manual driving and mapped actuator commands may be unavailable. Autonomous ROS functions are not necessarily affected.",
+      recommendation: "Open Controller to inspect mappings. Reconnect Bluetooth when a saved MAC address is available.",
+      evidence: [
+        ["Connected", "No"],
+        ["Device", gamepad.name || "Not detected"],
+        ["Bluetooth MAC", btMac],
+        ["Battery", batteryText],
+        ["Active inputs", (gamepad.active_inputs || []).join(", ") || "None"]
+      ],
+      actions: [
+        { label: "Open Controller", command: "tab-controller" },
+        ...(btMac !== "Not reported"
+          ? [{ label: "Reconnect", command: "reconnect-gamepad" }]
+          : [])
+      ]
+    });
+  }
+
+  for (const zone of thermals) {
+    const temp = Number(zone.temp_c);
+    if (!Number.isFinite(temp) || temp < 65) continue;
+    diagnosticIssues.push({
+      key: `thermal-${zone.zone || zone.type || diagnosticIssues.length}`,
+      severity: temp >= 85 ? "critical" : "warning",
+      subsystem: "Jetson thermals",
+      title: temp >= 85 ? "Critical thermal-zone temperature" : "Thermal-zone warning",
+      summary: `${zone.type || zone.zone || "Thermal zone"} is ${temp.toFixed(1)}°C.`,
+      impact: temp >= 85
+        ? "The Jetson may throttle or shut down to protect itself."
+        : "Sustained load may cause thermal throttling.",
+      recommendation: "Inspect all thermal zones and verify airflow, fans and ambient conditions.",
+      evidence: [
+        ["Zone", zone.zone || "Not reported"],
+        ["Type", zone.type || "Not reported"],
+        ["Temperature", `${temp.toFixed(1)}°C`],
+        ["Warning threshold", "65°C"],
+        ["Critical threshold", "85°C"]
+      ],
+      actions: [
+        { label: "Thermal diagnostics", command: "diagnostic-thermal" }
+      ]
+    });
+  }
+
+  dashboardRuntime.alerts = diagnosticIssues;
+
   const ready = document.getElementById("dashboard-readiness");
+  const readinessButton = document.getElementById("readiness-diagnostics-button");
   ready?.classList.remove("ready", "warning", "error");
-  if (criticalProblems.length) {
+
+  const criticalCount = diagnosticIssues.filter(issue => issue.severity === "critical").length;
+  const warningCount = diagnosticIssues.filter(issue => issue.severity === "warning").length;
+  const firstIssue = diagnosticIssues[0];
+
+  if (criticalCount) {
     ready?.classList.add("error");
     dashboardText("dashboard-ready-title", "ATTENTION REQUIRED");
-    dashboardText("dashboard-ready-subtitle", `${criticalProblems.length} critical issue${criticalProblems.length === 1 ? "" : "s"} detected`);
-  } else if (warnings.length) {
+    dashboardText(
+      "dashboard-ready-subtitle",
+      `${firstIssue.title} — ${firstIssue.impact}`
+    );
+  } else if (warningCount) {
     ready?.classList.add("warning");
-    dashboardText("dashboard-ready-title", "OPERATION AVAILABLE");
-    dashboardText("dashboard-ready-subtitle", `${warnings.length} non-critical warning${warnings.length === 1 ? "" : "s"}`);
+    dashboardText("dashboard-ready-title", "READY WITH WARNING");
+    dashboardText(
+      "dashboard-ready-subtitle",
+      `${firstIssue.title} — ${firstIssue.impact}`
+    );
   } else if (ws?.readyState === WebSocket.OPEN) {
     ready?.classList.add("ready");
     dashboardText("dashboard-ready-title", "READY FOR OPERATION");
     dashboardText("dashboard-ready-subtitle", "All reported critical systems are online");
   }
 
-  renderDashboardAlerts([...criticalProblems, ...warnings]);
+  if (readinessButton) {
+    readinessButton.hidden = diagnosticIssues.length === 0;
+    readinessButton.textContent =
+      criticalCount
+        ? `Review ${criticalCount} critical issue${criticalCount === 1 ? "" : "s"}`
+        : `Review ${warningCount} warning${warningCount === 1 ? "" : "s"}`;
+  }
+
+  renderDashboardAlerts(diagnosticIssues);
   updateDashboardClock();
+}
+
+function diagnosticSeverityText(severity) {
+  return severity === "critical" ? "CRITICAL" : severity === "warning" ? "WARNING" : "INFO";
 }
 
 function renderDashboardAlerts(alerts) {
   const container = document.getElementById("dashboard-alert-list");
+  const viewButton = document.getElementById("dashboard-view-diagnostics");
   if (!container) return;
+
   container.innerHTML = "";
+  if (viewButton) {
+    viewButton.disabled = alerts.length === 0;
+    viewButton.textContent = alerts.length
+      ? `View ${alerts.length} issue${alerts.length === 1 ? "" : "s"}`
+      : "No issues";
+  }
 
   if (!alerts.length) {
     container.innerHTML =
       '<div class="dashboard-no-alerts"><span>✓</span><div><strong>No active alerts</strong><small>All reported systems are operating normally</small></div></div>';
+    closeDashboardDiagnostics();
     return;
   }
 
-  for (const [title, detail] of alerts.slice(0, 4)) {
-    const item = document.createElement("div");
-    item.className = "dashboard-alert-item";
-    item.innerHTML = `<span>!</span><div><strong></strong><small></small></div>`;
-    item.querySelector("strong").textContent = title;
-    item.querySelector("small").textContent = detail;
+  for (const issue of alerts.slice(0, 4)) {
+    const item = document.createElement("article");
+    item.className = `dashboard-alert-item ${issue.severity}`;
+    item.dataset.issueKey = issue.key;
+
+    const icon = document.createElement("span");
+    icon.className = "alert-severity-icon";
+    icon.textContent = issue.severity === "critical" ? "×" : "!";
+
+    const copy = document.createElement("div");
+    copy.className = "alert-copy";
+    const subsystem = document.createElement("small");
+    subsystem.textContent = issue.subsystem;
+    const title = document.createElement("strong");
+    title.textContent = issue.title;
+    const summary = document.createElement("p");
+    summary.textContent = issue.summary;
+    copy.append(subsystem, title, summary);
+
+    const inspect = document.createElement("button");
+    inspect.type = "button";
+    inspect.className = "alert-inspect-button";
+    inspect.textContent = "Inspect";
+    inspect.onclick = () => openDashboardDiagnostics(issue.key);
+
+    item.append(icon, copy, inspect);
     container.appendChild(item);
+  }
+}
+
+function findDashboardIssue(issueKey = null) {
+  const alerts = dashboardRuntime.alerts || [];
+  if (!alerts.length) return null;
+  return alerts.find(issue => issue.key === issueKey) || alerts[0];
+}
+
+function openDashboardDiagnostics(issueKey = null) {
+  const issue = findDashboardIssue(issueKey);
+  const panel = document.getElementById("dashboard-issue-diagnostics");
+  if (!panel) return;
+
+  if (!issue) {
+    panel.hidden = true;
+    scrollDashboardSection("dashboard-alerts-card");
+    return;
+  }
+
+  panel.hidden = false;
+  panel.dataset.issueKey = issue.key;
+  dashboardText("issue-severity-label", diagnosticSeverityText(issue.severity));
+  dashboardText("issue-diagnostic-title", issue.title);
+  dashboardText("issue-diagnostic-summary", issue.summary);
+  dashboardText("issue-diagnostic-impact", issue.impact);
+  dashboardText("issue-diagnostic-action-text", issue.recommendation);
+
+  const severityLabel = document.getElementById("issue-severity-label");
+  if (severityLabel) severityLabel.className = `issue-severity-label ${issue.severity}`;
+
+  const evidenceContainer = document.getElementById("issue-diagnostic-evidence");
+  if (evidenceContainer) {
+    evidenceContainer.innerHTML = "";
+    for (const [label, value] of issue.evidence || []) {
+      const row = document.createElement("div");
+      const key = document.createElement("span");
+      key.textContent = label;
+      const val = document.createElement("strong");
+      val.textContent = value;
+      row.append(key, val);
+      evidenceContainer.appendChild(row);
+    }
+  }
+
+  const actions = document.getElementById("issue-action-buttons");
+  if (actions) {
+    actions.innerHTML = "";
+    for (const action of issue.actions || []) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = action.label;
+      button.onclick = () => runDashboardDiagnosticAction(action.command);
+      if (/resume|reconnect|scan/i.test(action.label)) button.classList.add("primary");
+      actions.appendChild(button);
+    }
+  }
+
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function closeDashboardDiagnostics() {
+  const panel = document.getElementById("dashboard-issue-diagnostics");
+  if (panel) panel.hidden = true;
+}
+
+async function runDashboardDiagnosticAction(command) {
+  switch (command) {
+    case "resume-estop":
+      await resumeEstop();
+      break;
+    case "diagnostic-drive":
+      selectDashboardDiagnostic("drive", null, true);
+      break;
+    case "diagnostic-motors":
+      selectDashboardDiagnostic("motors", null, true);
+      break;
+    case "diagnostic-thermal":
+      selectDashboardDiagnostic("thermal", null, true);
+      break;
+    case "scan-motors":
+      selectDashboardDiagnostic("motors", null, true);
+      await scanMotors();
+      break;
+    case "reconnect-gamepad":
+      await reconnectGamepad();
+      break;
+    case "tab-controller":
+      openDashboardTab("controller");
+      break;
+    case "tab-recordings":
+      openDashboardTab("recordings");
+      break;
   }
 }
 
@@ -2527,6 +2961,7 @@ async function loadDashboardBagStats(force = false) {
 function initDashboardPage() {
   document.body.classList.add("dashboard-active");
   restoreDashboardSections();
+  restoreDashboardDiagnostic();
   syncDashboardSensorControls();
   updateDashboardConnection(ws?.readyState === WebSocket.OPEN);
   updateDashboardClock();
