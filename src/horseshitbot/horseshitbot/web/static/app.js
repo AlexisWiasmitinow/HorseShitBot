@@ -2260,11 +2260,23 @@ function scrollDashboardSection(id) {
 function toggleDashboardSection(bodyId, button) {
   const body = document.getElementById(bodyId);
   if (!body) return;
+
   const open = body.hidden;
   body.hidden = !open;
   button?.setAttribute("aria-expanded", String(open));
+
+  if (bodyId === "dashboard-components-body") {
+    document.querySelectorAll("#dashboard-components-body .dashboard-component-detail")
+      .forEach(detail => {
+        detail.hidden = !open;
+      });
+  }
+
   try {
-    sessionStorage.setItem(`hsb-dashboard-section:${bodyId}`, open ? "open" : "closed");
+    sessionStorage.setItem(
+      `hsb-dashboard-section:${bodyId}`,
+      open ? "open" : "closed"
+    );
   } catch (_) { /* optional */ }
 }
 
@@ -2275,50 +2287,73 @@ function restoreDashboardSections() {
     if (!body || !button) continue;
     try {
       const state = sessionStorage.getItem(`hsb-dashboard-section:${bodyId}`);
-      if (state === "open") {
+      const shouldOpen = state === "open";
+
+      if (shouldOpen) {
         body.hidden = false;
         button.setAttribute("aria-expanded", "true");
-      } else if (state === "closed" || bodyId === "dashboard-hardware-body") {
+      } else {
         body.hidden = true;
         button.setAttribute("aria-expanded", "false");
+      }
+
+      if (bodyId === "dashboard-components-body") {
+        document.querySelectorAll("#dashboard-components-body .dashboard-component-detail")
+          .forEach(detail => {
+            detail.hidden = !shouldOpen;
+          });
       }
     } catch (_) { /* optional */ }
   }
 }
 
 function closeDashboardDetails() {
-  document.querySelectorAll(".dashboard-component-detail").forEach(detail => {
-    detail.hidden = true;
-  });
-  document.querySelectorAll(".dashboard-component-tile").forEach(tile => {
-    tile.classList.remove("is-active");
-  });
+  const body = document.getElementById("dashboard-components-body");
+  const heading = document.querySelector(
+    "#dashboard-components-section .dashboard-accordion-heading"
+  );
+
+  if (body) body.hidden = true;
+  heading?.setAttribute("aria-expanded", "false");
+
+  document.querySelectorAll("#dashboard-components-body .dashboard-component-detail")
+    .forEach(detail => {
+      detail.hidden = true;
+    });
+
+  try {
+    sessionStorage.setItem(
+      "hsb-dashboard-section:dashboard-components-body",
+      "closed"
+    );
+  } catch (_) { /* optional */ }
 }
 
-function toggleDashboardDetail(name, sourceButton = null) {
-  const target = document.getElementById(`dashboard-detail-${name}`);
-  if (!target) return;
+function toggleDashboardDetail(name) {
+  const body = document.getElementById("dashboard-components-body");
+  const heading = document.querySelector(
+    "#dashboard-components-section .dashboard-accordion-heading"
+  );
+  const slot = document.querySelector(
+    `.dashboard-component-slot[data-component="${name}"]`
+  );
 
-  const opening = target.hidden;
-  closeDashboardDetails();
+  if (body) body.hidden = false;
+  heading?.setAttribute("aria-expanded", "true");
 
-  if (opening) {
-    target.hidden = false;
+  document.querySelectorAll("#dashboard-components-body .dashboard-component-detail")
+    .forEach(detail => {
+      detail.hidden = false;
+    });
 
-    const tile =
-      sourceButton ||
-      document.querySelector(
-        `.dashboard-component-tile[data-dashboard-component="${name}"]`
-      );
+  try {
+    sessionStorage.setItem(
+      "hsb-dashboard-section:dashboard-components-body",
+      "open"
+    );
+  } catch (_) { /* optional */ }
 
-    tile?.classList.add("is-active");
-
-    document.getElementById("dashboard-components-body").hidden = false;
-    document.querySelector("#dashboard-components-section .dashboard-accordion-heading")
-      ?.setAttribute("aria-expanded", "true");
-
-    target.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
+  slot?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function selectDashboardDiagnostic(name, sourceButton = null, forceOpen = false) {

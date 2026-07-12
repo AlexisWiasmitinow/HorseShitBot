@@ -330,28 +330,31 @@
     </div>
 
     <section class="dashboard-accordion" id="dashboard-components-section">
-      <button class="dashboard-accordion-heading" type="button" onclick="toggleDashboardSection('dashboard-components-body', this)" aria-expanded="true">
+      <button class="dashboard-accordion-heading" type="button"
+              onclick="toggleDashboardSection('dashboard-components-body', this)"
+              aria-expanded="false">
         <span class="dashboard-heading-icon">◉</span>
-        <span><strong>Robot Components</strong><small>Actuators and mechanisms</small></span>
+        <span>
+          <strong>Robot Components</strong>
+          <small>Expand to view all actuator states and controls</small>
+        </span>
         <em>⌃</em>
       </button>
 
-      <div class="dashboard-accordion-body" id="dashboard-components-body">
-        <div class="dashboard-component-grid">
+      <div class="dashboard-accordion-body" id="dashboard-components-body" hidden>
+        <div class="dashboard-component-grid dashboard-component-grid-expanded">
           <div class="dashboard-component-slot" data-component="wheels">
-            <button class="dashboard-component-tile" id="card-wheels" type="button"
-                    data-dashboard-component="wheels"
-                    onclick="toggleDashboardDetail('wheels', this)">
+            <div class="dashboard-component-tile dashboard-component-summary" id="card-wheels"
+                 data-dashboard-component="wheels">
               <span class="component-icon">◉</span>
-              <span><strong>Wheels</strong><small id="dash-wheels-sub">Drive: --</small></span>
-              <b id="dash-wheels-state">CHECKING</b><em>›</em>
-            </button>
+              <span>
+                <strong>Wheels</strong>
+                <small id="dash-wheels-sub">Drive: --</small>
+              </span>
+              <b id="dash-wheels-state">CHECKING</b>
+            </div>
 
-            <article class="dashboard-component-detail" id="dashboard-detail-wheels" hidden>
-              <header>
-                <h3>Wheels</h3>
-                <button type="button" onclick="closeDashboardDetails()" aria-label="Close wheel controls">×</button>
-              </header>
+            <article class="dashboard-component-detail" id="dashboard-detail-wheels">
               <div class="dashboard-detail-grid">
                 <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
                 <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
@@ -373,19 +376,17 @@
           </div>
 
           <div class="dashboard-component-slot" data-component="brush">
-            <button class="dashboard-component-tile" type="button"
-                    data-dashboard-component="brush"
-                    onclick="toggleDashboardDetail('brush', this)">
+            <div class="dashboard-component-tile dashboard-component-summary"
+                 data-dashboard-component="brush">
               <span class="component-icon">♨</span>
-              <span><strong>Brush</strong><small id="dash-brush-sub">State: --</small></span>
-              <b id="dash-brush-state">CHECKING</b><em>›</em>
-            </button>
+              <span>
+                <strong>Brush</strong>
+                <small id="dash-brush-sub">State: --</small>
+              </span>
+              <b id="dash-brush-state">CHECKING</b>
+            </div>
 
-            <article class="dashboard-component-detail" id="dashboard-detail-brush" hidden>
-              <header>
-                <h3>Brush</h3>
-                <button type="button" onclick="closeDashboardDetails()" aria-label="Close brush controls">×</button>
-              </header>
+            <article class="dashboard-component-detail" id="dashboard-detail-brush">
               <div class="dashboard-detail-grid">
                 <div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
                 <div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
@@ -406,19 +407,17 @@
           </div>
 
           <div class="dashboard-component-slot" data-component="lift">
-            <button class="dashboard-component-tile" type="button"
-                    data-dashboard-component="lift"
-                    onclick="toggleDashboardDetail('lift', this)">
+            <div class="dashboard-component-tile dashboard-component-summary"
+                 data-dashboard-component="lift">
               <span class="component-icon">↕</span>
-              <span><strong>Lift</strong><small id="dash-lift-sub">State: --</small></span>
-              <b id="dash-lift-state">CHECKING</b><em>›</em>
-            </button>
+              <span>
+                <strong>Lift</strong>
+                <small id="dash-lift-sub">State: --</small>
+              </span>
+              <b id="dash-lift-state">CHECKING</b>
+            </div>
 
-            <article class="dashboard-component-detail" id="dashboard-detail-lift" hidden>
-              <header>
-                <h3>Lift</h3>
-                <button type="button" onclick="closeDashboardDetails()" aria-label="Close lift controls">×</button>
-              </header>
+            <article class="dashboard-component-detail" id="dashboard-detail-lift">
               <div class="dashboard-detail-grid">
                 <div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
                 <div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
@@ -434,19 +433,17 @@
           </div>
 
           <div class="dashboard-component-slot" data-component="bin-door">
-            <button class="dashboard-component-tile" type="button"
-                    data-dashboard-component="bin-door"
-                    onclick="toggleDashboardDetail('bin-door', this)">
+            <div class="dashboard-component-tile dashboard-component-summary"
+                 data-dashboard-component="bin-door">
               <span class="component-icon">▯</span>
-              <span><strong>Bin Door</strong><small id="dash-bin-sub">State: --</small></span>
-              <b id="dash-bin-state">CHECKING</b><em>›</em>
-            </button>
+              <span>
+                <strong>Bin Door</strong>
+                <small id="dash-bin-sub">State: --</small>
+              </span>
+              <b id="dash-bin-state">CHECKING</b>
+            </div>
 
-            <article class="dashboard-component-detail" id="dashboard-detail-bin-door" hidden>
-              <header>
-                <h3>Bin Door</h3>
-                <button type="button" onclick="closeDashboardDetails()" aria-label="Close bin-door controls">×</button>
-              </header>
+            <article class="dashboard-component-detail" id="dashboard-detail-bin-door">
               <div class="dashboard-detail-grid">
                 <div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
                 <div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
