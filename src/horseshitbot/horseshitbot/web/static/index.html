@@ -78,19 +78,43 @@
 </div>
 </div>
 
-<div class="sidebar-status-row dashboard-sidebar-only">
-<span class="status-glyph">▤</span>
+<div class="sidebar-emergency-section">
+<div class="sidebar-emergency-heading">
+<span class="sidebar-emergency-symbol" aria-hidden="true">
+<svg viewBox="0 0 24 24" focusable="false">
+<path d="M12 7.25v6.5"></path>
+<circle cx="12" cy="17.25" r="1"></circle>
+</svg>
+</span>
 <div>
-<strong>MKS Bus</strong>
-<span id="sidebar-mks-state">Checking</span>
+<strong>Emergency controls</strong>
+<span>Immediate wheel stop</span>
 </div>
 </div>
-<div class="sidebar-status-row dashboard-sidebar-only">
-<span class="status-glyph">◷</span>
-<div>
-<strong>Uptime</strong>
-<span id="sidebar-uptime">--</span>
+
+<div class="sidebar-emergency-buttons">
+<button class="sidebar-stop-button" id="sidebar-stop-button" type="button"
+        onclick="sidebarWheelCommand('stop')"
+        title="Stop wheel motion">
+<span aria-hidden="true">■</span>
+<span>STOP</span>
+</button>
+
+<button class="sidebar-estop-button" id="sidebar-estop-button" type="button"
+        onclick="sidebarWheelCommand('stop_fast')"
+        title="Trigger the wheel emergency stop">
+<span class="sidebar-estop-icon" aria-hidden="true">
+<svg viewBox="0 0 24 24" focusable="false">
+<path d="M12 6.75v7"></path>
+<circle cx="12" cy="17.25" r="1"></circle>
+</svg>
+</span>
+<span>E-STOP</span>
+</button>
 </div>
+
+<span class="sidebar-emergency-message" id="sidebar-emergency-message"
+      role="status" aria-live="polite"></span>
 </div>
 </div>
 </aside>
@@ -218,11 +242,7 @@
       <article class="dashboard-card system-health-card">
         <header class="dashboard-simple-heading system-health-heading">
           <h2>System Health</h2>
-          <div class="system-health-actions">
-            <span class="system-health-state" id="system-health-state">Loading host metrics…</span>
-            <a class="system-data-link" href="/api/system-health" target="_blank" rel="noopener">Metrics JSON</a>
-            <a class="system-data-link" href="/api/power-status" target="_blank" rel="noopener">Power JSON</a>
-          </div>
+          <span class="system-health-state" id="system-health-state">Loading host metrics…</span>
         </header>
         <div class="health-list">
           <div class="health-row health-spark-row">

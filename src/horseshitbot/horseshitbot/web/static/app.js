@@ -3391,6 +3391,57 @@ async function cmd(node, action) {
   catch (e) { console.error("Command failed:", e); }
 }
 
+async function sidebarWheelCommand(action) {
+  const stopButton = document.getElementById("sidebar-stop-button");
+  const estopButton = document.getElementById("sidebar-estop-button");
+  const message = document.getElementById("sidebar-emergency-message");
+  const isEstop = action === "stop_fast";
+
+  stopButton?.setAttribute("disabled", "disabled");
+  estopButton?.setAttribute("disabled", "disabled");
+
+  if (message) {
+    message.textContent = isEstop ? "Sending E-STOP…" : "Sending stop…";
+    message.className = "sidebar-emergency-message pending";
+  }
+
+  try {
+    const response = await fetch(
+      `/api/command/wheel_driver_node/${action}`,
+      { method: "POST" }
+    );
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.success === false) {
+      throw new Error(result.message || `HTTP ${response.status}`);
+    }
+
+    if (message) {
+      message.textContent = isEstop ? "E-STOP sent" : "Stop sent";
+      message.className = "sidebar-emergency-message sent";
+    }
+  } catch (error) {
+    console.error("Sidebar wheel command failed:", error);
+    if (message) {
+      message.textContent = "Command failed";
+      message.className = "sidebar-emergency-message failed";
+      message.title = error.message || String(error);
+    }
+  } finally {
+    window.setTimeout(() => {
+      stopButton?.removeAttribute("disabled");
+      estopButton?.removeAttribute("disabled");
+    }, 650);
+
+    window.setTimeout(() => {
+      if (message) {
+        message.textContent = "";
+        message.className = "sidebar-emergency-message";
+      }
+    }, 2600);
+  }
+}
+
 async function resumeEstop() {
   // /wheel_driver_node/stop is the action that clears the e-stop flag
   // (gentle stop + recovery, see _srv_stop in wheel_driver_node.py).

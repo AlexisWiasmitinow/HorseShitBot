@@ -7211,3 +7211,286 @@ body.dashboard-active.sidebar-collapsed .app-shell {
     grid-template-columns: 1fr !important;
   }
 }
+
+
+/* ==================================================================
+   Permanent sidebar emergency controls
+   ================================================================== */
+
+.sidebar-emergency-section {
+  padding: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(113, 18, 28, 0.18), rgba(42, 10, 17, 0.12));
+}
+
+.sidebar-emergency-heading {
+  display: grid;
+  grid-template-columns: 29px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 11px;
+}
+
+.sidebar-emergency-symbol {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 112, 122, 0.42);
+  border-radius: 999px;
+  color: #ffd6da;
+  background: rgba(220, 38, 55, 0.22);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.sidebar-emergency-heading strong,
+.sidebar-emergency-heading span {
+  display: block;
+}
+
+.sidebar-emergency-heading strong {
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sidebar-emergency-heading div > span {
+  margin-top: 2px;
+  color: #c6cfdd;
+  font-size: 10px;
+}
+
+.sidebar-emergency-buttons {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 8px;
+}
+
+.sidebar-emergency-buttons button {
+  min-width: 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  box-shadow: none;
+}
+
+.sidebar-stop-button {
+  color: #ffd8dc;
+  border: 1px solid rgba(255, 100, 112, 0.72);
+  background: rgba(159, 29, 43, 0.30);
+}
+
+.sidebar-stop-button:hover {
+  color: #ffffff;
+  border-color: #ff7b87;
+  background: rgba(189, 38, 53, 0.45);
+}
+
+.sidebar-estop-button {
+  color: #ffffff;
+  border: 1px solid #f04455;
+  background: linear-gradient(180deg, #ef4c5e 0%, #d92f44 100%);
+  box-shadow: 0 8px 18px rgba(217, 47, 68, 0.26);
+}
+
+.sidebar-estop-button:hover {
+  background: linear-gradient(180deg, #f45b6b 0%, #df394d 100%);
+}
+
+.sidebar-emergency-buttons button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.sidebar-emergency-message {
+  min-height: 15px;
+  display: block;
+  margin-top: 7px;
+  color: #cbd5e1;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.sidebar-emergency-message.pending {
+  color: #ffd166;
+}
+
+.sidebar-emergency-message.sent {
+  color: #6ee7a4;
+}
+
+.sidebar-emergency-message.failed {
+  color: #ff9ca6;
+}
+
+/* Keep emergency controls visible on every site page. */
+body:not(.dashboard-active) .sidebar-emergency-section {
+  display: block;
+}
+
+
+/* ==================================================================
+   Emergency icon alignment fix
+   ================================================================== */
+
+.sidebar-emergency-symbol {
+  padding: 0;
+  line-height: 0;
+}
+
+.sidebar-emergency-symbol svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sidebar-emergency-heading {
+  align-items: center;
+}
+
+.sidebar-emergency-buttons button > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-estop-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  line-height: 0;
+}
+
+.sidebar-estop-icon svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Keep the original two-button proportions and center the complete row. */
+.sidebar-emergency-buttons {
+  width: 100%;
+  margin: 0 auto;
+}
+
+.sidebar-emergency-buttons button {
+  justify-content: center;
+  text-align: center;
+}
+
+
+/* ==================================================================
+   Compact dashboard top row
+   ================================================================== */
+
+#tab-dashboard .dashboard-primary-grid {
+  grid-template-columns:
+    minmax(455px, 1.48fr)
+    minmax(300px, 0.92fr)
+    minmax(285px, 0.90fr);
+  gap: 13px;
+}
+
+#tab-dashboard .dashboard-primary-grid > .dashboard-card {
+  padding: 15px 16px;
+}
+
+#tab-dashboard .robot-overview-card,
+#tab-dashboard .system-health-card,
+#tab-dashboard .sensors-card {
+  min-height: 320px;
+}
+
+#tab-dashboard .robot-overview-stage {
+  min-height: 250px;
+  margin-top: 1px;
+}
+
+#tab-dashboard .dashboard-robot-image {
+  width: min(55%, 365px);
+  transform: translate(-50%, -44%);
+}
+
+/* Move the Wheels label clearly to the left of its previous centered position. */
+#tab-dashboard .marker-wheels {
+  left: 29%;
+  bottom: 1%;
+}
+
+#tab-dashboard .health-list {
+  gap: 9px;
+  margin-top: 14px;
+}
+
+#tab-dashboard .health-row {
+  min-height: 24px;
+  grid-template-columns: 96px 105px minmax(72px, 1fr);
+  gap: 7px;
+}
+
+#tab-dashboard .sensor-card-explanation {
+  margin-top: 8px;
+  padding: 8px 10px;
+}
+
+#tab-dashboard .sensor-list {
+  gap: 8px;
+}
+
+#tab-dashboard .sensor-row {
+  min-height: 70px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+/* Health heading remains balanced after removing the JSON buttons. */
+#tab-dashboard .system-health-heading {
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#tab-dashboard .system-health-state {
+  max-width: 145px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Old raw-data button styling is intentionally no longer used. */
+#tab-dashboard .system-data-link {
+  display: none !important;
+}
+
+@media (max-width: 1350px) {
+  #tab-dashboard .dashboard-primary-grid {
+    grid-template-columns:
+      minmax(420px, 1.35fr)
+      minmax(285px, 0.95fr)
+      minmax(270px, 0.9fr);
+  }
+
+  #tab-dashboard .marker-wheels {
+    left: 26%;
+  }
+}
