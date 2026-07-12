@@ -1924,6 +1924,8 @@ function initTabs() {
       closeTopicChecklists();
 
       if (tabName === "dashboard") {
+        resetDashboardComponentsClosed();
+        resetDashboardHardwareClosed();
         loadDashboardBagStats();
         updateDashboardClock();
       }
@@ -2266,10 +2268,19 @@ function toggleDashboardSection(bodyId, button) {
   button?.setAttribute("aria-expanded", String(open));
 
   if (bodyId === "dashboard-components-body") {
-    document.querySelectorAll("#dashboard-components-body .dashboard-component-detail")
-      .forEach(detail => {
-        detail.hidden = !open;
-      });
+    document.querySelectorAll(
+      "#dashboard-components-body .dashboard-component-detail"
+    ).forEach(detail => {
+      detail.hidden = !open;
+    });
+  }
+
+  if (bodyId === "dashboard-hardware-body") {
+    document.querySelectorAll(
+      "#dashboard-hardware-body .dashboard-diagnostic-panel"
+    ).forEach(panel => {
+      panel.hidden = !open;
+    });
   }
 
   try {
@@ -2280,31 +2291,55 @@ function toggleDashboardSection(bodyId, button) {
   } catch (_) { /* optional */ }
 }
 
+function resetDashboardComponentsClosed() {
+  const body = document.getElementById("dashboard-components-body");
+  const button = document.querySelector(
+    "#dashboard-components-section .dashboard-accordion-heading"
+  );
+
+  if (body) body.hidden = true;
+  button?.setAttribute("aria-expanded", "false");
+
+  document.querySelectorAll(
+    "#dashboard-components-body .dashboard-component-detail"
+  ).forEach(detail => {
+    detail.hidden = true;
+  });
+
+  try {
+    sessionStorage.removeItem(
+      "hsb-dashboard-section:dashboard-components-body"
+    );
+  } catch (_) { /* optional */ }
+}
+
+function resetDashboardHardwareClosed() {
+  const body = document.getElementById("dashboard-hardware-body");
+  const button = document.querySelector(
+    "#dashboard-hardware-section .dashboard-accordion-heading"
+  );
+
+  if (body) body.hidden = true;
+  button?.setAttribute("aria-expanded", "false");
+
+  document.querySelectorAll(
+    "#dashboard-hardware-body .dashboard-diagnostic-panel"
+  ).forEach(panel => {
+    panel.hidden = true;
+  });
+
+  try {
+    sessionStorage.removeItem(
+      "hsb-dashboard-section:dashboard-hardware-body"
+    );
+    sessionStorage.removeItem("hsb-dashboard-diagnostic");
+  } catch (_) { /* optional */ }
+}
+
 function restoreDashboardSections() {
-  for (const bodyId of ["dashboard-components-body", "dashboard-hardware-body"]) {
-    const body = document.getElementById(bodyId);
-    const button = body?.closest(".dashboard-accordion")?.querySelector(".dashboard-accordion-heading");
-    if (!body || !button) continue;
-    try {
-      const state = sessionStorage.getItem(`hsb-dashboard-section:${bodyId}`);
-      const shouldOpen = state === "open";
-
-      if (shouldOpen) {
-        body.hidden = false;
-        button.setAttribute("aria-expanded", "true");
-      } else {
-        body.hidden = true;
-        button.setAttribute("aria-expanded", "false");
-      }
-
-      if (bodyId === "dashboard-components-body") {
-        document.querySelectorAll("#dashboard-components-body .dashboard-component-detail")
-          .forEach(detail => {
-            detail.hidden = !shouldOpen;
-          });
-      }
-    } catch (_) { /* optional */ }
-  }
+  // Both grouped sections intentionally start collapsed on every page load.
+  resetDashboardComponentsClosed();
+  resetDashboardHardwareClosed();
 }
 
 function closeDashboardDetails() {
@@ -2356,53 +2391,39 @@ function toggleDashboardDetail(name) {
   slot?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-function selectDashboardDiagnostic(name, sourceButton = null, forceOpen = false) {
+function selectDashboardDiagnostic(name) {
   const body = document.getElementById("dashboard-hardware-body");
   const accordionButton = document.querySelector(
     "#dashboard-hardware-section .dashboard-accordion-heading"
   );
+  const target = document.getElementById(`dashboard-diagnostic-${name}`);
+
   if (body) body.hidden = false;
   accordionButton?.setAttribute("aria-expanded", "true");
 
-  const target = document.getElementById(`dashboard-diagnostic-${name}`);
-  if (!target) return;
-
-  const wasOpen = !target.hidden;
-  document.querySelectorAll(".dashboard-diagnostic-panel").forEach(panel => {
-    panel.hidden = true;
-  });
-  document.querySelectorAll(".diagnostic-category-tile").forEach(tile => {
-    tile.classList.remove("is-active");
+  document.querySelectorAll(
+    "#dashboard-hardware-body .dashboard-diagnostic-panel"
+  ).forEach(panel => {
+    panel.hidden = false;
   });
 
-  if (wasOpen && !forceOpen) {
-    try { sessionStorage.removeItem("hsb-dashboard-diagnostic"); } catch (_) {}
-    return;
-  }
+  try {
+    sessionStorage.setItem(
+      "hsb-dashboard-section:dashboard-hardware-body",
+      "open"
+    );
+  } catch (_) { /* optional */ }
 
-  target.hidden = false;
-  const tile = sourceButton || document.getElementById(`diagnostic-tile-${name}`);
-  tile?.classList.add("is-active");
-  try { sessionStorage.setItem("hsb-dashboard-diagnostic", name); } catch (_) {}
-
-  target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function closeDashboardDiagnostic() {
-  document.querySelectorAll(".dashboard-diagnostic-panel").forEach(panel => {
-    panel.hidden = true;
-  });
-  document.querySelectorAll(".diagnostic-category-tile").forEach(tile => {
-    tile.classList.remove("is-active");
-  });
-  try { sessionStorage.removeItem("hsb-dashboard-diagnostic"); } catch (_) {}
+  resetDashboardHardwareClosed();
 }
 
 function restoreDashboardDiagnostic() {
-  try {
-    const saved = sessionStorage.getItem("hsb-dashboard-diagnostic");
-    if (saved) selectDashboardDiagnostic(saved, null, true);
-  } catch (_) { /* optional */ }
+  // Hardware Diagnostics intentionally starts collapsed.
+  resetDashboardHardwareClosed();
 }
 
 function dashboardNumber(...values) {

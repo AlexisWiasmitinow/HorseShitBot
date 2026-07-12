@@ -477,122 +477,150 @@
         <span class="dashboard-heading-icon">▦</span>
         <span>
           <strong>Hardware diagnostics</strong>
-          <small>Select one subsystem to inspect; only that diagnostic panel opens</small>
+          <small>Expand to view all hardware and system diagnostics</small>
         </span>
         <em>⌃</em>
       </button>
 
       <div class="dashboard-accordion-body" id="dashboard-hardware-body" hidden>
-        <div class="dashboard-diagnostic-nav">
-          <button class="diagnostic-category-tile" id="diagnostic-tile-motors" type="button"
-                  onclick="selectDashboardDiagnostic('motors', this)">
-            <span class="diagnostic-category-icon">M</span>
-            <span><strong>Motor diagnostics</strong><small id="dash-motor-diagnostics-summary">No scan data</small></span>
-            <em>›</em>
-          </button>
+        <div class="dashboard-diagnostic-groups" id="dashboard-diagnostic-workspace">
 
-          <button class="diagnostic-category-tile" id="diagnostic-tile-drive" type="button"
-                  onclick="selectDashboardDiagnostic('drive', this)">
-            <span class="diagnostic-category-icon">D</span>
-            <span><strong>Drive backend</strong><small id="dash-drive-diagnostics-summary">Checking backend</small></span>
-            <em>›</em>
-          </button>
+          <section class="dashboard-diagnostic-group dashboard-diagnostic-group-motors">
+            <div class="diagnostic-category-tile diagnostic-category-summary"
+                 id="diagnostic-tile-motors">
+              <span class="diagnostic-category-icon">M</span>
+              <span>
+                <strong>Motor diagnostics</strong>
+                <small id="dash-motor-diagnostics-summary">No scan data</small>
+              </span>
+            </div>
 
-          <button class="diagnostic-category-tile" id="diagnostic-tile-thermal" type="button"
-                  onclick="selectDashboardDiagnostic('thermal', this)">
-            <span class="diagnostic-category-icon">T</span>
-            <span><strong>Thermal zones</strong><small id="dash-thermal-diagnostics-summary">Waiting for telemetry</small></span>
-            <em>›</em>
-          </button>
+            <section class="dashboard-diagnostic-panel dashboard-diagnostic-motors-panel"
+                     id="dashboard-diagnostic-motors" hidden>
+              <header>
+                <div>
+                  <h3>Motor diagnostics</h3>
+                  <p>Per-motor online state and current configuration</p>
+                </div>
+              </header>
 
-          <button class="diagnostic-category-tile" id="diagnostic-tile-power" type="button"
-                  onclick="selectDashboardDiagnostic('power', this)">
-            <span class="diagnostic-category-icon">P</span>
-            <span><strong>Power telemetry</strong><small id="dash-power-diagnostics-summary">No power telemetry</small></span>
-            <em>›</em>
-          </button>
-        </div>
-
-        <div class="dashboard-diagnostic-workspace" id="dashboard-diagnostic-workspace">
-          <section class="dashboard-diagnostic-panel" id="dashboard-diagnostic-motors" hidden>
-            <header>
-              <div>
-                <h3>Motor diagnostics</h3>
-                <p>Per-motor online state and current configuration</p>
+              <div class="diagnostic-summary-grid">
+                <div><span>Motor bus</span><strong id="hw-mks-bus">--</strong></div>
+                <div><span>Online motors</span><strong id="diag-motors-online">--</strong></div>
+                <div><span>Offline motors</span><strong id="diag-motors-offline">--</strong></div>
               </div>
-              <button type="button" onclick="closeDashboardDiagnostic()" aria-label="Close motor diagnostics">×</button>
-            </header>
-            <div class="diagnostic-summary-grid">
-              <div><span>Motor bus</span><strong id="hw-mks-bus">--</strong></div>
-              <div><span>Online motors</span><strong id="diag-motors-online">--</strong></div>
-              <div><span>Offline motors</span><strong id="diag-motors-offline">--</strong></div>
-            </div>
-            <div id="hw-motors" class="dashboard-motor-list"></div>
-            <div class="btn-row" id="hw-save-defaults-row">
-              <button onclick="scanMotors()">Scan motor bus</button>
-              <button onclick="saveMotorDefaults()">Save currents as default</button>
-              <span class="ctrl-msg" id="hw-save-msg"></span>
-            </div>
+
+              <div id="hw-motors" class="dashboard-motor-list"></div>
+
+              <div class="btn-row" id="hw-save-defaults-row">
+                <button onclick="scanMotors()">Scan motor bus</button>
+                <button onclick="saveMotorDefaults()">Save currents as default</button>
+                <span class="ctrl-msg" id="hw-save-msg"></span>
+              </div>
+            </section>
           </section>
 
-          <section class="dashboard-diagnostic-panel" id="dashboard-diagnostic-drive" hidden>
-            <header>
-              <div>
-                <h3>Drive backend diagnostics</h3>
-                <p>Active wheel backend, power bus and current wheel-driver errors</p>
-              </div>
-              <button type="button" onclick="closeDashboardDiagnostic()" aria-label="Close drive diagnostics">×</button>
-            </header>
-            <div class="diagnostic-summary-grid">
-              <div><span>Backend</span><strong id="diag-drive-backend">--</strong></div>
-              <div><span>ODrive</span><strong id="hw-odrive">--</strong></div>
-              <div><span>Bus voltage</span><strong id="diag-drive-vbus">--</strong></div>
-              <div><span>Driver error</span><strong id="diag-drive-error">--</strong></div>
-            </div>
-            <div class="btn-row">
-              <button onclick="switchBackend()">Switch backend</button>
-              <button onclick="cmd('wheel_driver_node','stop')">Stop wheels</button>
-              <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">Emergency stop</button>
-            </div>
-          </section>
+          <div class="dashboard-diagnostic-secondary-grid">
 
-          <section class="dashboard-diagnostic-panel" id="dashboard-diagnostic-thermal" hidden>
-            <header>
-              <div>
-                <h3>Thermal-zone diagnostics</h3>
-                <p>All Jetson thermal zones, not only the representative dashboard temperature</p>
+            <section class="dashboard-diagnostic-group">
+              <div class="diagnostic-category-tile diagnostic-category-summary"
+                   id="diagnostic-tile-drive">
+                <span class="diagnostic-category-icon">D</span>
+                <span>
+                  <strong>Drive backend</strong>
+                  <small id="dash-drive-diagnostics-summary">Checking backend</small>
+                </span>
               </div>
-              <button type="button" onclick="closeDashboardDiagnostic()" aria-label="Close thermal diagnostics">×</button>
-            </header>
-            <div class="diagnostic-summary-grid">
-              <div><span>Zones reported</span><strong id="diag-thermal-count">--</strong></div>
-              <div><span>Maximum</span><strong id="diag-thermal-max">--</strong></div>
-              <div><span>Warning threshold</span><strong>65°C</strong></div>
-              <div><span>Critical threshold</span><strong>85°C</strong></div>
-            </div>
-            <div class="thermal-zones" id="thermal-zones">
-              <span class="thermal-placeholder">Waiting for data...</span>
-            </div>
-          </section>
 
-          <section class="dashboard-diagnostic-panel" id="dashboard-diagnostic-power" hidden>
-            <header>
-              <div>
-                <h3>Power telemetry</h3>
-                <p>Shows only values actually supplied by the robot backend</p>
+              <section class="dashboard-diagnostic-panel"
+                       id="dashboard-diagnostic-drive" hidden>
+                <header>
+                  <div>
+                    <h3>Drive backend diagnostics</h3>
+                    <p>Active wheel backend, power bus and current wheel-driver errors</p>
+                  </div>
+                </header>
+
+                <div class="diagnostic-summary-grid">
+                  <div><span>Backend</span><strong id="diag-drive-backend">--</strong></div>
+                  <div><span>ODrive</span><strong id="hw-odrive">--</strong></div>
+                  <div><span>Bus voltage</span><strong id="diag-drive-vbus">--</strong></div>
+                  <div><span>Driver error</span><strong id="diag-drive-error">--</strong></div>
+                </div>
+
+                <div class="btn-row">
+                  <button onclick="switchBackend()">Switch backend</button>
+                  <button onclick="cmd('wheel_driver_node','stop')">Stop wheels</button>
+                  <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">Emergency stop</button>
+                </div>
+              </section>
+            </section>
+
+            <section class="dashboard-diagnostic-group">
+              <div class="diagnostic-category-tile diagnostic-category-summary"
+                   id="diagnostic-tile-thermal">
+                <span class="diagnostic-category-icon">T</span>
+                <span>
+                  <strong>Thermal zones</strong>
+                  <small id="dash-thermal-diagnostics-summary">Waiting for telemetry</small>
+                </span>
               </div>
-              <button type="button" onclick="closeDashboardDiagnostic()" aria-label="Close power diagnostics">×</button>
-            </header>
-            <div class="diagnostic-summary-grid">
-              <div><span>Battery</span><strong id="diag-power-battery">Not reported</strong></div>
-              <div><span>ODrive bus</span><strong id="diag-power-vbus">Not reported</strong></div>
-              <div><span>Left current</span><strong id="diag-power-left-current">Not reported</strong></div>
-              <div><span>Right current</span><strong id="diag-power-right-current">Not reported</strong></div>
-            </div>
-            <p class="diagnostic-unavailable-note" id="diag-power-note">
-              No dedicated battery telemetry is currently present in the WebSocket payload.
-            </p>
-          </section>
+
+              <section class="dashboard-diagnostic-panel"
+                       id="dashboard-diagnostic-thermal" hidden>
+                <header>
+                  <div>
+                    <h3>Thermal-zone diagnostics</h3>
+                    <p>All Jetson thermal zones and their current temperatures</p>
+                  </div>
+                </header>
+
+                <div class="diagnostic-summary-grid">
+                  <div><span>Zones reported</span><strong id="diag-thermal-count">--</strong></div>
+                  <div><span>Maximum</span><strong id="diag-thermal-max">--</strong></div>
+                  <div><span>Warning threshold</span><strong>65°C</strong></div>
+                  <div><span>Critical threshold</span><strong>85°C</strong></div>
+                </div>
+
+                <div class="thermal-zones" id="thermal-zones">
+                  <span class="thermal-placeholder">Waiting for data...</span>
+                </div>
+              </section>
+            </section>
+
+            <section class="dashboard-diagnostic-group">
+              <div class="diagnostic-category-tile diagnostic-category-summary"
+                   id="diagnostic-tile-power">
+                <span class="diagnostic-category-icon">P</span>
+                <span>
+                  <strong>Power telemetry</strong>
+                  <small id="dash-power-diagnostics-summary">No power telemetry</small>
+                </span>
+              </div>
+
+              <section class="dashboard-diagnostic-panel"
+                       id="dashboard-diagnostic-power" hidden>
+                <header>
+                  <div>
+                    <h3>Power telemetry</h3>
+                    <p>Battery and drive-power values supplied by the robot backend</p>
+                  </div>
+                </header>
+
+                <div class="diagnostic-summary-grid">
+                  <div><span>Battery</span><strong id="diag-power-battery">Not reported</strong></div>
+                  <div><span>ODrive bus</span><strong id="diag-power-vbus">Not reported</strong></div>
+                  <div><span>Left current</span><strong id="diag-power-left-current">Not reported</strong></div>
+                  <div><span>Right current</span><strong id="diag-power-right-current">Not reported</strong></div>
+                </div>
+
+                <p class="diagnostic-unavailable-note" id="diag-power-note">
+                  No dedicated battery telemetry is currently present in the WebSocket payload.
+                </p>
+              </section>
+            </section>
+
+          </div>
         </div>
       </div>
     </section>

@@ -6741,3 +6741,271 @@ body.dashboard-active.sidebar-collapsed .app-shell {
     margin-left: 0;
   }
 }
+
+
+/* ==================================================================
+   Final component/gamepad alignment refinements
+   ================================================================== */
+
+/* Wheels has the safety-critical controls, so make them larger and easier
+   to distinguish from the compact actuator buttons. */
+#tab-dashboard .dashboard-component-slot[data-component="wheels"] .btn-row {
+  gap: 9px;
+  margin-top: 13px;
+}
+
+#tab-dashboard .dashboard-component-slot[data-component="wheels"] .btn-row button {
+  min-height: 39px;
+  padding: 8px 13px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  font-weight: 750;
+}
+
+#tab-dashboard .dashboard-component-slot[data-component="wheels"] .btn-row .danger {
+  min-width: 76px;
+}
+
+/* Place the gamepad action slightly lower and leave a clearer visual gap
+   after the Bluetooth metadata. */
+#tab-controller .controller-status-card {
+  grid-template-columns: minmax(300px, 1fr) auto 195px;
+  column-gap: 34px;
+}
+
+#tab-controller .controller-status-actions {
+  align-self: center;
+  justify-self: end;
+  margin-left: 28px;
+  position: relative;
+  top: 5px;
+}
+
+#tab-controller .controller-status-actions button {
+  min-width: 160px;
+  min-height: 38px;
+  padding: 7px 13px;
+  font-size: 10.5px;
+}
+
+#tab-controller .controller-status-actions .ctrl-msg {
+  max-width: 160px;
+}
+
+@media (max-width: 980px) {
+  #tab-controller .controller-status-card {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-controller .controller-status-actions {
+    justify-self: start;
+    margin-left: 0;
+    top: 0;
+  }
+}
+
+
+/* ==================================================================
+   Hardware Diagnostics: one grouped accordion
+   ================================================================== */
+
+#tab-dashboard .dashboard-diagnostic-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+#tab-dashboard .diagnostic-category-summary {
+  cursor: default;
+  pointer-events: none;
+}
+
+#tab-dashboard .diagnostic-category-summary:hover,
+#tab-dashboard .diagnostic-category-summary.is-active {
+  border-color: #dfe6f0;
+  background: #ffffff;
+}
+
+#tab-dashboard .diagnostic-category-summary em {
+  display: none;
+}
+
+#tab-dashboard .dashboard-diagnostic-all-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+#tab-dashboard .dashboard-diagnostic-all-grid .dashboard-diagnostic-panel {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  height: 100%;
+}
+
+#tab-dashboard .dashboard-diagnostic-all-grid .dashboard-diagnostic-panel[hidden] {
+  display: none !important;
+}
+
+#tab-dashboard .dashboard-diagnostic-motors-panel {
+  grid-column: 1 / -1;
+}
+
+#tab-dashboard .dashboard-diagnostic-panel > header {
+  min-height: 48px;
+}
+
+#tab-dashboard .dashboard-diagnostic-panel > header button {
+  display: none;
+}
+
+#tab-dashboard .dashboard-diagnostic-panel .diagnostic-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#tab-dashboard .dashboard-diagnostic-motors-panel .diagnostic-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#tab-dashboard .dashboard-diagnostic-panel .btn-row button {
+  min-height: 36px;
+  padding: 7px 11px;
+  font-size: 10px;
+}
+
+@media (max-width: 1180px) {
+  #tab-dashboard .dashboard-diagnostic-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #tab-dashboard .dashboard-diagnostic-all-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-dashboard .dashboard-diagnostic-motors-panel {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  #tab-dashboard .dashboard-diagnostic-summary-grid,
+  #tab-dashboard .dashboard-diagnostic-panel .diagnostic-summary-grid,
+  #tab-dashboard .dashboard-diagnostic-motors-panel .diagnostic-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* ==================================================================
+   Hardware Diagnostics: each panel directly under its own heading
+   ================================================================== */
+
+#tab-dashboard .dashboard-diagnostic-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+#tab-dashboard .dashboard-diagnostic-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+#tab-dashboard .dashboard-diagnostic-group > .diagnostic-category-summary {
+  min-height: 58px;
+  border-color: #c7d3e1;
+  border-radius: 9px 9px 0 0;
+  background: #ffffff;
+}
+
+#tab-dashboard .dashboard-diagnostic-group > .dashboard-diagnostic-panel {
+  width: 100%;
+  margin: 0;
+  border-top: 0;
+  border-color: #c7d3e1;
+  border-radius: 0 0 9px 9px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 7px 17px rgba(31, 52, 86, 0.07);
+}
+
+#tab-dashboard .dashboard-diagnostic-group > .dashboard-diagnostic-panel[hidden] {
+  display: none !important;
+}
+
+#tab-dashboard .dashboard-diagnostic-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+#tab-dashboard .dashboard-diagnostic-secondary-grid > .dashboard-diagnostic-group {
+  height: 100%;
+}
+
+#tab-dashboard .dashboard-diagnostic-secondary-grid .dashboard-diagnostic-panel {
+  flex: 1 1 auto;
+}
+
+#tab-dashboard .dashboard-diagnostic-secondary-grid .diagnostic-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#tab-dashboard .dashboard-diagnostic-group-motors .diagnostic-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#tab-dashboard .dashboard-diagnostic-group-motors .dashboard-motor-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#tab-dashboard .dashboard-diagnostic-panel > header {
+  min-height: 48px;
+}
+
+#tab-dashboard .dashboard-diagnostic-panel > header button {
+  display: none;
+}
+
+#tab-dashboard .diagnostic-category-summary {
+  pointer-events: none;
+  cursor: default;
+}
+
+#tab-dashboard .diagnostic-category-summary:hover,
+#tab-dashboard .diagnostic-category-summary.is-active {
+  border-color: #c7d3e1;
+  background: #ffffff;
+}
+
+@media (max-width: 1320px) {
+  #tab-dashboard .dashboard-diagnostic-secondary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #tab-dashboard .dashboard-diagnostic-secondary-grid > .dashboard-diagnostic-group:last-child {
+    grid-column: 1 / -1;
+  }
+
+  #tab-dashboard .dashboard-diagnostic-group-motors .dashboard-motor-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 880px) {
+  #tab-dashboard .dashboard-diagnostic-secondary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-dashboard .dashboard-diagnostic-secondary-grid > .dashboard-diagnostic-group:last-child {
+    grid-column: auto;
+  }
+
+  #tab-dashboard .dashboard-diagnostic-group-motors .dashboard-motor-list,
+  #tab-dashboard .dashboard-diagnostic-group-motors .diagnostic-summary-grid,
+  #tab-dashboard .dashboard-diagnostic-secondary-grid .diagnostic-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
