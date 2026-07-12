@@ -7,6 +7,7 @@ and robot control from a browser.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from typing import Optional
 import json
 import os
@@ -1229,6 +1230,44 @@ class WebDashboardNode(Node):
                     )
                 mac = gp["mac"]
             return await _run_in_thread(bth.connect_device, mac)
+
+        @app.post("/api/bluetooth/disconnect")
+        async def bluetooth_disconnect(body: dict = {}):
+            mac = body.get("mac", "")
+            if not mac:
+                gp = await _run_in_thread(bth.get_last_connected_gamepad)
+                if not gp:
+                    return JSONResponse(
+                        {"success": False, "message": "No paired gamepad found"},
+                        status_code=404,
+                    )
+                mac = gp["mac"]
+
+            def _disconnect():
+                try:
+                    proc = subprocess.run(
+                        ["bluetoothctl", "disconnect", mac],
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                    )
+                    combined = f"{proc.stdout}\n{proc.stderr}".strip()
+                    lowered = combined.lower()
+                    success = (
+                        proc.returncode == 0
+                        or "successful" in lowered
+                        or "disconnected" in lowered
+                        or "not connected" in lowered
+                    )
+                    return {
+                        "success": bool(success),
+                        "mac": mac,
+                        "message": combined or ("Disconnected" if success else "Disconnect failed"),
+                    }
+                except Exception as exc:
+                    return {"success": False, "mac": mac, "message": str(exc)}
+
+            return await _run_in_thread(_disconnect)
 
         @app.get("/api/bluetooth/gamepad")
         async def bluetooth_gamepad():

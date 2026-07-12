@@ -772,11 +772,9 @@
 </div>
 </div>
 <div class="recorder-button-wrap">
-<button class="primary recording-action" id="rec-bar-start-perception" onclick="startRecording('perception')" type="button">
-<span class="recording-action-icon">◎</span><span>Start Recording</span>
-</button>
-<button class="danger recording-action" id="rec-bar-stop-perception" onclick="stopRecording('perception')" style="display:none" type="button">
-<span class="recording-action-icon">■</span><span>Stop Recording</span>
+<button class="recording-action recording-toggle off" id="rec-bar-toggle-perception" onclick="toggleRecording('perception')" type="button">
+<span class="recording-action-icon" id="rec-bar-toggle-icon-perception">◎</span>
+<span id="rec-bar-toggle-text-perception">Start Recording</span>
 </button>
 </div>
 </div>
@@ -823,11 +821,9 @@
 </div>
 </div>
 <div class="recorder-button-wrap">
-<button class="primary recording-action" id="rec-bar-start-mapping" onclick="startRecording('mapping')" type="button">
-<span class="recording-action-icon">◎</span><span>Start Recording</span>
-</button>
-<button class="danger recording-action" id="rec-bar-stop-mapping" onclick="stopRecording('mapping')" style="display:none" type="button">
-<span class="recording-action-icon">■</span><span>Stop Recording</span>
+<button class="recording-action recording-toggle off" id="rec-bar-toggle-mapping" onclick="toggleRecording('mapping')" type="button">
+<span class="recording-action-icon" id="rec-bar-toggle-icon-mapping">◎</span>
+<span id="rec-bar-toggle-text-mapping">Start Recording</span>
 </button>
 </div>
 </div>
@@ -894,50 +890,100 @@
 </section>
 <!-- Controller -->
 <section class="tab-content" id="tab-controller">
-<div class="controller-gamepad-card card">
-  <div class="controller-gamepad-main">
-    <span class="controller-gamepad-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24">
-        <path d="M8 8h8a5 5 0 0 1 4.8 3.6l1 3.4a3 3 0 0 1-5.2 2.8L14.8 16H9.2l-1.8 1.8A3 3 0 0 1 2.2 15l1-3.4A5 5 0 0 1 8 8z"></path>
-        <path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"></path>
-      </svg>
-    </span>
-    <div>
-      <strong>Gamepad connection</strong>
-      <span id="controller-gamepad-name">Searching for a paired gamepad…</span>
+<div class="controller-shell">
+  <div class="controller-status-card card">
+    <div class="controller-status-main">
+      <span class="controller-status-icon connected" id="controller-status-icon" aria-hidden="true">✓</span>
+      <div class="controller-status-copy">
+        <span class="controller-card-eyebrow">Gamepad connection</span>
+        <strong id="controller-gamepad-name">Searching for a paired gamepad…</strong>
+      </div>
+    </div>
+
+    <div class="controller-status-meta">
+      <div class="controller-status-item">
+        <span>Battery</span>
+        <strong id="controller-gamepad-battery">--</strong>
+      </div>
+      <div class="controller-status-item">
+        <span>Bluetooth</span>
+        <strong id="controller-gamepad-mac">--</strong>
+      </div>
+    </div>
+
+    <div class="controller-status-actions">
+      <button class="primary" id="gp-reconnect-btn" type="button" onclick="controllerGamepadButtonAction()">
+        Connect gamepad
+      </button>
+      <span class="ctrl-msg" id="gp-reconnect-msg"></span>
     </div>
   </div>
 
-  <div class="controller-gamepad-meta">
-    <span><i id="controller-gamepad-dot"></i><b id="controller-gamepad-status">Checking</b></span>
-    <span>Battery <b id="controller-gamepad-battery">--</b></span>
-    <span>Bluetooth <b id="controller-gamepad-mac">--</b></span>
-  </div>
+  <div class="controller-main-grid">
+    <div class="controller-left-column">
+      <div class="controller-layout-card card">
+        <div class="controller-card-header">
+          <div>
+            <h2>Gamepad Layout</h2>
+            <p>Xbox-style controller</p>
+          </div>
+        </div>
 
-  <div class="controller-gamepad-actions">
-    <button class="primary" id="gp-reconnect-btn" type="button" onclick="reconnectGamepad()">
-      Connect gamepad
-    </button>
-    <span class="ctrl-msg" id="gp-reconnect-msg"></span>
+        <div class="controller-layout-hero">
+          <img alt="Gamepad layout" src="/static/controller.png"/>
+        </div>
+
+        <div class="controller-layout-legend">
+          <span class="controller-legend-chip">L3<span>Left Stick Press</span></span>
+          <span class="controller-legend-chip">R3<span>Right Stick Press</span></span>
+          <span class="controller-legend-chip">LT<span>Left Trigger</span></span>
+          <span class="controller-legend-chip">RT<span>Right Trigger</span></span>
+        </div>
+      </div>
+
+      <div class="controller-tips-card card">
+        <div class="controller-card-header">
+          <div>
+            <h2>Tips</h2>
+          </div>
+        </div>
+        <ul class="controller-tips-list">
+          <li>Live input highlights the button or axis you press.</li>
+          <li>Hold actions are active only while the button is held.</li>
+          <li>E-STOP is always active and overrides other commands.</li>
+          <li>Changes take effect immediately after saving.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="controller-assign-card card">
+      <div class="controller-card-header controller-assign-header">
+        <div>
+          <h2>Button Assignments</h2>
+          <p>Press a control to highlight it. Choose an action, then save.</p>
+        </div>
+        <span class="controller-live-pill">LIVE INPUT</span>
+      </div>
+
+      <div class="ctrl-hint" id="ctrl-loading">Loading config...</div>
+      <table class="ctrl-table controller-table" id="ctrl-table" style="display:none">
+        <thead>
+          <tr><th></th><th>Button</th><th>Action</th></tr>
+        </thead>
+        <tbody id="ctrl-tbody"></tbody>
+      </table>
+
+      <div class="controller-actions-row">
+        <div class="controller-actions-left">
+          <button type="button" onclick="resetCtrlConfig()">Reset to defaults</button>
+          <button type="button" onclick="saveCtrlDefaults()">Save as defaults</button>
+        </div>
+        <button class="primary" type="button" onclick="saveCtrlConfig()">Save assignments</button>
+      </div>
+
+      <div class="ctrl-msg" id="ctrl-msg"></div>
+    </div>
   </div>
-</div>
-<div class="ctrl-center">
-<div class="ctrl-img-wrap"><img alt="Data Frog Controller" src="/static/controller.png"/></div>
-<div class="card ctrl-panel">
-<div class="card-title-row"><h2>Button Assignments</h2><span class="card-kicker">Live input</span></div>
-<p class="ctrl-hint">Press a control to highlight it. Choose an action, then save.</p>
-<div class="ctrl-hint" id="ctrl-loading">Loading config...</div>
-<table class="ctrl-table" id="ctrl-table" style="display:none">
-<thead><tr><th></th><th>Button</th><th>Action</th></tr></thead>
-<tbody id="ctrl-tbody"></tbody>
-</table>
-<div class="btn-row">
-<button class="primary" onclick="saveCtrlConfig()">Save</button>
-<button onclick="saveCtrlDefaults()">Save to Defaults</button>
-<button onclick="resetCtrlConfig()">Reset Defaults</button>
-</div>
-<div class="ctrl-msg" id="ctrl-msg"></div>
-</div>
 </div>
 </section>
 <!-- Network -->

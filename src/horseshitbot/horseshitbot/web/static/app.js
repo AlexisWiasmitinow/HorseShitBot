@@ -59,6 +59,21 @@ function resolveRecorderState(profile, payload) {
   return _recorderUiState[profile];
 }
 
+function setRecordingButtonState(profile, recording) {
+  const button = document.getElementById(`rec-bar-toggle-${profile}`);
+  const text = document.getElementById(`rec-bar-toggle-text-${profile}`);
+  const icon = document.getElementById(`rec-bar-toggle-icon-${profile}`);
+
+  if (!button) return;
+  button.classList.toggle("on", recording);
+  button.classList.toggle("off", !recording);
+  button.setAttribute("aria-pressed", recording ? "true" : "false");
+  button.title = recording ? "Recording is active. Press to stop." : "Recording is inactive. Press to start.";
+
+  if (text) text.textContent = recording ? "Stop Recording" : "Start Recording";
+  if (icon) icon.textContent = recording ? "■" : "◎";
+}
+
 function applyOptimisticRecorderState(profile, recording) {
   const state = _recorderUiState[profile] || {};
   state.recording = recording;
@@ -68,16 +83,13 @@ function applyOptimisticRecorderState(profile, recording) {
 
   const dot = document.getElementById(`rec-dot-lg-${profile}`);
   const label = document.getElementById(`rec-bar-label-${profile}`);
-  const start = document.getElementById(`rec-bar-start-${profile}`);
-  const stop = document.getElementById(`rec-bar-stop-${profile}`);
 
   dot?.classList.toggle("recording", recording);
   if (label) {
     label.textContent = recording ? "RECORDING" : "Idle";
     label.style.color = recording ? "var(--red)" : "";
   }
-  if (start) start.style.display = recording ? "none" : "";
-  if (stop) stop.style.display = recording ? "" : "none";
+  setRecordingButtonState(profile, recording);
 }
 
 // ─── WebSocket ───────────────────────────────────────────────────
@@ -353,8 +365,6 @@ function updateDashboard(data) {
     // Recordings tab controls
     const dotLg = document.getElementById(`rec-dot-lg-${profile}`);
     const barLabel = document.getElementById(`rec-bar-label-${profile}`);
-    const barStart = document.getElementById(`rec-bar-start-${profile}`);
-    const barStop = document.getElementById(`rec-bar-stop-${profile}`);
     if (dotLg && barLabel) {
       if (rec.recording) {
         dotLg.classList.add("recording");
@@ -365,17 +375,14 @@ function updateDashboard(data) {
         barLabel.style.color = "var(--red)";
         setText(`rec-bar-time-${profile}`, `${m}:${s.toString().padStart(2, "0")}`);
         setText(`rec-bar-frames-${profile}`, `${rec.frame_count || 0} frames`);
-        if (barStart) barStart.style.display = "none";
-        if (barStop) barStop.style.display = "";
       } else {
         dotLg.classList.remove("recording");
         barLabel.textContent = "Idle";
         barLabel.style.color = "";
         setText(`rec-bar-time-${profile}`, "--");
         setText(`rec-bar-frames-${profile}`, "-- frames");
-        if (barStart) barStart.style.display = "";
-        if (barStop) barStop.style.display = "none";
       }
+      setRecordingButtonState(profile, rec.recording);
     }
   }
 
@@ -1971,19 +1978,16 @@ function initSidebar() {
 function updateControllerGamepadCard(info = {}) {
   const connected = Boolean(info.connected);
   const name = document.getElementById("controller-gamepad-name");
-  const status = document.getElementById("controller-gamepad-status");
-  const dot = document.getElementById("controller-gamepad-dot");
   const battery = document.getElementById("controller-gamepad-battery");
   const mac = document.getElementById("controller-gamepad-mac");
   const button = document.getElementById("gp-reconnect-btn");
+  const icon = document.getElementById("controller-status-icon");
 
   if (name) {
-    name.textContent = info.name || (
-      info.mac ? "Paired gamepad found" : "No paired gamepad found"
-    );
+    name.textContent = connected
+      ? (info.name || "Paired gamepad")
+      : (info.name || (info.mac ? "Paired gamepad" : "No paired gamepad found"));
   }
-  if (status) status.textContent = connected ? "Connected" : "Disconnected";
-  dot?.classList.toggle("connected", connected);
 
   if (battery) {
     battery.textContent =
@@ -1991,12 +1995,54 @@ function updateControllerGamepadCard(info = {}) {
   }
   if (mac) mac.textContent = info.mac || "Not reported";
 
+  if (icon) {
+    icon.textContent = connected ? "✓" : "!";
+    icon.classList.toggle("connected", connected);
+    icon.classList.toggle("disconnected", !connected);
+  }
+
   if (button) {
-    button.textContent = connected ? "Reconnect gamepad" : "Connect gamepad";
-    button.disabled = connected;
+    button.dataset.connected = connected ? "1" : "0";
+    button.textContent = connected ? "Disconnect gamepad" : "Connect gamepad";
     button.title = connected
-      ? "The gamepad is already connected"
+      ? "Disconnect the currently connected Bluetooth gamepad"
       : "Connect the most recently paired Bluetooth gamepad";
+  }
+}
+
+async function controllerGamepadButtonAction() {
+  const connected = document.getElementById("gp-reconnect-btn")?.dataset.connected === "1";
+  if (connected) {
+    await disconnectGamepad();
+  } else {
+    await reconnectGamepad();
+  }
+}
+
+async function disconnectGamepad() {
+  const btn = document.getElementById("gp-reconnect-btn");
+  const msg = document.getElementById("gp-reconnect-msg");
+  const mac = _cachedBtInfo?.mac || "";
+
+  if (btn) btn.disabled = true;
+  if (msg) { msg.textContent = "Disconnecting…"; msg.className = "ctrl-msg"; }
+
+  try {
+    const resp = await fetch("/api/bluetooth/disconnect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mac }),
+    });
+    const result = await resp.json();
+    if (!resp.ok || !result.success) {
+      throw new Error(result.message || `HTTP ${resp.status}`);
+    }
+    if (msg) { msg.textContent = "Disconnected"; msg.className = "ctrl-msg ok"; }
+    await pollBtGamepad();
+  } catch (e) {
+    if (msg) { msg.textContent = e.message || "Disconnect failed"; msg.className = "ctrl-msg err"; }
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -3280,6 +3326,15 @@ async function jogMotor(motorId, inputId, speedInputId, accInputId) {
       body: JSON.stringify(payload),
     });
   } catch (e) { console.error("Jog failed:", e); }
+}
+
+async function toggleRecording(profile) {
+  const current = Boolean(_recorderUiState[profile]?.recording);
+  if (current) {
+    await stopRecording(profile);
+  } else {
+    await startRecording(profile);
+  }
 }
 
 async function startRecording(profile) {
