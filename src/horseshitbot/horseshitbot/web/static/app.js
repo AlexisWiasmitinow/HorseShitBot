@@ -50,36 +50,59 @@ const _recorderLastTrueAt = {
   mapping: 0,
 };
 
+const _recorderTrueConfirmations = {
+  perception: 0,
+  mapping: 0,
+};
+
 function resolveRecorderState(profile, payload) {
   const current = _recorderUiState[profile] || {
     recording: false,
     duration_sec: 0,
     frame_count: 0,
   };
+
   const incoming =
     payload && typeof payload === "object"
       ? { ...current, ...payload }
       : { ...current };
 
+  const receivedAt = Number(payload?._received_at || 0);
+  const statusIsFresh =
+    !receivedAt || (Date.now() / 1000 - receivedAt) < 5.0;
+
   const reported =
-    payload && typeof payload.recording === "boolean"
+    statusIsFresh && payload && typeof payload.recording === "boolean"
       ? payload.recording
       : null;
+
   const intent = _recorderIntent[profile];
 
   if (intent !== null) {
-    // Explicit user command wins over stale WebSocket packets.
     incoming.recording = intent;
-    if (reported === true) _recorderLastTrueAt[profile] = Date.now();
+    if (reported === true) {
+      _recorderLastTrueAt[profile] = Date.now();
+      _recorderTrueConfirmations[profile] += 1;
+    }
   } else if (reported === true) {
-    incoming.recording = true;
-    _recorderLastTrueAt[profile] = Date.now();
+    _recorderTrueConfirmations[profile] += 1;
+
+    // One initial true packet is not enough to mark a recorder active.
+    const confirmed =
+      current.recording || _recorderTrueConfirmations[profile] >= 2;
+
+    incoming.recording = confirmed;
+    if (confirmed) _recorderLastTrueAt[profile] = Date.now();
   } else if (reported === false) {
-    // Ignore isolated false packets for five seconds after a true packet.
-    // Some recorder status publishers briefly emit an old idle snapshot.
+    _recorderTrueConfirmations[profile] = 0;
+
     const recentlyTrue =
-      Date.now() - (_recorderLastTrueAt[profile] || 0) < 5000;
+      Date.now() - (_recorderLastTrueAt[profile] || 0) < 3000;
+
     incoming.recording = current.recording && recentlyTrue;
+  } else if (!statusIsFresh && intent === null) {
+    incoming.recording = false;
+    _recorderTrueConfirmations[profile] = 0;
   }
 
   _recorderUiState[profile] = incoming;
@@ -371,7 +394,7 @@ function updateDashboard(data) {
 
   updateControllerGamepadCard({
     connected: Boolean(gp.connected || _cachedBtInfo.connected),
-    name: gp.name || "Paired gamepad",
+    name: gp.connected ? (gp.name || "Gamepad connected") : "",
     mac,
     battery: batt,
   });
@@ -2036,9 +2059,13 @@ function updateControllerGamepadCard(info = {}) {
   const icon = document.getElementById("controller-status-icon");
 
   if (name) {
-    name.textContent = connected
-      ? (info.name || "Paired gamepad")
-      : (info.name || (info.mac ? "Paired gamepad" : "No paired gamepad found"));
+    if (connected) {
+      name.textContent = info.name || "Gamepad connected";
+    } else if (info.mac) {
+      name.textContent = "Gamepad disconnected";
+    } else {
+      name.textContent = "No paired gamepad found";
+    }
   }
 
   if (battery) {
@@ -2056,6 +2083,8 @@ function updateControllerGamepadCard(info = {}) {
   if (button) {
     button.dataset.connected = connected ? "1" : "0";
     button.textContent = connected ? "Disconnect gamepad" : "Connect gamepad";
+    button.classList.toggle("connect-attention", !connected);
+    button.classList.toggle("disconnect-action", connected);
     button.title = connected
       ? "Disconnect the currently connected Bluetooth gamepad"
       : "Connect the most recently paired Bluetooth gamepad";
@@ -3380,7 +3409,10 @@ async function jogMotor(motorId, inputId, speedInputId, accInputId) {
   } catch (e) { console.error("Jog failed:", e); }
 }
 
-async function toggleRecording(profile) {
+async function toggleRecording(profile, event = null) {
+  // Only a genuine user click may start or stop a bag.
+  if (event && event.isTrusted === false) return;
+
   const current = Boolean(_recorderUiState[profile]?.recording);
   if (current) {
     await stopRecording(profile);
@@ -3463,7 +3495,7 @@ async function pollBtGamepad() {
         };
         updateControllerGamepadCard({
           connected: data.connected || false,
-          name: data.name || "Paired gamepad",
+          name: data.connected ? (data.name || "Gamepad connected") : "",
           mac: data.mac || "",
           battery: data.battery,
         });

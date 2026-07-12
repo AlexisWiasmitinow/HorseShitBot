@@ -530,6 +530,9 @@ class _RosBridge:
             data = json.loads(msg.data)
         except Exception:
             data = {"raw": msg.data}
+
+        data["_received_at"] = time.time()
+
         with self._lock:
             self._state[key] = data
 
