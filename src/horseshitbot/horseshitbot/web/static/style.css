@@ -5659,3 +5659,494 @@ body.sidebar-collapsed .sidebar {
     width: 100%;
   }
 }
+
+
+/* ==================================================================
+   Compact controller page — fits the full assignment table on screen
+   ================================================================== */
+
+#tab-controller .controller-shell {
+  gap: 10px;
+  max-width: 1540px;
+  margin: 0 auto;
+}
+
+#tab-controller .controller-status-card {
+  min-height: 64px;
+  grid-template-columns: minmax(240px, 1fr) auto auto;
+  gap: 14px;
+  padding: 10px 14px;
+}
+
+#tab-controller .controller-status-main {
+  gap: 10px;
+}
+
+#tab-controller .controller-status-icon {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+  font-size: 18px;
+}
+
+#tab-controller .controller-card-eyebrow {
+  margin-bottom: 2px;
+  font-size: 8px;
+}
+
+#tab-controller .controller-status-copy strong {
+  font-size: 14px;
+}
+
+#tab-controller .controller-status-meta {
+  gap: 20px;
+}
+
+#tab-controller .controller-status-item {
+  gap: 1px;
+}
+
+#tab-controller .controller-status-item span {
+  font-size: 8px;
+}
+
+#tab-controller .controller-status-item strong {
+  font-size: 10px;
+}
+
+#tab-controller .controller-status-actions {
+  gap: 3px;
+}
+
+#tab-controller .controller-status-actions button {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 10px;
+}
+
+#tab-controller .controller-main-grid {
+  grid-template-columns: minmax(0, 1.05fr) minmax(520px, 0.95fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+#tab-controller .controller-left-column {
+  gap: 10px;
+}
+
+#tab-controller .controller-layout-card,
+#tab-controller .controller-tips-card,
+#tab-controller .controller-assign-card {
+  padding: 13px 14px;
+}
+
+#tab-controller .controller-card-header {
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+#tab-controller .controller-card-header h2 {
+  font-size: 14px;
+}
+
+#tab-controller .controller-card-header p {
+  margin-top: 3px;
+  font-size: 9px;
+}
+
+#tab-controller .controller-live-pill {
+  padding: 4px 8px;
+  font-size: 8px;
+}
+
+#tab-controller .controller-layout-hero {
+  min-height: 0;
+  height: 330px;
+  padding: 6px 10px 8px;
+  border-radius: 9px;
+}
+
+#tab-controller .controller-layout-hero img {
+  width: auto;
+  max-width: 100%;
+  max-height: 315px;
+}
+
+#tab-controller .controller-layout-legend {
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#tab-controller .controller-legend-chip {
+  min-height: 38px;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 9px;
+}
+
+#tab-controller .controller-legend-chip::before {
+  content: none !important;
+}
+
+#tab-controller .controller-legend-chip b {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 24px;
+  border: 1px solid #8eb8ff;
+  border-radius: 999px;
+  color: var(--blue);
+  background: #ffffff;
+  font-size: 8px;
+}
+
+#tab-controller .controller-legend-chip span {
+  font-size: 8.5px;
+}
+
+#tab-controller .controller-tips-card {
+  min-height: 104px;
+}
+
+#tab-controller .controller-tips-card .controller-card-header {
+  margin-bottom: 3px;
+}
+
+#tab-controller .controller-tips-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+  row-gap: 2px;
+  margin: 0;
+  padding-left: 16px;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+#tab-controller .controller-assign-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+#tab-controller .controller-assign-header {
+  flex: 0 0 auto;
+}
+
+#tab-controller #ctrl-loading {
+  margin: 0;
+  font-size: 9px;
+}
+
+#tab-controller .controller-table {
+  table-layout: fixed;
+  border-spacing: 0;
+  font-size: 9px;
+}
+
+#tab-controller .controller-table thead th {
+  height: 25px;
+  padding: 3px 7px 5px;
+  font-size: 8px;
+  line-height: 1;
+}
+
+#tab-controller .controller-table thead th:first-child {
+  width: 28px;
+}
+
+#tab-controller .controller-table thead th:nth-child(2) {
+  width: 86px;
+}
+
+#tab-controller .controller-table tbody tr {
+  height: 28px;
+}
+
+#tab-controller .controller-table tbody td {
+  height: 28px;
+  padding: 2px 7px;
+  line-height: 1;
+}
+
+#tab-controller .controller-table .ctrl-sep {
+  height: 3px;
+  padding: 0;
+  border: 0;
+  background: #f4f7fb;
+}
+
+#tab-controller .ctrl-dot-cell {
+  width: 28px;
+  padding-right: 2px !important;
+}
+
+#tab-controller .ctrl-dot {
+  width: 7px;
+  height: 7px;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.12);
+}
+
+#tab-controller .ctrl-btn-name {
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-controller .axis-action {
+  overflow: hidden;
+  color: #667085;
+  font-size: 9px;
+  font-style: italic;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-controller .controller-table select {
+  width: 100%;
+  min-height: 24px;
+  height: 24px;
+  padding: 1px 26px 1px 7px;
+  border-radius: 5px;
+  font-size: 9px;
+  line-height: 1;
+}
+
+#tab-controller .controller-actions-row {
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e4e9f1;
+}
+
+#tab-controller .controller-actions-left {
+  gap: 6px;
+}
+
+#tab-controller .controller-actions-row button {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 9px;
+}
+
+#tab-controller .controller-actions-row > .primary {
+  min-width: 142px;
+}
+
+#tab-controller #ctrl-msg {
+  min-height: 12px;
+  margin-top: 3px;
+  font-size: 8px;
+}
+
+/* Keep both columns longer instead of collapsing too early. */
+@media (max-width: 1120px) {
+  #tab-controller .controller-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-controller .controller-layout-hero {
+    height: 300px;
+  }
+}
+
+@media (max-width: 760px) {
+  #tab-controller .controller-status-card {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-controller .controller-status-meta {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  #tab-controller .controller-tips-list {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-controller .controller-layout-legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* ==================================================================
+   Stable recorder state and two-column controller assignments
+   ================================================================== */
+
+.recording-toggle.is-busy {
+  cursor: wait;
+  opacity: 0.82;
+}
+
+/* Keep the requested normal font size by reducing vertical repetition
+   through two assignment columns rather than shrinking typography. */
+
+#tab-controller .controller-main-grid {
+  grid-template-columns: minmax(0, 0.92fr) minmax(650px, 1.08fr);
+  gap: 14px;
+}
+
+#tab-controller .controller-layout-card,
+#tab-controller .controller-tips-card,
+#tab-controller .controller-assign-card {
+  padding: 16px 18px;
+}
+
+#tab-controller .controller-card-header h2 {
+  font-size: 16px;
+}
+
+#tab-controller .controller-card-header p {
+  font-size: 11px;
+}
+
+#tab-controller .controller-layout-hero {
+  height: 360px;
+}
+
+#tab-controller .controller-layout-hero img {
+  max-height: 345px;
+}
+
+#tab-controller .controller-layout-legend {
+  gap: 8px;
+  margin-top: 10px;
+}
+
+#tab-controller .controller-legend-chip {
+  min-height: 44px;
+  padding: 8px 10px;
+}
+
+#tab-controller .controller-legend-chip b {
+  font-size: 9px;
+}
+
+#tab-controller .controller-legend-chip span {
+  font-size: 10px;
+}
+
+#tab-controller .controller-tips-list {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+#tab-controller .controller-assignment-board {
+  width: 100%;
+}
+
+#tab-controller .controller-assignment-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+#tab-controller .controller-assignment-column {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dfe6f0;
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+#tab-controller .controller-assignment-column-header,
+#tab-controller .controller-assignment-row {
+  display: grid;
+  grid-template-columns: 18px minmax(72px, 0.45fr) minmax(145px, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+
+#tab-controller .controller-assignment-column-header {
+  min-height: 30px;
+  padding: 5px 9px;
+  color: #667085;
+  background: #f5f8fc;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+#tab-controller .controller-assignment-row {
+  min-height: 39px;
+  padding: 4px 9px;
+  border-top: 1px solid #e7ecf3;
+  transition: background 0.14s ease;
+}
+
+#tab-controller .controller-assignment-row.active {
+  background: #eef5ff;
+}
+
+#tab-controller .controller-assignment-name {
+  overflow: hidden;
+  color: #172033;
+  font-size: 11px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-controller .controller-assignment-action {
+  min-width: 0;
+}
+
+#tab-controller .controller-assignment-action select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  min-height: 30px;
+  padding: 3px 25px 3px 8px;
+  border-radius: 6px;
+  font-size: 10.5px;
+}
+
+#tab-controller .controller-assignment-action .axis-action {
+  display: block;
+  overflow: hidden;
+  color: #667085;
+  font-size: 10.5px;
+  font-style: italic;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-controller .controller-assignment-row .ctrl-dot {
+  width: 8px;
+  height: 8px;
+}
+
+#tab-controller .controller-actions-row {
+  margin-top: 12px;
+}
+
+#tab-controller .controller-actions-row button {
+  min-height: 34px;
+  font-size: 10px;
+}
+
+@media (max-width: 1320px) {
+  #tab-controller .controller-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-controller .controller-layout-hero {
+    height: 330px;
+  }
+}
+
+@media (max-width: 760px) {
+  #tab-controller .controller-assignment-columns {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-controller .controller-assignment-column-header,
+  #tab-controller .controller-assignment-row {
+    grid-template-columns: 18px minmax(80px, 0.4fr) minmax(150px, 1fr);
+  }
+}

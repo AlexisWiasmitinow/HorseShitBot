@@ -36,27 +36,54 @@ const _recorderUiState = {
   perception: { recording: false, duration_sec: 0, frame_count: 0 },
   mapping: { recording: false, duration_sec: 0, frame_count: 0 },
 };
-const _recorderPending = {};
+
+// A user start/stop command is authoritative for the UI until the opposite
+// command is requested. This avoids flicker from stale/interleaved status
+// messages while the recorder process is starting or stopping.
+const _recorderIntent = {
+  perception: null,
+  mapping: null,
+};
+
+const _recorderLastTrueAt = {
+  perception: 0,
+  mapping: 0,
+};
 
 function resolveRecorderState(profile, payload) {
-  const current = _recorderUiState[profile] || { recording: false };
-  const pending = _recorderPending[profile];
+  const current = _recorderUiState[profile] || {
+    recording: false,
+    duration_sec: 0,
+    frame_count: 0,
+  };
+  const incoming =
+    payload && typeof payload === "object"
+      ? { ...current, ...payload }
+      : { ...current };
 
-  if (payload && typeof payload === "object") {
-    const incoming = { ...current, ...payload };
-    if (
-      pending &&
-      Date.now() < pending.until &&
-      typeof payload.recording === "boolean" &&
-      payload.recording !== pending.target
-    ) {
-      incoming.recording = pending.target;
-    } else if (pending && payload.recording === pending.target) {
-      delete _recorderPending[profile];
-    }
-    _recorderUiState[profile] = incoming;
+  const reported =
+    payload && typeof payload.recording === "boolean"
+      ? payload.recording
+      : null;
+  const intent = _recorderIntent[profile];
+
+  if (intent !== null) {
+    // Explicit user command wins over stale WebSocket packets.
+    incoming.recording = intent;
+    if (reported === true) _recorderLastTrueAt[profile] = Date.now();
+  } else if (reported === true) {
+    incoming.recording = true;
+    _recorderLastTrueAt[profile] = Date.now();
+  } else if (reported === false) {
+    // Ignore isolated false packets for five seconds after a true packet.
+    // Some recorder status publishers briefly emit an old idle snapshot.
+    const recentlyTrue =
+      Date.now() - (_recorderLastTrueAt[profile] || 0) < 5000;
+    incoming.recording = current.recording && recentlyTrue;
   }
-  return _recorderUiState[profile];
+
+  _recorderUiState[profile] = incoming;
+  return incoming;
 }
 
 function setRecordingButtonState(profile, recording) {
@@ -65,21 +92,32 @@ function setRecordingButtonState(profile, recording) {
   const icon = document.getElementById(`rec-bar-toggle-icon-${profile}`);
 
   if (!button) return;
+
   button.classList.toggle("on", recording);
   button.classList.toggle("off", !recording);
   button.setAttribute("aria-pressed", recording ? "true" : "false");
-  button.title = recording ? "Recording is active. Press to stop." : "Recording is inactive. Press to start.";
+  button.title = recording
+    ? "Recording is active. Press to stop."
+    : "Recording is inactive. Press to start.";
 
   if (text) text.textContent = recording ? "Stop Recording" : "Start Recording";
   if (icon) icon.textContent = recording ? "■" : "◎";
 }
 
+function setRecordingButtonBusy(profile, busy) {
+  const button = document.getElementById(`rec-bar-toggle-${profile}`);
+  if (!button) return;
+  button.disabled = busy;
+  button.classList.toggle("is-busy", busy);
+}
+
 function applyOptimisticRecorderState(profile, recording) {
+  _recorderIntent[profile] = recording;
+
   const state = _recorderUiState[profile] || {};
   state.recording = recording;
   state.duration_sec = recording ? (state.duration_sec || 0) : 0;
   _recorderUiState[profile] = state;
-  _recorderPending[profile] = { target: recording, until: Date.now() + 5000 };
 
   const dot = document.getElementById(`rec-dot-lg-${profile}`);
   const label = document.getElementById(`rec-bar-label-${profile}`);
@@ -89,6 +127,7 @@ function applyOptimisticRecorderState(profile, recording) {
     label.textContent = recording ? "RECORDING" : "Idle";
     label.style.color = recording ? "var(--red)" : "";
   }
+
   setRecordingButtonState(profile, recording);
 }
 
@@ -573,80 +612,93 @@ async function loadCtrlConfig() {
 }
 
 function renderCtrlTable() {
-  const tbody = document.getElementById("ctrl-tbody");
-  if (!tbody || !ctrlConfig) return;
+  const columnsRoot = document.getElementById("ctrl-columns");
+  if (!columnsRoot || !ctrlConfig) return;
 
-  tbody.innerHTML = "";
+  columnsRoot.innerHTML = "";
+
   const actions = ctrlConfig.available_actions || {};
   const buttons = ctrlConfig.button_names || [];
   const mapping = ctrlConfig.buttons || {};
   const axes = ctrlConfig.axes || {};
 
-  // Axes (read-only rows)
+  const entries = [];
+
   for (const [axisName, axisDesc] of Object.entries(axes)) {
-    const tr = document.createElement("tr");
-    tr.id = `ctrl-row-${axisName}`;
-    tr.className = "axis-row";
-
-    const tdDot = document.createElement("td");
-    tdDot.className = "ctrl-dot-cell";
-    const dot = document.createElement("span");
-    dot.className = "ctrl-dot";
-    dot.id = `ctrl-dot-${axisName}`;
-    tdDot.appendChild(dot);
-    tr.appendChild(tdDot);
-
-    const tdName = document.createElement("td");
-    tdName.className = "ctrl-btn-name axis-name";
-    tdName.textContent = axisName;
-    tr.appendChild(tdName);
-
-    const tdAction = document.createElement("td");
-    tdAction.className = "axis-action";
-    tdAction.textContent = axisDesc;
-    tr.appendChild(tdAction);
-
-    tbody.appendChild(tr);
+    entries.push({
+      name: axisName,
+      readOnly: true,
+      action: axisDesc,
+    });
   }
 
-  // Separator
-  const sepTr = document.createElement("tr");
-  sepTr.innerHTML = '<td colspan="3" class="ctrl-sep"></td>';
-  tbody.appendChild(sepTr);
+  for (const buttonName of buttons) {
+    entries.push({
+      name: buttonName,
+      readOnly: false,
+      selected: mapping[buttonName] || "none",
+    });
+  }
 
-  // Configurable buttons
-  for (const btn of buttons) {
-    const tr = document.createElement("tr");
-    tr.id = `ctrl-row-${btn}`;
+  const splitAt = Math.ceil(entries.length / 2);
+  const groups = [
+    entries.slice(0, splitAt),
+    entries.slice(splitAt),
+  ];
 
-    const tdDot = document.createElement("td");
-    tdDot.className = "ctrl-dot-cell";
-    const dot = document.createElement("span");
-    dot.className = "ctrl-dot";
-    dot.id = `ctrl-dot-${btn}`;
-    tdDot.appendChild(dot);
-    tr.appendChild(tdDot);
+  for (const group of groups) {
+    const column = document.createElement("section");
+    column.className = "controller-assignment-column";
 
-    const tdBtn = document.createElement("td");
-    tdBtn.className = "ctrl-btn-name";
-    tdBtn.textContent = btn;
-    tr.appendChild(tdBtn);
+    const header = document.createElement("div");
+    header.className = "controller-assignment-column-header";
+    header.innerHTML = "<span></span><strong>Button</strong><strong>Action</strong>";
+    column.appendChild(header);
 
-    const tdAction = document.createElement("td");
-    const sel = document.createElement("select");
-    sel.id = `ctrl-sel-${btn}`;
-    sel.dataset.btn = btn;
-    for (const [actionId, actionLabel] of Object.entries(actions)) {
-      const opt = document.createElement("option");
-      opt.value = actionId;
-      opt.textContent = actionLabel;
-      if (mapping[btn] === actionId) opt.selected = true;
-      sel.appendChild(opt);
+    for (const entry of group) {
+      const row = document.createElement("div");
+      row.className =
+        "controller-assignment-row" +
+        (entry.readOnly ? " axis-row" : "");
+      row.id = `ctrl-row-${entry.name}`;
+
+      const dot = document.createElement("span");
+      dot.className = "ctrl-dot";
+      dot.id = `ctrl-dot-${entry.name}`;
+
+      const name = document.createElement("strong");
+      name.className = "controller-assignment-name";
+      name.textContent = entry.name;
+
+      const actionCell = document.createElement("div");
+      actionCell.className = "controller-assignment-action";
+
+      if (entry.readOnly) {
+        const description = document.createElement("span");
+        description.className = "axis-action";
+        description.textContent = entry.action;
+        actionCell.appendChild(description);
+      } else {
+        const select = document.createElement("select");
+        select.id = `ctrl-sel-${entry.name}`;
+        select.dataset.btn = entry.name;
+
+        for (const [actionId, actionLabel] of Object.entries(actions)) {
+          const option = document.createElement("option");
+          option.value = actionId;
+          option.textContent = actionLabel;
+          option.selected = entry.selected === actionId;
+          select.appendChild(option);
+        }
+
+        actionCell.appendChild(select);
+      }
+
+      row.append(dot, name, actionCell);
+      column.appendChild(row);
     }
-    tdAction.appendChild(sel);
-    tr.appendChild(tdAction);
 
-    tbody.appendChild(tr);
+    columnsRoot.appendChild(column);
   }
 }
 
@@ -3338,24 +3390,61 @@ async function toggleRecording(profile) {
 }
 
 async function startRecording(profile) {
+  const previousIntent = _recorderIntent[profile];
+  const previousState = Boolean(_recorderUiState[profile]?.recording);
+
   applyOptimisticRecorderState(profile, true);
+  setRecordingButtonBusy(profile, true);
+
   try {
-    const response = await fetch(`/api/recording/${profile}/start`, { method: "POST" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  } catch (e) {
-    applyOptimisticRecorderState(profile, false);
-    console.error(`Start ${profile} recording failed:`, e);
+    const response = await fetch(`/api/recording/${profile}/start`, {
+      method: "POST",
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || result.success === false) {
+      throw new Error(result.message || `HTTP ${response.status}`);
+    }
+
+    // Keep the explicit ON intent. The button remains red until the user
+    // presses it again to stop recording.
+    _recorderIntent[profile] = true;
+  } catch (error) {
+    _recorderIntent[profile] = previousIntent;
+    applyOptimisticRecorderState(profile, previousState);
+    if (previousIntent === null) _recorderIntent[profile] = null;
+    console.error(`Start ${profile} recording failed:`, error);
+  } finally {
+    setRecordingButtonBusy(profile, false);
   }
 }
 
 async function stopRecording(profile) {
+  const previousIntent = _recorderIntent[profile];
+  const previousState = Boolean(_recorderUiState[profile]?.recording);
+
   applyOptimisticRecorderState(profile, false);
+  setRecordingButtonBusy(profile, true);
+
   try {
-    const response = await fetch(`/api/recording/${profile}/stop`, { method: "POST" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  } catch (e) {
-    applyOptimisticRecorderState(profile, true);
-    console.error(`Stop ${profile} recording failed:`, e);
+    const response = await fetch(`/api/recording/${profile}/stop`, {
+      method: "POST",
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || result.success === false) {
+      throw new Error(result.message || `HTTP ${response.status}`);
+    }
+
+    // Keep the explicit OFF intent. The button remains blue.
+    _recorderIntent[profile] = false;
+  } catch (error) {
+    _recorderIntent[profile] = previousIntent;
+    applyOptimisticRecorderState(profile, previousState);
+    if (previousIntent === null) _recorderIntent[profile] = null;
+    console.error(`Stop ${profile} recording failed:`, error);
+  } finally {
+    setRecordingButtonBusy(profile, false);
   }
 }
 

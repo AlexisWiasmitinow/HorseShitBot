@@ -902,25 +902,67 @@ class WebDashboardNode(Node):
                 cli.call_async(req)
             return {"success": True, "message": f"called {srv_name}"}
 
-        @app.post("/api/recording/{profile}/start")
-        async def start_recording(profile: str):
+        async def _call_recorder_trigger(profile: str, action: str):
             clients = ros_node._rec_clients.get(profile)
             if not clients:
-                return {"success": False, "message": f"unknown profile: {profile}"}
-            if not clients["start"].service_is_ready():
-                return {"success": False, "message": f"{profile} recorder not available"}
-            clients["start"].call_async(Trigger.Request())
-            return {"success": True, "message": f"{profile} start_recording called"}
+                return JSONResponse(
+                    {"success": False, "message": f"unknown profile: {profile}"},
+                    status_code=404,
+                )
+
+            client = clients[action]
+            if not client.service_is_ready():
+                return JSONResponse(
+                    {
+                        "success": False,
+                        "message": f"{profile} recorder {action} service not available",
+                    },
+                    status_code=503,
+                )
+
+            future = client.call_async(Trigger.Request())
+            deadline = time.monotonic() + 8.0
+
+            while not future.done() and time.monotonic() < deadline:
+                await asyncio.sleep(0.05)
+
+            if not future.done():
+                return JSONResponse(
+                    {
+                        "success": False,
+                        "message": f"{profile} recorder {action} timed out",
+                    },
+                    status_code=504,
+                )
+
+            try:
+                result = future.result()
+            except Exception as exc:
+                return JSONResponse(
+                    {"success": False, "message": str(exc)},
+                    status_code=500,
+                )
+
+            success = bool(getattr(result, "success", False))
+            message = getattr(result, "message", "") or (
+                f"{profile} recorder {action} completed"
+                if success
+                else f"{profile} recorder rejected {action}"
+            )
+
+            status_code = 200 if success else 409
+            return JSONResponse(
+                {"success": success, "message": message},
+                status_code=status_code,
+            )
+
+        @app.post("/api/recording/{profile}/start")
+        async def start_recording(profile: str):
+            return await _call_recorder_trigger(profile, "start")
 
         @app.post("/api/recording/{profile}/stop")
         async def stop_recording(profile: str):
-            clients = ros_node._rec_clients.get(profile)
-            if not clients:
-                return {"success": False, "message": f"unknown profile: {profile}"}
-            if not clients["stop"].service_is_ready():
-                return {"success": False, "message": f"{profile} recorder not available"}
-            clients["stop"].call_async(Trigger.Request())
-            return {"success": True, "message": f"{profile} stop_recording called"}
+            return await _call_recorder_trigger(profile, "stop")
 
         # ── Lidar ──────────────────────────────────────────────────
 
