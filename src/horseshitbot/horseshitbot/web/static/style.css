@@ -4844,3 +4844,279 @@ body.dashboard-active.sidebar-collapsed .sidebar {
     width: 100%;
   }
 }
+
+
+/* ==================================================================
+   Three-column motor diagnostics, clearer expandable windows,
+   and a site-wide navigation sidebar
+   ================================================================== */
+
+/* --- Same navigation/sidebar on every page ----------------------- */
+
+body {
+  --dashboard-navy: #0b1729;
+  --dashboard-navy-soft: #12213a;
+  --dashboard-blue: #1769ff;
+  --dashboard-green: #0fb65a;
+  --dashboard-orange: #ef981f;
+}
+
+.app-shell {
+  grid-template-columns: 228px minmax(0, 1fr);
+}
+
+.sidebar {
+  color: #f8fbff;
+  background:
+    radial-gradient(circle at 20% 5%, rgba(35, 105, 255, 0.16), transparent 32%),
+    linear-gradient(180deg, #0b1729 0%, #0b1729 72%, #0e1b2f 100%);
+  border-right-color: rgba(255, 255, 255, 0.08);
+}
+
+.brand-mark {
+  background: rgba(23, 105, 255, 0.12);
+}
+
+.brand-name {
+  color: #ffffff;
+}
+
+.brand-subtitle {
+  color: #aebbd0;
+}
+
+.sidebar-nav .tab {
+  color: #d5deeb;
+}
+
+.sidebar-nav .tab:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.sidebar-nav .tab.active {
+  color: #6fa2ff;
+  background: rgba(33, 104, 238, 0.15);
+}
+
+.sidebar-status-card {
+  background: rgba(7, 18, 34, 0.56);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+}
+
+.sidebar-status-row + .sidebar-status-row {
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+
+.sidebar-status-row strong {
+  color: #f2f6fc;
+}
+
+.sidebar-status-row div > span {
+  color: #aebbd0;
+}
+
+.status-glyph {
+  color: #5e96ff;
+}
+
+body.sidebar-collapsed .app-shell {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+body.sidebar-collapsed .sidebar {
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(-100%);
+  pointer-events: none;
+}
+
+/* --- Motor diagnostics: 3 columns × 2 rows ---------------------- */
+
+#tab-dashboard .dashboard-motor-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-block {
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #cfd9e6;
+  border-radius: 9px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(31, 52, 86, 0.04);
+}
+
+#tab-dashboard .dashboard-motor-list .motor-block .kv {
+  min-height: 27px;
+  padding: 0 0 7px;
+  border-bottom: 1px solid #e5eaf1;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-block .kv .label {
+  min-width: 0;
+  overflow: hidden;
+  color: #344054;
+  font-size: 10px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-block .kv .value {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #f1f4f8;
+  font-size: 9px;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-current-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+  gap: 7px;
+  align-items: end;
+  margin-top: 8px;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  color: #667085;
+  font-size: 8.5px;
+  font-weight: 650;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-input-wrap {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid #ccd7e5;
+  border-radius: 7px;
+  background: #fbfcfe;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-input-wrap:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(23, 105, 255, 0.10);
+}
+
+#tab-dashboard .dashboard-motor-list .motor-cur-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 10px;
+  text-align: left;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-cur-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-input-wrap small {
+  padding: 0 6px 0 3px;
+  color: #8b96a8;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-set-button {
+  min-width: 44px;
+  min-height: 31px;
+  padding: 4px 7px;
+  font-size: 9px;
+}
+
+#tab-dashboard #dashboard-diagnostic-motors > .btn-row {
+  padding-top: 10px;
+  border-top: 1px solid #dbe3ed;
+}
+
+/* --- Make expandable and floating windows visibly separate ------- */
+
+#tab-dashboard .dashboard-diagnostic-panel,
+#tab-dashboard .dashboard-component-detail,
+#tab-dashboard .dashboard-issue-diagnostics,
+#tab-dashboard .dashboard-imu-details {
+  border-color: #c7d2df;
+  background: #edf2f7;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 5px 16px rgba(31, 52, 86, 0.07);
+}
+
+#tab-dashboard .dashboard-diagnostic-panel > header,
+#tab-dashboard .dashboard-component-detail > header,
+#tab-dashboard .dashboard-issue-diagnostics > header {
+  padding-bottom: 9px;
+  border-bottom: 1px solid #cfd8e4;
+}
+
+#tab-recordings .topic-checklist-body,
+.topic-checklist-body {
+  border-color: #b9c5d4;
+  background: #e9eef5;
+  box-shadow:
+    0 20px 50px rgba(20, 35, 58, 0.24),
+    0 0 0 1px rgba(86, 105, 130, 0.08);
+}
+
+.topic-checklist-body .topic-group {
+  padding: 10px;
+  border: 1px solid #d0d9e5;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.net-modal-inner {
+  border-color: #b9c5d4;
+  background: #edf2f7;
+}
+
+/* Keep the darker sidebar on mobile too. */
+@media (max-width: 900px) {
+  .sidebar,
+  body.sidebar-collapsed .sidebar {
+    color: #f8fbff;
+    background:
+      radial-gradient(circle at 20% 5%, rgba(35, 105, 255, 0.16), transparent 32%),
+      linear-gradient(180deg, #0b1729 0%, #0b1729 72%, #0e1b2f 100%);
+  }
+}
+
+@media (max-width: 1350px) {
+  #tab-dashboard .dashboard-motor-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 850px) {
+  #tab-dashboard .dashboard-motor-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  #tab-dashboard .dashboard-motor-list .motor-current-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  #tab-dashboard .dashboard-motor-list .motor-set-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}

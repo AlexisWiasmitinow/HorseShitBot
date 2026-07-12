@@ -213,11 +213,21 @@ function updateDashboard(data) {
         block.innerHTML =
           `<div class="kv"><span class="label">Motor ${id} (${motorNames[id] || "?"})</span><span class="value" id="hw-m${id}-status">--</span></div>` +
           `<div class="motor-current-row">` +
-            `<label>Run<input type="number" id="hw-m${id}-run" class="motor-cur-input" min="10" max="5200" step="100" oninput="_motorDirty[${id}]=true"></label>` +
-            `<span class="jog-unit">mA</span>` +
-            `<label>Hold<input type="number" id="hw-m${id}-hold" class="motor-cur-input" min="10" max="100" step="10" oninput="_motorDirty[${id}]=true"></label>` +
-            `<span class="jog-unit">%</span>` +
-            `<button class="primary" onclick="setMotorCurrent(${id})">Set</button>` +
+            `<label class="motor-field">` +
+              `<span>Run current</span>` +
+              `<span class="motor-input-wrap">` +
+                `<input type="number" id="hw-m${id}-run" class="motor-cur-input" min="10" max="5200" step="100" oninput="_motorDirty[${id}]=true">` +
+                `<small>mA</small>` +
+              `</span>` +
+            `</label>` +
+            `<label class="motor-field">` +
+              `<span>Hold current</span>` +
+              `<span class="motor-input-wrap">` +
+                `<input type="number" id="hw-m${id}-hold" class="motor-cur-input" min="10" max="100" step="10" oninput="_motorDirty[${id}]=true">` +
+                `<small>%</small>` +
+              `</span>` +
+            `</label>` +
+            `<button class="primary motor-set-button" onclick="setMotorCurrent(${id})">Set</button>` +
           `</div>`;
         motorsEl.appendChild(block);
       }

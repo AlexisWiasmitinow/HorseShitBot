@@ -80,6 +80,161 @@ def _read_thermal_zones() -> list[dict]:
     return zones
 
 
+def _read_cpu_times() -> tuple[int, int] | None:
+    """Return (total_ticks, idle_ticks) from /proc/stat."""
+    try:
+        first_line = Path("/proc/stat").read_text().splitlines()[0]
+        fields = [int(value) for value in first_line.split()[1:]]
+        if len(fields) < 4:
+            return None
+        idle = fields[3] + (fields[4] if len(fields) > 4 else 0)
+        return sum(fields), idle
+    except Exception:
+        return None
+
+
+def _read_memory_gb() -> tuple[float | None, float | None]:
+    """Return used and total RAM in GiB from /proc/meminfo."""
+    values: dict[str, int] = {}
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            key, raw = line.split(":", 1)
+            values[key] = int(raw.strip().split()[0])
+    except Exception:
+        return None, None
+
+    total_kb = values.get("MemTotal")
+    available_kb = values.get("MemAvailable")
+    if total_kb is None:
+        return None, None
+    if available_kb is None:
+        available_kb = (
+            values.get("MemFree", 0)
+            + values.get("Buffers", 0)
+            + values.get("Cached", 0)
+        )
+
+    used_kb = max(0, total_kb - available_kb)
+    divisor = 1024.0 * 1024.0
+    return used_kb / divisor, total_kb / divisor
+
+
+def _read_gpu_percent() -> float | None:
+    """Read Jetson GPU utilisation from known sysfs locations.
+
+    Jetson commonly exposes a value in the range 0..1000, where 1000 is 100%.
+    Some kernels expose 0..100 instead.
+    """
+    candidates = [
+        Path("/sys/devices/gpu.0/load"),
+        Path("/sys/devices/platform/17000000.gpu/load"),
+        Path("/sys/class/devfreq/17000000.gpu/load"),
+    ]
+
+    for base in (Path("/sys/devices/platform"), Path("/sys/class/devfreq")):
+        if not base.is_dir():
+            continue
+        try:
+            candidates.extend(base.glob("*gpu*/load"))
+            candidates.extend(base.glob("*gpu*/device/load"))
+        except Exception:
+            pass
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            raw = float(candidate.read_text().strip())
+        except Exception:
+            continue
+
+        if raw < 0:
+            continue
+        percent = raw / 10.0 if raw > 100.0 else raw
+        return round(max(0.0, min(100.0, percent)), 1)
+
+    return None
+
+
+def _read_uptime_seconds() -> float | None:
+    try:
+        return float(Path("/proc/uptime").read_text().split()[0])
+    except Exception:
+        return None
+
+
+class _SystemMetricsSampler:
+    """Stateful CPU sampler plus stateless memory/storage/GPU readers."""
+
+    def __init__(self):
+        self._previous_cpu = _read_cpu_times()
+
+    def sample(self) -> dict:
+        current_cpu = _read_cpu_times()
+        cpu_percent = None
+
+        if self._previous_cpu is not None and current_cpu is not None:
+            total_delta = current_cpu[0] - self._previous_cpu[0]
+            idle_delta = current_cpu[1] - self._previous_cpu[1]
+            if total_delta > 0:
+                cpu_percent = 100.0 * (1.0 - idle_delta / total_delta)
+                cpu_percent = round(max(0.0, min(100.0, cpu_percent)), 1)
+
+        if current_cpu is not None:
+            self._previous_cpu = current_cpu
+
+        memory_used_gb, memory_total_gb = _read_memory_gb()
+
+        try:
+            disk = shutil.disk_usage("/")
+            storage_used_gb = disk.used / (1024.0 ** 3)
+            storage_total_gb = disk.total / (1024.0 ** 3)
+            storage_free_gb = disk.free / (1024.0 ** 3)
+        except Exception:
+            storage_used_gb = None
+            storage_total_gb = None
+            storage_free_gb = None
+
+        gpu_percent = _read_gpu_percent()
+
+        return {
+            "sampled_at": time.time(),
+            "cpu_percent": cpu_percent,
+            "gpu_percent": gpu_percent,
+            "gpu_available": gpu_percent is not None,
+            "memory_used_gb": (
+                round(memory_used_gb, 2)
+                if memory_used_gb is not None
+                else None
+            ),
+            "memory_total_gb": (
+                round(memory_total_gb, 2)
+                if memory_total_gb is not None
+                else None
+            ),
+            "storage_used_gb": (
+                round(storage_used_gb, 2)
+                if storage_used_gb is not None
+                else None
+            ),
+            "storage_total_gb": (
+                round(storage_total_gb, 2)
+                if storage_total_gb is not None
+                else None
+            ),
+            "storage_free_gb": (
+                round(storage_free_gb, 2)
+                if storage_free_gb is not None
+                else None
+            ),
+            "uptime_sec": _read_uptime_seconds(),
+        }
+
+
+
 
 STATIC_DIR = Path(__file__).parent.parent / "web" / "static"
 
@@ -231,6 +386,7 @@ class _RosBridge:
             "gamepad": {},
             "network": [],
             "thermals": [],
+            "system_metrics": {},
             "lidar": {},
             "lidar_points": [],
         }
@@ -242,6 +398,7 @@ class _RosBridge:
 
         self._start_network_poller()
         self._start_thermal_poller()
+        self._start_system_metrics_poller()
 
         ros_node.create_subscription(String, "/wheel_status", self._cb_wheel, 10)
         ros_node.create_subscription(String, "/mks_bus/status", self._cb_mks_bus, 10)
@@ -296,6 +453,29 @@ class _RosBridge:
                 time.sleep(5)
         t = threading.Thread(target=_loop, daemon=True)
         t.start()
+
+    def _start_system_metrics_poller(self):
+        """Collect host metrics without blocking ROS callbacks or FastAPI."""
+        sampler = _SystemMetricsSampler()
+
+        def _loop():
+            while True:
+                try:
+                    metrics = sampler.sample()
+                except Exception as exc:
+                    metrics = {
+                        "sampled_at": time.time(),
+                        "error": str(exc),
+                    }
+
+                with self._lock:
+                    self._state["system_metrics"] = metrics
+
+                time.sleep(1.0)
+
+        t = threading.Thread(target=_loop, daemon=True)
+        t.start()
+
 
     def _cb_wheel(self, msg: String):
         try:
@@ -497,6 +677,12 @@ class WebDashboardNode(Node):
         async def thermals():
             with bridge._lock:
                 return bridge._state.get("thermals", [])
+
+        @app.get("/api/system-health")
+        async def system_health():
+            """Current Jetson/Linux host metrics used by the dashboard."""
+            with bridge._lock:
+                return dict(bridge._state.get("system_metrics", {}))
 
         @app.get("/api/controller-config")
         async def get_controller_config():
