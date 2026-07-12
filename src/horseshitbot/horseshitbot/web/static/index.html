@@ -141,8 +141,8 @@
       </div>
       <div class="dashboard-service-strip" aria-label="System service status">
         <span class="dashboard-service-chip" id="dash-service-ros"><i></i>ROS 2</span>
-        <span class="dashboard-service-chip" id="dash-service-camera"><i></i>Camera</span>
-        <span class="dashboard-service-chip" id="dash-service-lidar"><i></i>LiDAR</span>
+        <button class="dashboard-service-chip dashboard-service-control" id="dash-service-camera" type="button" onclick="toggleDashboardSensor('camera')" aria-pressed="false" title="Start or stop the camera preview"><i></i>Camera</button>
+        <button class="dashboard-service-chip dashboard-service-control" id="dash-service-lidar" type="button" onclick="toggleDashboardSensor('lidar')" aria-pressed="false" title="Start or stop the LiDAR scan preview"><i></i>LiDAR</button>
         <span class="dashboard-service-chip" id="dash-service-imu"><i></i>IMU</span>
         <span class="dashboard-service-chip" id="dash-service-mks"><i></i>MKS Bus</span>
         <span class="dashboard-service-chip" id="dash-service-gamepad"><i></i>Gamepad</span>
@@ -171,11 +171,11 @@
             <span><i id="marker-lift-dot"></i>Lift</span>
             <small id="marker-lift-state">Checking</small>
           </button>
-          <button class="robot-marker marker-camera" type="button" onclick="openDashboardTab('recordings')">
+          <button class="robot-marker marker-camera" type="button" onclick="toggleDashboardSensor('camera')">
             <span><i id="marker-camera-dot"></i>Camera</span>
             <small id="marker-camera-state">Checking</small>
           </button>
-          <button class="robot-marker marker-lidar" type="button" onclick="openDashboardTab('recordings')">
+          <button class="robot-marker marker-lidar" type="button" onclick="toggleDashboardSensor('lidar')">
             <span><i id="marker-lidar-dot"></i>LiDAR</span>
             <small id="marker-lidar-state">Checking</small>
           </button>
@@ -242,29 +242,46 @@
           <h2>Sensors</h2>
         </header>
         <div class="sensor-list">
-          <button class="sensor-row" type="button" onclick="openDashboardTab('recordings')">
+          <button class="sensor-row sensor-toggle-row" id="dash-camera-row" type="button"
+                  onclick="toggleDashboardSensor('camera')" aria-pressed="false">
             <span class="sensor-icon">
               <svg viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
             </span>
-            <span><strong>Camera</strong><small id="dash-camera-detail">Waiting for status</small></span>
-            <b id="dash-camera-status">--</b><em>›</em>
+            <span><strong>Camera Preview</strong><small id="dash-camera-detail">Preview stopped</small></span>
+            <b id="dash-camera-status">OFF</b>
+            <span class="sensor-switch" id="dash-camera-switch" aria-hidden="true"><i></i></span>
           </button>
-          <button class="sensor-row" type="button" onclick="openDashboardTab('recordings')">
+
+          <button class="sensor-row sensor-toggle-row" id="dash-lidar-row" type="button"
+                  onclick="toggleDashboardSensor('lidar')" aria-pressed="false">
             <span class="sensor-icon">
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><circle cx="12" cy="12" r="7"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
             </span>
-            <span><strong>LiDAR</strong><small id="dash-lidar-detail">Waiting for status</small></span>
-            <b id="dash-lidar-status">--</b><em>›</em>
+            <span><strong>LiDAR Scan</strong><small id="dash-lidar-detail">Scan stopped</small></span>
+            <b id="dash-lidar-status">OFF</b>
+            <span class="sensor-switch" id="dash-lidar-switch" aria-hidden="true"><i></i></span>
           </button>
-          <button class="sensor-row" type="button" onclick="openDashboardTab('recordings')">
+
+          <button class="sensor-row sensor-detail-row" id="dash-imu-row" type="button"
+                  onclick="toggleDashboardImuDetails()" aria-expanded="false"
+                  aria-controls="dashboard-imu-details">
             <span class="sensor-icon">
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"></circle><path d="M4 12a8 8 0 0 1 8-8M20 12a8 8 0 0 1-8 8M12 4v3M12 17v3M4 12h3M17 12h3"></path></svg>
             </span>
             <span><strong>IMU</strong><small id="dash-imu-detail">Waiting for /imu/data_raw</small></span>
-            <b id="dash-imu-status">--</b><em>›</em>
+            <b id="dash-imu-status">--</b>
+            <em class="sensor-chevron">⌄</em>
           </button>
+
+          <div class="dashboard-imu-details" id="dashboard-imu-details" hidden>
+            <div><span>Yaw rate</span><strong id="dash-imu-yaw">--</strong><small>rad/s</small></div>
+            <div><span>Accel X</span><strong id="dash-imu-accel-x">--</strong><small>m/s²</small></div>
+            <div><span>Accel Y</span><strong id="dash-imu-accel-y">--</strong><small>m/s²</small></div>
+            <div><span>Roll</span><strong id="dash-imu-roll">--</strong><small>°</small></div>
+            <div><span>Pitch</span><strong id="dash-imu-pitch">--</strong><small>°</small></div>
+            <p>IMU is ROS-managed. The current backend provides live IMU data, but no IMU start/stop service.</p>
+          </div>
         </div>
-        <button class="dashboard-secondary-button" type="button" onclick="openDashboardTab('recordings')">View all sensors</button>
       </article>
     </div>
 
@@ -403,9 +420,6 @@
           </button>
           <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
             <span>◉</span><span><strong>ODrive</strong><small id="dash-odrive-summary">Checking</small></span>
-          </button>
-          <button class="hardware-status-tile" type="button" onclick="openDashboardTab('recordings')">
-            <span>▣</span><span><strong>Camera Module</strong><small id="dash-camera-hardware-summary">Checking</small></span>
           </button>
           <button class="hardware-status-tile" type="button" onclick="toggleDashboardHardwareDetails()">
             <span>ϟ</span><span><strong>Power System</strong><small id="dash-power-summary">No telemetry</small></span>

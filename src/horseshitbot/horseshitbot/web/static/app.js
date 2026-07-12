@@ -759,6 +759,7 @@ function startCamera() {
   toggle.innerHTML = '<span class="button-play">■</span> Stop Preview';
   toggle.className = "danger compact preview-toggle";
   if (stateEl) { stateEl.textContent = "Streaming"; stateEl.className = "cam-state ok"; }
+  syncDashboardSensorControls();
 }
 
 function stopCamera() {
@@ -786,6 +787,7 @@ function stopCamera() {
     toggle.className = "compact preview-toggle";
   }
   if (stateEl) { stateEl.textContent = "Stopped"; stateEl.className = "cam-state"; }
+  syncDashboardSensorControls();
 }
 
 function toggleCamera() {
@@ -1649,6 +1651,7 @@ async function startLidar() {
   const el = document.getElementById("lidar-status");
   if (el) { el.textContent = "Scanning"; el.className = "lidar-status ok"; }
   if (!lidarAnimFrame) lidarAnimFrame = requestAnimationFrame(drawLidar);
+  syncDashboardSensorControls();
 }
 
 async function stopLidar() {
@@ -1662,6 +1665,7 @@ async function stopLidar() {
   if (el) { el.textContent = "Stopped"; el.className = "lidar-status"; }
   if (lidarAnimFrame) { cancelAnimationFrame(lidarAnimFrame); lidarAnimFrame = null; }
   drawLidar();
+  syncDashboardSensorControls();
 }
 
 function toggleLidar() {
@@ -1833,8 +1837,8 @@ function initTabs() {
       if (tabName === "recorded-bags" && !bagsData) loadBags();
 
       if (tabName === "network") loadNetwork();
-      if (tabName !== "recordings" && camStreaming) stopCamera();
-      if (tabName !== "recordings" && lidarScanning) stopLidar();
+      // Camera and LiDAR stay active while switching between tabs.
+      // They stop only when the user explicitly toggles them off.
       if (window.matchMedia("(max-width: 900px)").matches) closeSidebar();
     });
   });
@@ -1993,6 +1997,74 @@ function openDashboardTab(tabName) {
   if (tab) tab.click();
 }
 
+function setDashboardSensorBusy(sensor, busy) {
+  const row = document.getElementById(`dash-${sensor}-row`);
+  if (!row) return;
+  row.classList.toggle("is-busy", busy);
+  row.disabled = busy;
+}
+
+async function toggleDashboardSensor(sensor) {
+  if (sensor === "camera") {
+    setDashboardSensorBusy("camera", true);
+    try {
+      toggleCamera();
+    } finally {
+      setDashboardSensorBusy("camera", false);
+      syncDashboardSensorControls();
+    }
+    return;
+  }
+
+  if (sensor === "lidar") {
+    setDashboardSensorBusy("lidar", true);
+    try {
+      if (lidarScanning) await stopLidar();
+      else await startLidar();
+    } finally {
+      setDashboardSensorBusy("lidar", false);
+      syncDashboardSensorControls();
+    }
+  }
+}
+
+function syncDashboardSensorControls() {
+  const states = {
+    camera: Boolean(camStreaming),
+    lidar: Boolean(lidarScanning),
+  };
+
+  for (const [sensor, active] of Object.entries(states)) {
+    const row = document.getElementById(`dash-${sensor}-row`);
+    const toggle = document.getElementById(`dash-${sensor}-switch`);
+    const service = document.getElementById(`dash-service-${sensor}`);
+
+    row?.classList.toggle("is-on", active);
+    toggle?.classList.toggle("is-on", active);
+    row?.setAttribute("aria-pressed", String(active));
+    service?.setAttribute("aria-pressed", String(active));
+    service?.classList.toggle("is-active", active);
+  }
+
+  dashboardText("dash-camera-status", camStreaming ? "ON" : "OFF");
+  dashboardClass("dash-camera-status", camStreaming ? "ok" : "");
+  dashboardText("dash-camera-detail", camStreaming ? "Preview running" : "Preview stopped");
+
+  dashboardText("dash-lidar-status", lidarScanning ? "ON" : "OFF");
+  dashboardClass("dash-lidar-status", lidarScanning ? "ok" : "");
+  dashboardText("dash-lidar-detail", lidarScanning ? "Scan preview running" : "Scan stopped");
+}
+
+function toggleDashboardImuDetails() {
+  const details = document.getElementById("dashboard-imu-details");
+  const row = document.getElementById("dash-imu-row");
+  if (!details || !row) return;
+  const open = details.hidden;
+  details.hidden = !open;
+  row.setAttribute("aria-expanded", String(open));
+  row.classList.toggle("is-open", open);
+}
+
 function scrollDashboardSection(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -2003,6 +2075,27 @@ function toggleDashboardSection(bodyId, button) {
   const open = body.hidden;
   body.hidden = !open;
   button?.setAttribute("aria-expanded", String(open));
+  try {
+    sessionStorage.setItem(`hsb-dashboard-section:${bodyId}`, open ? "open" : "closed");
+  } catch (_) { /* optional */ }
+}
+
+function restoreDashboardSections() {
+  for (const bodyId of ["dashboard-components-body", "dashboard-hardware-body"]) {
+    const body = document.getElementById(bodyId);
+    const button = body?.closest(".dashboard-accordion")?.querySelector(".dashboard-accordion-heading");
+    if (!body || !button) continue;
+    try {
+      const state = sessionStorage.getItem(`hsb-dashboard-section:${bodyId}`);
+      if (state === "closed") {
+        body.hidden = true;
+        button.setAttribute("aria-expanded", "false");
+      } else if (state === "open") {
+        body.hidden = false;
+        button.setAttribute("aria-expanded", "true");
+      }
+    } catch (_) { /* optional */ }
+  }
 }
 
 function closeDashboardDetails() {
@@ -2246,29 +2339,26 @@ function updateDashboardOverview(data) {
   const cameraState = cameraKnown ? (cameraConnected ? "ok" : "err") : "";
   const cameraRate = dashboardNumber(camera.fps, camera.frame_rate, camera.hz);
   dashboardService("dash-service-camera", cameraState);
-  dashboardSensor(
-    "dash-camera-status",
-    "dash-camera-detail",
+  dashboardMarker(
+    "camera",
     cameraState,
-    cameraKnown ? (cameraConnected ? "OK" : "OFFLINE") : "--",
-    cameraRate != null ? `${cameraRate.toFixed(0)} Hz` : cameraConnected ? "Available" : "Waiting for status"
+    camStreaming ? "Streaming" : cameraConnected ? "Ready" : cameraKnown ? "Offline" : "Checking"
   );
-  dashboardMarker("camera", cameraState, cameraConnected ? (camStreaming ? "Streaming" : "Ready") : cameraKnown ? "Offline" : "Checking");
-  dashboardText("dash-camera-hardware-summary", cameraConnected ? "OK" : cameraKnown ? "Offline" : "Checking");
 
   const lidarKnown = lidar.connected != null;
   const lidarConnected = lidar.connected === true;
   const lidarState = lidarKnown ? (lidarConnected ? "ok" : "err") : "";
   const lidarRate = dashboardNumber(lidar.hz, lidar.frequency, lidar.scan_rate);
   dashboardService("dash-service-lidar", lidarState);
-  dashboardSensor(
-    "dash-lidar-status",
-    "dash-lidar-detail",
+  dashboardMarker(
+    "lidar",
     lidarState,
-    lidarKnown ? (lidarConnected ? "OK" : "OFFLINE") : "--",
-    lidarRate != null ? `${lidarRate.toFixed(0)} Hz` : lidarConnected ? "Sensor ready" : "Waiting for status"
+    lidarScanning
+      ? (lidarRate != null ? `${lidarRate.toFixed(0)} Hz` : "Scanning")
+      : lidarConnected ? "Ready" : lidarKnown ? "Offline" : "Checking"
   );
-  dashboardMarker("lidar", lidarState, lidarConnected ? (lidarRate != null ? `${lidarRate.toFixed(0)} Hz` : "Ready") : lidarKnown ? "Offline" : "Checking");
+
+  syncDashboardSensorControls();
 
   const angular = imu.angular_velocity || imu.gyro || {};
   const accel = imu.linear_acceleration || imu.acceleration || imu.accel || {};
@@ -2282,9 +2372,22 @@ function updateDashboardOverview(data) {
     "dash-imu-status",
     "dash-imu-detail",
     imuAvailable ? "ok" : "",
-    imuAvailable ? "OK" : "--",
-    imuAvailable ? `${dashboardNumber(imu.hz, imu.frequency) || 200} Hz` : "Waiting for /imu/data_raw"
+    imuAvailable ? "LIVE" : "--",
+    imuAvailable ? `${dashboardNumber(imu.hz, imu.frequency) || 200} Hz · ROS managed` : "Waiting for /imu/data_raw"
   );
+
+  const dashOrientation = imu.orientation || imu.quaternion || imu.q || null;
+  const dashAngles = _quaternionToRollPitch(dashOrientation);
+  const dashYawRate = _firstFinite(angular.z, imu.angular_velocity_z, imu.gyro_z, imu.yaw_rate);
+  const dashAccelX = _firstFinite(accel.x, imu.accel_x, imu.linear_acceleration_x);
+  const dashAccelY = _firstFinite(accel.y, imu.accel_y, imu.linear_acceleration_y);
+  const dashRoll = _firstFinite(imu.roll, imu.roll_deg, dashAngles.roll);
+  const dashPitch = _firstFinite(imu.pitch, imu.pitch_deg, dashAngles.pitch);
+  dashboardText("dash-imu-yaw", dashYawRate == null ? "--" : dashYawRate.toFixed(2));
+  dashboardText("dash-imu-accel-x", dashAccelX == null ? "--" : dashAccelX.toFixed(2));
+  dashboardText("dash-imu-accel-y", dashAccelY == null ? "--" : dashAccelY.toFixed(2));
+  dashboardText("dash-imu-roll", dashRoll == null ? "--" : dashRoll.toFixed(1));
+  dashboardText("dash-imu-pitch", dashPitch == null ? "--" : dashPitch.toFixed(1));
 
   const mksKnown = hw.bus_connected != null;
   const mksConnected = hw.bus_connected === true;
@@ -2423,6 +2526,8 @@ async function loadDashboardBagStats(force = false) {
 
 function initDashboardPage() {
   document.body.classList.add("dashboard-active");
+  restoreDashboardSections();
+  syncDashboardSensorControls();
   updateDashboardConnection(ws?.readyState === WebSocket.OPEN);
   updateDashboardClock();
   loadDashboardBagStats();

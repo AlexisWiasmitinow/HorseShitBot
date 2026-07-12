@@ -4006,3 +4006,167 @@ body.dashboard-active.sidebar-collapsed .sidebar {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+
+/* ── Interactive dashboard controls ────────────────────────────── */
+
+#tab-dashboard .dashboard-service-control {
+  min-height: 38px;
+  padding: 8px 12px;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+#tab-dashboard .dashboard-service-control:hover {
+  border-color: #a9c4f8;
+  background: #f3f7ff;
+}
+
+#tab-dashboard .dashboard-service-control.is-active {
+  border-color: #91ddb4;
+  background: #effaf4;
+}
+
+#tab-dashboard .sensor-row {
+  grid-template-columns: 34px minmax(0, 1fr) auto 44px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease,
+              box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+#tab-dashboard .sensor-row.is-on {
+  border-color: #93ddb5;
+  background: linear-gradient(90deg, #f7fffa, #ffffff);
+  box-shadow: 0 0 0 2px rgba(15, 182, 90, 0.06);
+}
+
+#tab-dashboard .sensor-row.is-busy {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+#tab-dashboard .sensor-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  display: inline-block;
+  justify-self: end;
+  border-radius: 999px;
+  background: #cbd3df;
+  box-shadow: inset 0 0 0 1px rgba(52, 64, 84, 0.08);
+  transition: background 0.18s ease;
+}
+
+#tab-dashboard .sensor-switch > i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 5px rgba(23, 32, 51, 0.22);
+  transition: transform 0.18s ease;
+}
+
+#tab-dashboard .sensor-switch.is-on {
+  background: var(--dashboard-green);
+}
+
+#tab-dashboard .sensor-switch.is-on > i {
+  transform: translateX(16px);
+}
+
+#tab-dashboard .sensor-detail-row {
+  grid-template-columns: 34px minmax(0, 1fr) auto 24px;
+}
+
+#tab-dashboard .sensor-chevron {
+  justify-self: center;
+  color: #667085;
+  font-size: 18px;
+  font-style: normal;
+  transition: transform 0.18s ease;
+}
+
+#tab-dashboard .sensor-detail-row.is-open .sensor-chevron {
+  transform: rotate(180deg);
+}
+
+#tab-dashboard .dashboard-imu-details {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #dfe6f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+#tab-dashboard .dashboard-imu-details[hidden] {
+  display: none !important;
+}
+
+#tab-dashboard .dashboard-imu-details > div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+#tab-dashboard .dashboard-imu-details span,
+#tab-dashboard .dashboard-imu-details strong,
+#tab-dashboard .dashboard-imu-details small {
+  display: block;
+}
+
+#tab-dashboard .dashboard-imu-details span {
+  color: #667085;
+  font-size: 9px;
+}
+
+#tab-dashboard .dashboard-imu-details strong {
+  margin-top: 2px;
+  color: #172033;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+#tab-dashboard .dashboard-imu-details small {
+  color: #98a2b3;
+  font-size: 8px;
+}
+
+#tab-dashboard .dashboard-imu-details p {
+  grid-column: 1 / -1;
+  margin: 2px 2px 0;
+  color: #667085;
+  font-size: 9px;
+}
+
+#tab-dashboard .dashboard-hardware-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+#tab-dashboard .robot-marker,
+#tab-dashboard .dashboard-component-tile,
+#tab-dashboard .hardware-status-tile {
+  cursor: pointer;
+}
+
+@media (max-width: 1320px) {
+  #tab-dashboard .dashboard-hardware-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  #tab-dashboard .dashboard-imu-details {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  #tab-dashboard .dashboard-imu-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
