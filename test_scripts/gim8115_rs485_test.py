@@ -25,6 +25,7 @@ Usage:
     python gim8115_rs485_test.py --port COM9 --move 90 --speed 10
     python gim8115_rs485_test.py --port COM9 --velocity 20
     python gim8115_rs485_test.py --port COM9 --torture 90 --speed 20
+    python gim8115_rs485_test.py --port COM9 --torture 90 --speed 20 --lift 30
     python gim8115_rs485_test.py --port COM9 --torture 180 --speed 30 --temp-every 10
     python gim8115_rs485_test.py --port COM9 --bus-test
     python gim8115_rs485_test.py --port COM9 --bus-test --rate 5 --duration 60
@@ -102,6 +103,14 @@ def format_fault(code: int) -> str:
     if extra:
         bits.append(f"other=0x{extra:02X}")
     return ",".join(bits) if bits else f"0x{code:02X}"
+
+
+def format_hms(seconds: float) -> str:
+    """Format a duration as H:MM:SS."""
+    total = max(0, int(round(seconds)))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}"
 
 
 class GIM8115RS485:
@@ -519,10 +528,14 @@ def run_torture(
     temp_every: int,
     max_cycles: int,
     disable_after: bool,
+    lift_deg: float = 0.0,
 ):
     """
     Oscillate +degrees then -degrees until Ctrl+C (or --cycles N).
     One cycle = out and back. Temperature is logged every temp_every cycles.
+
+    If lift_deg != 0: move +lift_deg once before cycling (e.g. raise weights off
+    the floor), then move -lift_deg once after cycling (put them down).
     """
     degrees = abs(degrees)
     if degrees <= 0:
@@ -532,24 +545,29 @@ def run_torture(
     if temp_every < 1:
         raise ValueError("--temp-every must be >= 1")
 
-    # Be gentle on the bus: longer gaps, slower polls. Fast hammering causes
-    # truncated 0x0B replies on many USB-RS485 adapters.
+    # Mild bus pacing — enough for half-duplex USB adapters, not sluggish.
     prev_gap = motor.inter_frame_gap_s
-    motor.inter_frame_gap_s = max(prev_gap, 0.10)
+    motor.inter_frame_gap_s = max(prev_gap, 0.04)
 
     # Expected one-leg time (rough): angle/360 * 60/rpm, plus accel overhead.
     leg_est_s = (degrees / 360.0) * (60.0 / max(speed_rpm, 0.1)) + 1.0
-    # First status poll only after most of the move should be done.
-    initial_delay_s = max(0.6, leg_est_s * 0.65)
-    poll_s = 0.35
+    # First status poll after most of the move should be done (avoid hammering
+    # the bus mid-trajectory). Remainder is polled at poll_s until settle.
+    initial_delay_s = max(0.2, leg_est_s * 0.45)
+    poll_s = 0.12
+    # Gaps between commanded legs / cycles (not motion time).
+    between_leg_s = 0.08
+    between_cycle_s = 0.08
 
     st0 = _read_status_retry(motor)
-    start_counts = st0["multi_counts"]
+    floor_counts = st0["multi_counts"]
     start_temp = st0["temp_c"]
     t0 = time.time()
     cycles = 0
     bus_glitches = 0
     temps: list[tuple[int, float, int]] = []  # cycle, elapsed_s, temp_c
+    lifted = False
+    start_counts = floor_counts
 
     print()
     print("=" * 50)
@@ -558,11 +576,16 @@ def run_torture(
     print(f"  Angle        : ±{degrees:.2f}° per leg")
     print(f"  Speed        : {speed_rpm:.1f} RPM")
     print(f"  Accel/decel  : {accel_rpm_s:.1f} / {decel_rpm_s:.1f} RPM/s")
-    print(f"  Start pos    : {start_counts} counts ({counts_to_degrees(start_counts):+.2f}°)")
+    print(f"  Floor pos    : {floor_counts} counts ({counts_to_degrees(floor_counts):+.2f}°)")
+    if lift_deg:
+        print(f"  Lift         : {lift_deg:+.2f}° before cycles; "
+              f"after cycles/Ctrl+C return to floor pos "
+              f"({counts_to_degrees(floor_counts):+.2f}°)")
     print(f"  Start temp   : {start_temp} °C")
     print(f"  Temp log     : every {temp_every} cycle(s)")
     print(f"  Bus pacing   : gap={motor.inter_frame_gap_s*1000:.0f}ms  "
-          f"first-poll≈{initial_delay_s:.2f}s  poll={poll_s:.2f}s")
+          f"first-poll≈{initial_delay_s:.2f}s  poll={poll_s:.2f}s  "
+          f"between-leg/cycle={between_leg_s*1000:.0f}/{between_cycle_s*1000:.0f}ms")
     if max_cycles > 0:
         print(f"  Max cycles   : {max_cycles}")
     else:
@@ -570,37 +593,56 @@ def run_torture(
     print("  Cycle = +angle then -angle. Keep clear of the joint.")
     print()
 
-    def one_leg(signed_deg: float):
+    def leg_wait_s(signed_deg: float) -> float:
+        """Settle budget for this leg (don't use a hard 8s cap on long moves)."""
+        est = abs(signed_deg) / max(speed_rpm, 0.1) * 60.0 / 360.0 * 3.0 + 5.0
+        return max(wait_s, est)
+
+    def one_leg(signed_deg: float, label: str | None = None):
         """
         Command the relative move once. On bus errors, only retry status
         polling — never re-issue the move (that would stack another ±angle).
         """
         nonlocal bus_glitches
+        # Scale first-poll delay to this leg's angle (lift may differ from torture).
+        leg_delay = max(
+            0.2,
+            (abs(signed_deg) / 360.0) * (60.0 / max(speed_rpm, 0.1)) * 0.45 + 0.2,
+        )
+        settle_s = leg_wait_s(signed_deg)
         st = _read_status_retry(motor, attempts=4)
         target = st["multi_counts"] + degrees_to_counts(signed_deg)
+        if label:
+            print(f"  {label}: {signed_deg:+.2f}° ...", end="", flush=True)
         motor.move_relative_degrees(
             signed_deg,
             speed_rpm=speed_rpm,
             accel_rpm_s=accel_rpm_s,
             decel_rpm_s=decel_rpm_s,
         )
-        # Let the motor run — don't poll immediately after the command.
-        time.sleep(0.25)
+        # Brief TX settle before first status poll.
+        time.sleep(0.05)
 
         last_err: Exception | None = None
         for attempt in range(5):
             try:
                 # First attempt: wait out most of the move before polling.
                 # Later attempts: motor may already be there — poll sooner.
-                delay = initial_delay_s if attempt == 0 else 0.15
-                return wait_move(
+                delay = leg_delay if attempt == 0 else 0.08
+                st_done = wait_move(
                     motor,
                     target,
-                    timeout_s=wait_s if attempt == 0 else min(wait_s, 8.0),
+                    timeout_s=settle_s if attempt == 0 else max(8.0, settle_s * 0.5),
                     quiet=True,
                     poll_s=poll_s,
                     initial_delay_s=delay,
                 )
+                if label:
+                    print(
+                        f" done  pos={st_done['multi_counts']}  "
+                        f"({st_done['multi_deg']:+.2f}°)"
+                    )
+                return st_done
             except (TimeoutError, ValueError) as e:
                 last_err = e
                 bus_glitches += 1
@@ -609,25 +651,70 @@ def run_torture(
                     motor.ser.reset_input_buffer()
                 except Exception:
                     pass
-                time.sleep(0.4 * (attempt + 1))
+                time.sleep(0.15 * (attempt + 1))
                 # If we can still read and we're near target, treat as success.
                 try:
                     st = _read_status_retry(motor, attempts=3)
                     if abs(st["multi_counts"] - target) <= 40 and abs(st["velocity_rpm"]) < 2.0:
                         print(" [at target]", end="", flush=True)
+                        if label:
+                            print(
+                                f" done  pos={st['multi_counts']}  "
+                                f"({st['multi_deg']:+.2f}°)"
+                            )
                         return st
                 except (TimeoutError, ValueError):
                     pass
         assert last_err is not None
         raise last_err
 
+    def wait_motion_stopped(timeout_s: float = 15.0) -> dict:
+        """After Ctrl+C mid-leg, let the current trajectory finish / soft-stop."""
+        print("  Waiting for motion to stop before put-down...", end="", flush=True)
+        try:
+            motor.set_velocity(0.0, accel_rpm_s=max(accel_rpm_s, speed_rpm))
+        except Exception:
+            pass
+        t_stop = time.time()
+        last = None
+        while time.time() - t_stop < timeout_s:
+            try:
+                last = _read_status_retry(motor, attempts=3)
+                if abs(last["velocity_rpm"]) < 1.0:
+                    print(
+                        f" stopped  pos={last['multi_counts']}  "
+                        f"({last['multi_deg']:+.2f}°)"
+                    )
+                    return last
+            except (TimeoutError, ValueError):
+                pass
+            time.sleep(0.15)
+        if last is None:
+            last = _read_status_retry(motor, attempts=4)
+        print(
+            f" timeout  pos={last['multi_counts']}  "
+            f"vel={last['velocity_rpm']:+.2f} RPM — continuing"
+        )
+        return last
+
     try:
+        if lift_deg:
+            one_leg(+lift_deg, label="Lift (raise weights)")
+            lifted = True
+            time.sleep(between_cycle_s)
+            st0 = _read_status_retry(motor, attempts=4)
+            start_counts = st0["multi_counts"]
+            print(
+                f"  Torture home : {start_counts} counts "
+                f"({counts_to_degrees(start_counts):+.2f}°)  "
+                f"(after lift)\n"
+            )
+
         while True:
             leg_t0 = time.time()
             print(f"  cycle {cycles + 1}: +{degrees:.1f}° ...", end="", flush=True)
             st = one_leg(+degrees)
-            # Pause between legs so the previous reply is fully done.
-            time.sleep(0.4)
+            time.sleep(between_leg_s)
             print(" back ...", end="", flush=True)
             st = one_leg(-degrees)
             cycles += 1  # only count fully completed out+back
@@ -641,8 +728,7 @@ def run_torture(
             )
 
             if cycles % temp_every == 0:
-                # Extra settle before the temp read — this is where glitches often hit.
-                time.sleep(0.5)
+                time.sleep(between_cycle_s)
                 try:
                     motor.ser.reset_input_buffer()
                 except Exception:
@@ -657,16 +743,13 @@ def run_torture(
                     print(
                         f"  *** TEMP @ cycle {cycles}: {st['temp_c']} °C  "
                         f"(Δ from start: {st['temp_c'] - start_temp:+d} °C, "
-                        f"elapsed {elapsed:.0f}s) ***"
+                        f"elapsed {format_hms(elapsed)}) ***"
                     )
-                # Rest after temp read before next cycle.
-                time.sleep(0.5)
 
             if st["fault"]:
                 raise RuntimeError(f"motor fault: {format_fault(st['fault'])}")
 
-            # Brief rest between cycles.
-            time.sleep(0.4)
+            time.sleep(between_cycle_s)
 
             if max_cycles > 0 and cycles >= max_cycles:
                 print(f"\n  Reached --cycles {max_cycles}.")
@@ -676,10 +759,44 @@ def run_torture(
     except (TimeoutError, ValueError, RuntimeError) as e:
         print(f"\n  Aborting after {cycles} complete cycle(s): {e}")
     finally:
+        # Put weights down before disable / summary (even on Ctrl+C / abort).
+        # Important: after mid-cycle interrupt we may be hundreds of degrees from
+        # home — always return to the recorded floor position, not a blind -lift.
+        if lifted:
+            print()
+            try:
+                time.sleep(0.15)
+                try:
+                    motor.ser.reset_input_buffer()
+                except Exception:
+                    pass
+                st_now = wait_motion_stopped(
+                    timeout_s=max(15.0, leg_est_s + 5.0),
+                )
+                delta_counts = floor_counts - st_now["multi_counts"]
+                delta_deg = counts_to_degrees(delta_counts)
+                if abs(delta_counts) <= 40:
+                    print(
+                        f"  Put-down: already at floor "
+                        f"(err {delta_counts:+d} counts)"
+                    )
+                else:
+                    print(
+                        f"  Put-down target: floor @ {floor_counts} counts "
+                        f"({counts_to_degrees(floor_counts):+.2f}°)  "
+                        f"Δ={delta_deg:+.2f}° from here"
+                    )
+                    one_leg(delta_deg, label="Put-down (lower to floor)")
+                lifted = False
+                time.sleep(0.15)
+            except Exception as e:
+                print(f"\n  WARNING: put-down failed: {e}")
+                print("  Weights may still be raised — move carefully.")
+
         motor.inter_frame_gap_s = prev_gap
         elapsed = time.time() - t0
         st = None
-        time.sleep(0.4)
+        time.sleep(0.15)
         try:
             st = _read_status_retry(motor, attempts=4)
         except Exception:
@@ -689,27 +806,31 @@ def run_torture(
         print("TORTURE SUMMARY")
         print("=" * 50)
         print(f"  Cycles       : {cycles}")
-        print(f"  Elapsed      : {elapsed:.1f}s")
+        print(f"  Elapsed      : {format_hms(elapsed)} ({elapsed:.1f}s)")
         if cycles > 0:
             print(f"  Avg cycle    : {elapsed / cycles:.2f}s")
         print(f"  Bus glitches : {bus_glitches} (retried)")
         print(f"  Start temp   : {start_temp} °C")
+        if lift_deg:
+            print(f"  Lift angle   : {lift_deg:+.2f}° (put-down {'OK' if not lifted else 'FAILED'})")
         if st is not None:
             print(f"  End temp     : {st['temp_c']} °C  (Δ {st['temp_c'] - start_temp:+d} °C)")
-            drift = st["multi_counts"] - start_counts
+            drift_home = st["multi_counts"] - start_counts
+            drift_floor = st["multi_counts"] - floor_counts
             print(
                 f"  End pos      : {st['multi_counts']} counts "
-                f"(drift {drift:+d} / {counts_to_degrees(drift):+.2f}°)"
+                f"(vs torture home {drift_home:+d} / {counts_to_degrees(drift_home):+.2f}°"
+                f"; vs floor {drift_floor:+d} / {counts_to_degrees(drift_floor):+.2f}°)"
             )
             print(f"  Fault        : {format_fault(st['fault'])}")
         if temps:
             print("  Temp log:")
             for cyc, t_el, temp in temps:
-                print(f"    cycle {cyc:5d}  t={t_el:7.1f}s  {temp} °C")
+                print(f"    cycle {cyc:5d}  t={format_hms(t_el):>8s}  {temp} °C")
         if disable_after:
             print("  Disabling motor (cmd 0x2F)...")
             try:
-                time.sleep(0.4)
+                time.sleep(0.15)
                 motor.disable()
             except Exception as e:
                 print(f"  WARNING: disable failed: {e}")
@@ -764,7 +885,7 @@ def run_velocity(
             if now - last_print >= period:
                 last_print = now
                 print(
-                    f"  t={elapsed:6.2f}s  vel={st['velocity_rpm']:+7.2f} RPM  "
+                    f"  t={format_hms(elapsed):>8s}  vel={st['velocity_rpm']:+7.2f} RPM  "
                     f"pos={st['multi_counts']:8d}  "
                     f"Δ={delta_counts:+8d} counts  "
                     f"Δ={delta_deg:+8.2f}°  "
@@ -912,7 +1033,7 @@ def run_bus_test(
         print("=" * 50)
         print("BUS TEST SUMMARY")
         print("=" * 50)
-        print(f"  Elapsed      : {elapsed:.1f}s")
+        print(f"  Elapsed      : {format_hms(elapsed)} ({elapsed:.1f}s)")
         print(f"  Polls        : {total}  (OK={ok}  FAIL={fail})")
         print(f"  Success rate : {pct:.2f}%")
         print(f"  Effective Hz : {total / elapsed:.2f}" if elapsed > 0 else "  Effective Hz : n/a")
@@ -1086,6 +1207,8 @@ This is NOT Modbus. The PDF protocol uses header 0xAE/0xAC frames.
 
 --torture DEG: back-and-forth ±DEG at --speed until Ctrl+C (or --cycles N).
 One cycle = out + back. Temperature is printed every --temp-every cycles.
+Optional --lift DEG: raise once before cycles; return to floor position after
+(even if Ctrl+C mid-cycle).
 
 --bus-test: poll status (0x0B) only — no motion. Use to measure RS485 reliability.
 Stop with Ctrl+C or --duration. --rate sets poll Hz.
@@ -1129,6 +1252,11 @@ Stop with Ctrl+C or --duration. --rate sets poll Hz.
                         help="With --torture: stop after N cycles (default: 0 = until Ctrl+C)")
     parser.add_argument("--temp-every", type=int, default=10, metavar="N",
                         help="With --torture: print temperature every N cycles (default: 10)")
+    parser.add_argument("--lift", type=float, default=0.0, metavar="DEG",
+                        help="With --torture: before cycling, move +DEG once to raise "
+                             "weights off the floor; after cycling (or Ctrl+C), return "
+                             "to the recorded floor position (safe even if interrupted "
+                             "mid-cycle). Sign is the lift direction.")
     parser.add_argument("--duration", type=float, default=0.0, metavar="SEC",
                         help="With --velocity/--bus-test: stop after N seconds "
                              "(default: 0 = until Ctrl+C)")
@@ -1295,8 +1423,9 @@ Stop with Ctrl+C or --duration. --rate sets poll Hz.
         if args.torture is not None:
             accel = args.accel if args.accel is not None else args.speed
             decel = args.decel if args.decel is not None else accel
-            # Longer wait for large/slow torture legs
-            wait_s = max(args.wait, abs(args.torture) / max(args.speed, 0.1) * 60.0 / 360.0 * 3.0 + 5.0)
+            # Longer wait for large/slow torture / lift legs
+            big_angle = max(abs(args.torture), abs(args.lift))
+            wait_s = max(args.wait, big_angle / max(args.speed, 0.1) * 60.0 / 360.0 * 3.0 + 5.0)
             run_torture(
                 motor,
                 degrees=args.torture,
@@ -1307,6 +1436,7 @@ Stop with Ctrl+C or --duration. --rate sets poll Hz.
                 temp_every=args.temp_every,
                 max_cycles=args.cycles,
                 disable_after=not args.no_disable,
+                lift_deg=args.lift,
             )
             return
 
