@@ -1986,8 +1986,11 @@ const dashboardRuntime = {
   runtimeSeconds: 0,
   distanceMeters: 0,
   systemUptimeSeconds: null,
-  cpuHistory: Array(24).fill(0),
-  gpuHistory: Array(24).fill(0),
+  cpuHistory: [],
+  gpuHistory: [],
+  systemMetrics: {},
+  systemHealthLastSuccess: 0,
+  systemHealthError: "",
   lastData: null,
   bagStatsLoadedAt: 0,
 };
@@ -2243,6 +2246,12 @@ function dashboardSparkline(id, history, value) {
 
   const line = document.getElementById(id);
   if (!line) return;
+
+  if (!history.length) {
+    line.setAttribute("points", "");
+    return;
+  }
+
   const width = 120;
   const height = 28;
   const step = width / Math.max(1, history.length - 1);
@@ -2283,8 +2292,58 @@ function updateDashboardConnection(connected) {
   }
 }
 
+
+let _systemHealthPolling = false;
+
+async function pollSystemHealth() {
+  if (_systemHealthPolling) return;
+  _systemHealthPolling = true;
+
+  const state = document.getElementById("system-health-state");
+  const started = performance.now();
+
+  try {
+    const response = await fetch("/api/system-health", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const metrics = await response.json();
+    metrics.network_latency_ms = Math.max(0, performance.now() - started);
+
+    dashboardRuntime.systemMetrics = metrics;
+    dashboardRuntime.systemHealthLastSuccess = Date.now();
+    dashboardRuntime.systemHealthError = "";
+
+    if (state) {
+      state.textContent = "Live";
+      state.className = "system-health-state ok";
+    }
+
+    if (dashboardRuntime.lastData) {
+      updateDashboardOverview(dashboardRuntime.lastData);
+    }
+  } catch (error) {
+    dashboardRuntime.systemHealthError = error.message || String(error);
+    if (state) {
+      state.textContent = "Host metrics unavailable";
+      state.className = "system-health-state err";
+      state.title = dashboardRuntime.systemHealthError;
+    }
+  } finally {
+    _systemHealthPolling = false;
+  }
+}
+
 function dashboardMetricObject(data) {
-  return data.system_metrics || data.system || data.metrics || data.host || {};
+  const fromSocket =
+    data.system_metrics ||
+    data.system ||
+    data.metrics ||
+    data.host ||
+    {};
+  return {
+    ...fromSocket,
+    ...(dashboardRuntime.systemMetrics || {}),
+  };
 }
 
 function updateDashboardOverview(data) {
@@ -2317,6 +2376,7 @@ function updateDashboardOverview(data) {
   const storageUsed = dashboardNumber(metrics.storage_used_gb, metrics.disk_used_gb);
   const storageTotal = dashboardNumber(metrics.storage_total_gb, metrics.disk_total_gb);
   const battery = dashboardNumber(metrics.battery_percent, metrics.battery, data.battery?.percent);
+  const driveBusVoltage = dashboardNumber(wheel.diag?.vbus);
   const latency = dashboardNumber(metrics.network_latency_ms, metrics.latency_ms);
   const uptime = dashboardNumber(metrics.uptime_sec, metrics.uptime_seconds, data.uptime_sec);
   if (uptime != null) dashboardRuntime.systemUptimeSeconds = uptime;
@@ -2328,8 +2388,13 @@ function updateDashboardOverview(data) {
     ? dashboardNumber(representativeThermal.temp_c)
     : dashboardNumber(metrics.temperature_c, metrics.temperature);
 
-  dashboardText("dash-cpu-value", cpu == null ? "--" : `${cpu.toFixed(0)}%`);
-  dashboardText("dash-gpu-value", gpu == null ? "--" : `${gpu.toFixed(0)}%`);
+  dashboardText("dash-cpu-value", cpu == null ? "N/A" : `${cpu.toFixed(0)}%`);
+  dashboardText(
+    "dash-gpu-value",
+    gpu == null
+      ? (metrics.gpu_available === false ? "N/A" : "Loading")
+      : `${gpu.toFixed(0)}%`
+  );
   dashboardSparkline("dash-cpu-line", dashboardRuntime.cpuHistory, cpu);
   dashboardSparkline("dash-gpu-line", dashboardRuntime.gpuHistory, gpu);
 
@@ -2337,7 +2402,7 @@ function updateDashboardOverview(data) {
     dashboardText("dash-memory-value", `${memUsed.toFixed(1)} / ${memTotal.toFixed(1)} GB`);
     dashboardProgress("dash-memory-bar", memUsed, memTotal);
   } else {
-    dashboardText("dash-memory-value", "--");
+    dashboardText("dash-memory-value", "N/A");
     dashboardProgress("dash-memory-bar", null);
   }
 
@@ -2345,20 +2410,53 @@ function updateDashboardOverview(data) {
     dashboardText("dash-storage-value", `${storageUsed.toFixed(1)} / ${storageTotal.toFixed(1)} GB`);
     dashboardProgress("dash-storage-bar", storageUsed, storageTotal);
   } else {
-    dashboardText("dash-storage-value", "--");
+    dashboardText("dash-storage-value", "N/A");
     dashboardProgress("dash-storage-bar", null);
   }
 
-  dashboardText("dash-battery-value", battery == null ? "--" : `${battery.toFixed(0)}%`);
-  dashboardProgress("dash-battery-bar", battery);
+  if (battery != null) {
+    dashboardText("dash-battery-value", `${battery.toFixed(0)}%`);
+    dashboardProgress("dash-battery-bar", battery);
+  } else if (driveBusVoltage != null) {
+    dashboardText("dash-battery-value", `${driveBusVoltage.toFixed(1)} V bus`);
+    dashboardProgress("dash-battery-bar", driveBusVoltage, 60);
+  } else {
+    dashboardText("dash-battery-value", "Not reported");
+    dashboardProgress("dash-battery-bar", null);
+  }
 
-  dashboardText("dash-temperature-value", temperature == null ? "--" : `${temperature.toFixed(1)}°C`);
+  dashboardText(
+    "dash-temperature-value",
+    temperature == null ? "N/A" : `${temperature.toFixed(1)}°C`
+  );
   dashboardProgress("dash-temperature-bar", temperature, 100);
   const tempValue = document.getElementById("dash-temperature-value");
-  if (tempValue) tempValue.style.color = temperature != null && temperature >= 65 ? "var(--dashboard-orange)" : "";
+  if (tempValue) {
+    tempValue.style.color =
+      temperature != null && temperature >= 65
+        ? "var(--dashboard-orange)"
+        : "";
+  }
 
-  dashboardText("dash-latency-value", latency == null ? "--" : `${latency.toFixed(0)} ms`);
-  dashboardProgress("dash-latency-bar", latency == null ? null : Math.max(0, 100 - latency), 100);
+  dashboardText(
+    "dash-latency-value",
+    latency == null ? "N/A" : `${latency.toFixed(0)} ms`
+  );
+  dashboardProgress(
+    "dash-latency-bar",
+    latency == null ? null : Math.max(0, 100 - latency),
+    100
+  );
+
+  const healthState = document.getElementById("system-health-state");
+  if (healthState && dashboardRuntime.systemHealthLastSuccess) {
+    const ageSeconds = Math.max(
+      0,
+      Math.round((Date.now() - dashboardRuntime.systemHealthLastSuccess) / 1000)
+    );
+    healthState.textContent = ageSeconds <= 2 ? "Live" : `Updated ${ageSeconds}s ago`;
+    healthState.className = "system-health-state ok";
+  }
 
   const wheelBackend = String(wheel.backend || "").toUpperCase();
   const wheelError = Boolean(wheel.error || wheel.estopped);
@@ -2966,7 +3064,9 @@ function initDashboardPage() {
   updateDashboardConnection(ws?.readyState === WebSocket.OPEN);
   updateDashboardClock();
   loadDashboardBagStats();
+  pollSystemHealth();
   setInterval(updateDashboardClock, 1000);
+  setInterval(pollSystemHealth, 2000);
   setInterval(() => {
     if (document.body.classList.contains("dashboard-active")) loadDashboardBagStats();
   }, 60000);

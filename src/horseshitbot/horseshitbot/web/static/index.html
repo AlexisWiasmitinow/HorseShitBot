@@ -216,22 +216,23 @@
       </article>
 
       <article class="dashboard-card system-health-card">
-        <header class="dashboard-simple-heading">
+        <header class="dashboard-simple-heading system-health-heading">
           <h2>System Health</h2>
+          <span class="system-health-state" id="system-health-state">Loading host metrics…</span>
         </header>
         <div class="health-list">
           <div class="health-row health-spark-row">
             <span>CPU</span>
             <strong id="dash-cpu-value">--</strong>
             <svg viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
-              <polyline id="dash-cpu-line" points="0,22 120,22"></polyline>
+              <polyline id="dash-cpu-line" points=""></polyline>
             </svg>
           </div>
           <div class="health-row health-spark-row">
             <span>GPU</span>
             <strong id="dash-gpu-value">--</strong>
             <svg viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
-              <polyline id="dash-gpu-line" points="0,22 120,22"></polyline>
+              <polyline id="dash-gpu-line" points=""></polyline>
             </svg>
           </div>
           <div class="health-row">
@@ -245,7 +246,7 @@
             <div class="health-progress"><i id="dash-storage-bar"></i></div>
           </div>
           <div class="health-row">
-            <span>Battery</span>
+            <span>Power</span>
             <strong id="dash-battery-value">--</strong>
             <div class="health-progress health-progress-green"><i id="dash-battery-bar"></i></div>
           </div>

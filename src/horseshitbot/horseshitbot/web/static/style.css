@@ -4714,3 +4714,133 @@ body.dashboard-active.sidebar-collapsed .sidebar {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ==================================================================
+   Compact motor diagnostics and live system health
+   ================================================================== */
+
+#tab-dashboard .system-health-heading {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#tab-dashboard .system-health-state {
+  color: #7d899c;
+  font-size: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#tab-dashboard .system-health-state.ok {
+  color: #079447;
+}
+
+#tab-dashboard .system-health-state.err {
+  color: #c9383d;
+}
+
+#tab-dashboard .health-spark-row polyline:empty {
+  stroke: transparent;
+}
+
+#tab-dashboard .dashboard-motor-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-block {
+  min-width: 0;
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid #dfe6f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-block .kv {
+  min-height: 25px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid #edf0f5;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-block .kv .label {
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-block .kv .value {
+  font-size: 10px;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-current-row {
+  display: grid;
+  grid-template-columns:
+    minmax(92px, 1fr) auto
+    minmax(92px, 1fr) auto
+    42px;
+  gap: 4px;
+  align-items: end;
+  margin-top: 7px;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-current-row label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(48px, 1fr);
+  gap: 5px;
+  align-items: center;
+  color: #667085;
+  font-size: 9px;
+}
+
+#tab-dashboard .dashboard-motor-list .motor-cur-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 5px;
+  font-size: 10px;
+}
+
+#tab-dashboard .dashboard-motor-list .jog-unit {
+  padding-bottom: 7px;
+  font-size: 8px;
+}
+
+#tab-dashboard .dashboard-motor-list button {
+  min-width: 42px;
+  min-height: 30px;
+  padding: 4px 7px;
+  font-size: 10px;
+}
+
+#tab-dashboard #dashboard-diagnostic-motors .diagnostic-summary-grid {
+  margin-bottom: 8px;
+}
+
+#tab-dashboard #dashboard-diagnostic-motors > .btn-row {
+  margin-top: 9px;
+}
+
+@media (max-width: 1180px) {
+  #tab-dashboard .dashboard-motor-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  #tab-dashboard .dashboard-motor-list .motor-current-row {
+    grid-template-columns: minmax(86px, 1fr) auto minmax(86px, 1fr) auto;
+  }
+
+  #tab-dashboard .dashboard-motor-list .motor-current-row button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
