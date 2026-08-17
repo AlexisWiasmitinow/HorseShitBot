@@ -1,497 +1,1137 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HorseShitBot Dashboard</title>
-  <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/style.css">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>HorseShitBot Robot Control</title>
+<link href="/static/favicon.png" rel="icon" type="image/png"/>
+<link href="/static/style.css" rel="stylesheet"/>
 </head>
-<body>
-  <header>
-    <h1>HorseShitBot</h1>
-    <nav class="tabs">
-      <button class="tab active" data-tab="dashboard">Dashboard</button>
-      <button class="tab" data-tab="camera">Camera</button>
-      <button class="tab" data-tab="recordings">Recordings</button>
-      <button class="tab" data-tab="controller">Controller</button>
-      <button class="tab" data-tab="lidar">Lidar</button>
-      <button class="tab" data-tab="network">Network</button>
-    </nav>
-    <span id="ws-status">Disconnected</span>
-  </header>
+<body class="dashboard-active">
+<div class="app-shell">
+<aside class="sidebar">
+<div class="brand">
+<div class="brand-mark">
+<img alt="HorseShitBot" src="/static/favicon.png"/>
+</div>
+<div class="brand-copy">
+<div class="brand-name">HorseShitBot</div>
+<div class="brand-subtitle">Robot Control</div>
+</div>
+<button aria-label="Close navigation" class="sidebar-close" id="sidebar-close" title="Close navigation" type="button">
+<svg aria-hidden="true" viewbox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+</button>
+</div>
+<nav aria-label="Main navigation" class="tabs sidebar-nav">
+<button class="tab active" data-tab="dashboard" type="button">
+<span aria-hidden="true" class="nav-icon">
+<svg viewbox="0 0 24 24"><rect height="7" rx="1" width="7" x="3" y="3"></rect><rect height="7" rx="1" width="7" x="14" y="3"></rect><rect height="7" rx="1" width="7" x="3" y="14"></rect><rect height="7" rx="1" width="7" x="14" y="14"></rect></svg>
+</span>
+<span>Dashboard</span>
+</button>
+<button class="tab" data-tab="recordings" type="button">
+<span aria-hidden="true" class="nav-icon">
+<svg viewbox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+</span>
+<span>Recordings</span>
+</button>
+<button class="tab" data-tab="recorded-bags" type="button">
+<span aria-hidden="true" class="nav-icon">
+<svg viewbox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v8A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"></path></svg>
+</span>
+<span>Recorded Bags</span>
+</button>
+<button class="tab" data-tab="controller" type="button">
+<span aria-hidden="true" class="nav-icon">
+<svg viewbox="0 0 24 24"><path d="M8 8h8a5 5 0 0 1 4.8 3.6l1 3.4a3 3 0 0 1-5.2 2.8L14.8 16H9.2l-1.8 1.8A3 3 0 0 1 2.2 15l1-3.4A5 5 0 0 1 8 8z"></path><path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"></path></svg>
+</span>
+<span>Controller</span>
+</button>
+<button class="tab" data-tab="network" type="button">
+<span aria-hidden="true" class="nav-icon">
+<svg viewbox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0"></path><path d="M8.5 16a5 5 0 0 1 7 0"></path><path d="M12 20h.01"></path></svg>
+</span>
+<span>Network</span>
+</button>
+</nav>
+<div class="sidebar-status-card">
+<div class="sidebar-status-row">
+<span class="status-dot online"></span>
+<div>
+<strong>System Status</strong>
+<span>All systems operational</span>
+</div>
+</div>
+<div class="sidebar-status-row">
+<span class="status-glyph">◎</span>
+<div>
+<strong>ROS 2 Humble</strong>
+<span>v1.02</span>
+</div>
+</div>
+<div class="sidebar-status-row">
+<span class="status-glyph">♨</span>
+<div>
+<strong>Jetson Orin NX</strong>
+<span id="sidebar-jetson-temp">Waiting for temperature</span>
+</div>
+</div>
 
-  <div id="estop-banner" class="estop-banner" style="display:none">
-    <span>E-STOP ACTIVE — press the gamepad button mapped to <b>stop_wheels</b> or click</span>
-    <button id="estop-resume-btn" type="button" onclick="resumeEstop()">Resume</button>
-  </div>
+<div class="sidebar-emergency-section">
+<div class="sidebar-emergency-heading">
+<span class="sidebar-emergency-symbol" aria-hidden="true">
+<svg viewBox="0 0 24 24" focusable="false">
+<path d="M12 7.25v6.5"></path>
+<circle cx="12" cy="17.25" r="1"></circle>
+</svg>
+</span>
+<div>
+<strong>Emergency controls</strong>
+<span>Immediate wheel stop</span>
+</div>
+</div>
 
-  <!-- ─── Dashboard tab ─── -->
-  <div id="tab-dashboard" class="tab-content active">
-    <div class="grid">
-      <!-- Wheels -->
-      <div class="card" id="card-wheels">
-        <h2>Wheels</h2>
-        <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
-        <div class="kv"><span class="label">Left m/s</span><span class="value" id="w-left">0</span></div>
-        <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
-        <div class="kv"><span class="label">Right m/s</span><span class="value" id="w-right">0</span></div>
-        <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
-        <div class="kv"><span class="label">Left amps</span><span class="value" id="w-current-left">--</span></div>
-        <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-left" style="width:0%"></div></div>
-        <div class="kv"><span class="label">Right amps</span><span class="value" id="w-current-right">--</span></div>
-        <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-right" style="width:0%"></div></div>
-        <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
-        <div class="btn-row">
-          <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
-          <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
-          <button onclick="switchBackend()">Switch Backend</button>
+<div class="sidebar-emergency-buttons">
+<button class="sidebar-stop-button" id="sidebar-stop-button" type="button"
+        onclick="sidebarWheelCommand('stop')"
+        title="Stop wheel motion">
+<span aria-hidden="true">■</span>
+<span>STOP</span>
+</button>
+
+<button class="sidebar-estop-button" id="sidebar-estop-button" type="button"
+        onclick="sidebarWheelCommand('stop_fast')"
+        title="Trigger the wheel emergency stop">
+<span class="sidebar-estop-icon" aria-hidden="true">
+<svg viewBox="0 0 24 24" focusable="false">
+<path d="M12 6.75v7"></path>
+<circle cx="12" cy="17.25" r="1"></circle>
+</svg>
+</span>
+<span>E-STOP</span>
+</button>
+</div>
+
+<span class="sidebar-emergency-message" id="sidebar-emergency-message"
+      role="status" aria-live="polite"></span>
+</div>
+</div>
+</aside>
+<button aria-label="Close navigation" class="sidebar-backdrop" id="sidebar-backdrop" type="button"></button>
+<main class="app-main">
+<header class="topbar">
+<button aria-expanded="true" aria-label="Toggle navigation" class="menu-button" id="sidebar-toggle" title="Toggle navigation" type="button">
+<svg aria-hidden="true" viewbox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+</button>
+<div class="page-heading">
+<span aria-hidden="true" class="page-heading-icon">
+<svg id="page-heading-svg" viewbox="0 0 24 24"><rect height="7" rx="1" width="7" x="3" y="3"></rect><rect height="7" rx="1" width="7" x="14" y="3"></rect><rect height="7" rx="1" width="7" x="3" y="14"></rect><rect height="7" rx="1" width="7" x="14" y="14"></rect></svg>
+</span>
+<div>
+<h1 id="page-title">Dashboard</h1>
+<p id="page-subtitle">Monitor robot systems and hardware status</p>
+</div>
+</div>
+<div class="topbar-actions">
+<span class="connection-badge" id="ws-status">
+<span class="status-dot"></span>
+<span class="connection-text">Disconnected</span>
+</span>
+<button aria-label="View alerts" class="icon-button dashboard-only-control" title="View alerts" type="button" onclick="openDashboardDiagnostics()">
+<svg viewbox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>
+</button>
+<button aria-label="Settings" class="icon-button" title="Settings" type="button" onclick="openDashboardTab('network')">
+<svg viewbox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.97 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.97a1.7 1.7 0 0 0-.34-1.88l-.06-.06L7.03 4.2l.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03H21v4h-.08A1.7 1.7 0 0 0 19.4 15z"></path></svg>
+</button>
+</div>
+</header>
+<div class="estop-banner" id="estop-banner" style="display:none">
+<span>E-STOP ACTIVE — press the gamepad button mapped to <b>stop_wheels</b> or click</span>
+<button id="estop-resume-btn" onclick="resumeEstop()" type="button">Resume</button>
+</div>
+<div class="page-content">
+
+<!-- Dashboard -->
+<section class="tab-content active" id="tab-dashboard">
+  <div class="dashboard-page">
+    <section class="dashboard-readiness" id="dashboard-readiness">
+      <div class="dashboard-ready-copy">
+        <span class="dashboard-ready-icon" id="dashboard-ready-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path class="ready-icon-check" d="m7 12 3 3 7-7"></path>
+            <path class="ready-icon-warning" d="M12 3 2.8 20h18.4L12 3z"></path>
+            <path class="ready-icon-warning" d="M12 9v5M12 17h.01"></path>
+          </svg>
+        </span>
+        <div>
+          <strong id="dashboard-ready-title">CHECKING SYSTEMS</strong>
+          <span id="dashboard-ready-subtitle">Waiting for live robot status</span>
         </div>
+        <button class="readiness-diagnostics-button" id="readiness-diagnostics-button"
+                type="button" onclick="openDashboardDiagnostics()" hidden>
+          Review issue
+        </button>
       </div>
 
-      <!-- Lift -->
-      <div class="card" id="card-lift">
-        <h2>Lift</h2>
-        <div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
-        <div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
-        <div class="kv"><span class="label">Referenced</span><span class="value" id="lift-ref">No</span></div>
-        <div class="btn-row">
-          <button onclick="cmd('lift_node','open')">Open</button>
-          <button onclick="cmd('lift_node','close')">Close</button>
-          <button onclick="cmd('lift_node','stop')">Stop</button>
-          <button onclick="cmd('lift_node','reference')">Reference</button>
-        </div>
+      <div class="dashboard-service-strip" aria-label="Hardware and service availability">
+        <span class="dashboard-service-chip" id="dash-service-ros">
+          <i></i><span>ROS 2</span><small id="dash-service-ros-note">Connecting</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-camera">
+          <i></i><span>Camera</span><small id="dash-service-camera-note">Not reported</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-lidar">
+          <i></i><span>LiDAR</span><small id="dash-service-lidar-note">Checking</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-imu">
+          <i></i><span>IMU</span><small id="dash-service-imu-note">Checking</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-mks">
+          <i></i><span>MKS Bus</span><small id="dash-service-mks-note">Checking</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-gamepad">
+          <i></i><span>Gamepad</span><small id="dash-service-gamepad-note">Checking</small>
+        </span>
+        <span class="dashboard-service-chip" id="dash-service-network">
+          <i></i><span>Network</span><small id="dash-service-network-note">Connecting</small>
+        </span>
       </div>
+    </section>
 
-      <!-- Brush -->
-      <div class="card" id="card-brush">
-        <h2>Brush</h2>
-        <div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
-        <div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
-        <div class="kv"><span class="label">Referenced</span><span class="value" id="brush-ref">No</span></div>
-        <div class="btn-row">
-          <button onclick="cmd('brush_node','open')">Open</button>
-          <button onclick="cmd('brush_node','close')">Close</button>
-          <button onclick="cmd('brush_node','stop')">Stop</button>
-          <button onclick="cmd('brush_node','reference')">Reference</button>
-        </div>
-        <div class="jog-row">
-          <input type="number" id="jog-brush" step="0.1" value="1" class="jog-input">
-          <span class="jog-unit">turns</span>
-          <button class="primary" onclick="jogMotor(4, 'jog-brush')">Move</button>
-        </div>
-      </div>
+    <div class="dashboard-primary-grid">
+      <article class="dashboard-card robot-overview-card">
+        <header class="dashboard-card-heading">
+          <span class="dashboard-heading-icon">⌘</span>
+          <div>
+            <h2>Robot Overview</h2>
+            <p>Click a component to view controls and live details</p>
+          </div>
+        </header>
 
-      <!-- Bin Door -->
-      <div class="card" id="card-bin-door">
-        <h2>Bin Door</h2>
-        <div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
-        <div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
-        <div class="kv"><span class="label">Referenced</span><span class="value" id="bin_door-ref">No</span></div>
-        <div class="btn-row">
-          <button onclick="cmd('bin_door_node','open')">Open</button>
-          <button onclick="cmd('bin_door_node','close')">Close</button>
-          <button onclick="cmd('bin_door_node','stop')">Stop</button>
-          <button onclick="cmd('bin_door_node','reference')">Reference</button>
-        </div>
-        <div class="jog-row">
-          <input type="number" id="jog-door" step="0.1" value="1" class="jog-input">
-          <span class="jog-unit">turns</span>
-          <input type="number" id="jog-door-speed" step="10" value="300" min="1" max="1500" class="jog-input">
-          <span class="jog-unit">RPM</span>
-          <input type="number" id="jog-door-acc" step="1" value="3" min="0" max="255" class="jog-input">
-          <span class="jog-unit">acc</span>
-          <button class="primary" onclick="jogMotor(6, 'jog-door', 'jog-door-speed', 'jog-door-acc')">Move</button>
-        </div>
-      </div>
+        <div class="robot-overview-stage">
+          <img src="/static/robot-dashboard.png" alt="HorseShitBot robot overview" class="dashboard-robot-image"/>
 
-      <!-- Hardware -->
-      <div class="card" id="card-hardware">
-        <h2>Hardware</h2>
-        <div class="kv">
-          <span class="label">ODrive</span>
-          <span class="value" id="hw-odrive">--</span>
+          <button class="robot-marker marker-bin" type="button" onclick="toggleDashboardDetail('bin-door')">
+            <span><i id="marker-bin-dot"></i>Bin Door</span>
+            <small id="marker-bin-state">Checking</small>
+          </button>
+          <button class="robot-marker marker-lift" type="button" onclick="toggleDashboardDetail('lift')">
+            <span><i id="marker-lift-dot"></i>Lift</span>
+            <small id="marker-lift-state">Checking</small>
+          </button>
+          <button class="robot-marker marker-camera" type="button" onclick="toggleDashboardSensor('camera')">
+            <span><i id="marker-camera-dot"></i>Camera</span>
+            <small id="marker-camera-state">Checking</small>
+          </button>
+          <button class="robot-marker marker-lidar" type="button" onclick="toggleDashboardSensor('lidar')">
+            <span><i id="marker-lidar-dot"></i>LiDAR</span>
+            <small id="marker-lidar-state">Checking</small>
+          </button>
+          <button class="robot-marker marker-brush" type="button" onclick="toggleDashboardDetail('brush')">
+            <span><i id="marker-brush-dot"></i>Brush</span>
+            <small id="marker-brush-state">Checking</small>
+          </button>
+          <button class="robot-marker marker-wheels" type="button" onclick="toggleDashboardDetail('wheels')">
+            <span><i id="marker-wheels-dot"></i>Wheels</span>
+            <small id="marker-wheels-state">Checking</small>
+          </button>
         </div>
-        <div class="kv">
-          <span class="label">MKS Bus</span>
-          <span class="value" id="hw-mks-bus">--</span>
-        </div>
-        <div id="hw-motors"></div>
-        <div class="btn-row" id="hw-save-defaults-row" style="margin-top:12px">
-          <button onclick="saveMotorDefaults()">Save as Default</button>
-          <button onclick="scanMotors()">Scan Bus</button>
-          <span class="ctrl-msg" id="hw-save-msg"></span>
-        </div>
-      </div>
+      </article>
 
-      <!-- Gamepad -->
-      <div class="card" id="card-gamepad">
-        <h2>Gamepad</h2>
-        <div class="kv">
-          <span class="label">Status</span>
-          <span class="value" id="gp-status">
-            <span class="gp-dot" id="gp-dot"></span>
-            <span id="gp-label">Disconnected</span>
-          </span>
+      <article class="dashboard-card system-health-card">
+        <header class="dashboard-simple-heading system-health-heading">
+          <h2>System Health</h2>
+          <span class="system-health-state" id="system-health-state">Loading host metrics…</span>
+        </header>
+        <div class="health-list">
+          <div class="health-row health-spark-row">
+            <span>CPU</span>
+            <strong id="dash-cpu-value">--</strong>
+            <svg viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
+              <polyline id="dash-cpu-line" points=""></polyline>
+            </svg>
+          </div>
+          <div class="health-row health-spark-row">
+            <span>GPU</span>
+            <strong id="dash-gpu-value">--</strong>
+            <svg viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
+              <polyline id="dash-gpu-line" points=""></polyline>
+            </svg>
+          </div>
+          <div class="health-row">
+            <span>Memory</span>
+            <strong id="dash-memory-value">--</strong>
+            <div class="health-progress"><i id="dash-memory-bar"></i></div>
+          </div>
+          <div class="health-row">
+            <span>Storage</span>
+            <strong id="dash-storage-value">--</strong>
+            <div class="health-progress"><i id="dash-storage-bar"></i></div>
+          </div>
+          <div class="health-row">
+            <span>Power</span>
+            <strong id="dash-battery-value">--</strong>
+            <div class="health-progress health-progress-green"><i id="dash-battery-bar"></i></div>
+          </div>
+          <div class="health-row">
+            <span>Temperature</span>
+            <strong id="dash-temperature-value">--</strong>
+            <div class="health-progress health-progress-temperature"><i id="dash-temperature-bar"></i></div>
+          </div>
+          <div class="health-row">
+            <span>Network latency</span>
+            <strong id="dash-latency-value">--</strong>
+            <div class="health-progress health-progress-green"><i id="dash-latency-bar"></i></div>
+          </div>
         </div>
-        <div class="kv" id="gp-battery-row" style="display:none">
-          <span class="label">Battery</span>
-          <span class="value" id="gp-battery-wrap">
-            <span class="gp-battery-icon" id="gp-battery-icon"></span>
-            <span id="gp-battery-text">--</span>
-          </span>
-        </div>
-        <div class="kv" id="gp-bt-row" style="display:none">
-          <span class="label">Bluetooth</span>
-          <span class="value" id="gp-bt-mac" style="font-size:0.75rem">--</span>
-        </div>
-        <div class="btn-row" id="gp-reconnect-row" style="display:none">
-          <button id="gp-reconnect-btn" onclick="reconnectGamepad()">Reconnect</button>
-          <span id="gp-reconnect-msg" class="ctrl-msg" style="margin:0"></span>
-        </div>
-      </div>
+      </article>
 
-      <!-- Thermals -->
-      <div class="card" id="card-thermals">
-        <h2>Thermals</h2>
-        <div id="thermal-zones" class="thermal-zones">
-          <span class="thermal-placeholder">Waiting for data...</span>
-        </div>
-      </div>
+      <article class="dashboard-card sensors-card">
+        <header class="dashboard-simple-heading">
+          <h2>Sensors</h2>
+        </header>
+        <p class="sensor-card-explanation">
+          Hardware availability and web preview are separate. A sensor can be online while its preview is off.
+        </p>
+        <div class="sensor-list">
+          <button class="sensor-row sensor-toggle-row" id="dash-camera-row" type="button"
+                  onclick="toggleDashboardSensor('camera')" aria-pressed="false">
+            <span class="sensor-icon">
+              <svg viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            </span>
+            <span class="sensor-row-copy">
+              <strong>Camera preview</strong>
+              <small id="dash-camera-detail">Preview off</small>
+              <em id="dash-camera-health">Hardware status not reported</em>
+            </span>
+            <b id="dash-camera-status">OFF</b>
+            <span class="sensor-switch" id="dash-camera-switch" aria-hidden="true"><i></i></span>
+          </button>
 
-      <!-- Recording — Perception -->
-      <div class="card" id="card-recording-perception">
-        <h2>Perception Recording</h2>
-        <div class="kv">
-          <span class="label">Status</span>
-          <span class="value">
-            <span class="rec-dot" id="rec-dot-perception"></span>
-            <span id="rec-label-perception">Idle</span>
-          </span>
-        </div>
-        <div class="kv"><span class="label">Duration</span><span class="value" id="rec-duration-perception">--</span></div>
-        <div class="kv"><span class="label">Frames</span><span class="value" id="rec-frames-perception">--</span></div>
-        <div class="btn-row">
-          <button onclick="startRecording('perception')">Start</button>
-          <button class="danger" onclick="stopRecording('perception')">Stop</button>
-        </div>
-      </div>
+          <button class="sensor-row sensor-toggle-row" id="dash-lidar-row" type="button"
+                  onclick="toggleDashboardSensor('lidar')" aria-pressed="false">
+            <span class="sensor-icon">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><circle cx="12" cy="12" r="7"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+            </span>
+            <span class="sensor-row-copy">
+              <strong>LiDAR preview</strong>
+              <small id="dash-lidar-detail">Preview off</small>
+              <em id="dash-lidar-health">Checking sensor availability</em>
+            </span>
+            <b id="dash-lidar-status">OFF</b>
+            <span class="sensor-switch" id="dash-lidar-switch" aria-hidden="true"><i></i></span>
+          </button>
 
-      <!-- Recording — Mapping -->
-      <div class="card" id="card-recording-mapping">
-        <h2>Mapping Recording</h2>
-        <div class="kv">
-          <span class="label">Status</span>
-          <span class="value">
-            <span class="rec-dot" id="rec-dot-mapping"></span>
-            <span id="rec-label-mapping">Idle</span>
-          </span>
+          <button class="sensor-row sensor-detail-row" id="dash-imu-row" type="button"
+                  onclick="toggleDashboardImuDetails()" aria-expanded="false"
+                  aria-controls="dashboard-imu-details">
+            <span class="sensor-icon">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"></circle><path d="M4 12a8 8 0 0 1 8-8M20 12a8 8 0 0 1-8 8M12 4v3M12 17v3M4 12h3M17 12h3"></path></svg>
+            </span>
+            <span class="sensor-row-copy">
+              <strong>IMU telemetry</strong>
+              <small id="dash-imu-detail">Waiting for /imu/data_raw</small>
+              <em>ROS-managed sensor; click for live values</em>
+            </span>
+            <b id="dash-imu-status">--</b>
+            <span class="sensor-chevron">⌄</span>
+          </button>
+
+          <div class="dashboard-imu-details" id="dashboard-imu-details" hidden>
+            <div><span>Yaw rate</span><strong id="dash-imu-yaw">--</strong><small>rad/s</small></div>
+            <div><span>Accel X</span><strong id="dash-imu-accel-x">--</strong><small>m/s²</small></div>
+            <div><span>Accel Y</span><strong id="dash-imu-accel-y">--</strong><small>m/s²</small></div>
+            <div><span>Roll</span><strong id="dash-imu-roll">--</strong><small>°</small></div>
+            <div><span>Pitch</span><strong id="dash-imu-pitch">--</strong><small>°</small></div>
+          </div>
         </div>
-        <div class="kv"><span class="label">Duration</span><span class="value" id="rec-duration-mapping">--</span></div>
-        <div class="kv"><span class="label">Frames</span><span class="value" id="rec-frames-mapping">--</span></div>
-        <div class="btn-row">
-          <button onclick="startRecording('mapping')">Start</button>
-          <button class="danger" onclick="stopRecording('mapping')">Stop</button>
-        </div>
-      </div>
+      </article>
     </div>
-  </div>
 
-  <!-- ─── Camera tab ─── -->
-  <div id="tab-camera" class="tab-content">
-    <div class="cam-wrap">
-      <div class="cam-controls">
-        <button id="cam-toggle" class="primary" onclick="toggleCamera()">Start Stream</button>
-        <label class="cam-slider-label">
-          FPS
-          <input type="range" id="cam-fps" min="1" max="15" value="10">
-          <span id="cam-fps-val">10</span>
-        </label>
-        <label class="cam-slider-label">
-          Quality
-          <input type="range" id="cam-quality" min="10" max="95" value="50">
-          <span id="cam-quality-val">50</span>
-        </label>
-        <span class="cam-state" id="cam-state">Stopped</span>
-      </div>
-      <div class="cam-grid">
-        <div class="cam-card">
-          <h3>Color</h3>
-          <img id="cam-color" alt="Color stream">
-        </div>
-        <div class="cam-card">
-          <h3>Depth</h3>
-          <img id="cam-depth" alt="Depth stream">
-        </div>
-      </div>
-    </div>
-  </div>
+    <section class="dashboard-accordion" id="dashboard-components-section">
+      <button class="dashboard-accordion-heading" type="button"
+              onclick="toggleDashboardSection('dashboard-components-body', this)"
+              aria-expanded="false">
+        <span class="dashboard-heading-icon">◉</span>
+        <span>
+          <strong>Robot Components</strong>
+          <small>Expand to view all actuator states and controls</small>
+        </span>
+        <em>⌃</em>
+      </button>
 
-  <!-- ─── Recordings tab ─── -->
-  <div id="tab-recordings" class="tab-content">
-    <div class="bags-wrap">
-      <div class="rec-profiles-row">
-        <!-- Perception recorder -->
-        <div class="topic-picker card" id="topic-picker-perception">
-          <div class="topic-picker-header">
-            <h2>Perception Topics</h2>
-            <span class="topic-picker-hint" id="topic-picker-hint-perception"></span>
-            <button class="primary" onclick="saveBagTopics('perception')">Apply</button>
-          </div>
-          <div id="topic-groups-perception"></div>
-          <div id="topic-msg-perception" class="ctrl-msg"></div>
-          <div class="rec-bar-row" style="margin-top:12px">
-            <span class="rec-dot-lg" id="rec-dot-lg-perception"></span>
-            <span class="rec-bar-label" id="rec-bar-label-perception">Idle</span>
-            <span class="rec-bar-detail" id="rec-bar-time-perception">--</span>
-            <span class="rec-bar-detail" id="rec-bar-frames-perception">-- frames</span>
-            <button class="primary" id="rec-bar-start-perception" onclick="startRecording('perception')">Start</button>
-            <button class="danger" id="rec-bar-stop-perception" onclick="stopRecording('perception')" style="display:none">Stop</button>
-          </div>
-        </div>
-
-        <!-- Mapping recorder -->
-        <div class="topic-picker card" id="topic-picker-mapping">
-          <div class="topic-picker-header">
-            <h2>Mapping Topics</h2>
-            <span class="topic-picker-hint" id="topic-picker-hint-mapping"></span>
-            <button class="primary" onclick="saveBagTopics('mapping')">Apply</button>
-          </div>
-          <div id="topic-groups-mapping"></div>
-          <div id="topic-msg-mapping" class="ctrl-msg"></div>
-          <div class="rec-bar-row" style="margin-top:12px">
-            <span class="rec-dot-lg" id="rec-dot-lg-mapping"></span>
-            <span class="rec-bar-label" id="rec-bar-label-mapping">Idle</span>
-            <span class="rec-bar-detail" id="rec-bar-time-mapping">--</span>
-            <span class="rec-bar-detail" id="rec-bar-frames-mapping">-- frames</span>
-            <button class="primary" id="rec-bar-start-mapping" onclick="startRecording('mapping')">Start</button>
-            <button class="danger" id="rec-bar-stop-mapping" onclick="stopRecording('mapping')" style="display:none">Stop</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="bags-header">
-        <h2>Recorded Bags</h2>
-        <span class="bags-summary" id="bags-summary"></span>
-        <button onclick="loadBags()">Refresh</button>
-      </div>
-      <div class="disk-bar-wrap" id="disk-bar-wrap" style="display:none">
-        <div class="disk-labels">
-          <span id="disk-label-used"></span>
-          <span id="disk-label-free"></span>
-        </div>
-        <div class="disk-bar">
-          <div class="disk-bar-bags" id="disk-bar-bags"></div>
-          <div class="disk-bar-other" id="disk-bar-other"></div>
-        </div>
-      </div>
-      <div id="bags-loading" class="ctrl-hint">Loading...</div>
-      <table class="bags-table" id="bags-table" style="display:none">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Date</th>
-            <th>Size</th>
-            <th>Files</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="bags-tbody"></tbody>
-      </table>
-      <div id="bags-empty" class="ctrl-hint" style="display:none">No recordings found.</div>
-    </div>
-  </div>
-
-  <!-- ─── Controller tab ─── -->
-  <div id="tab-controller" class="tab-content">
-    <div class="ctrl-center">
-      <div class="ctrl-img-wrap">
-        <img src="/static/controller.png" alt="Data Frog Controller">
-      </div>
-      <div class="card ctrl-panel">
-        <h2>Button Assignments</h2>
-        <p class="ctrl-hint">Press a button on the controller to see it light up.
-          Change assignments with the dropdowns, then hit Save.</p>
-        <div id="ctrl-loading" class="ctrl-hint">Loading config...</div>
-        <table class="ctrl-table" id="ctrl-table" style="display:none">
-          <thead><tr><th></th><th>Button</th><th>Action</th></tr></thead>
-          <tbody id="ctrl-tbody"></tbody>
-        </table>
-        <div class="btn-row" style="margin-top:16px">
-          <button class="primary" onclick="saveCtrlConfig()">Save</button>
-          <button onclick="saveCtrlDefaults()">Save to Defaults</button>
-          <button onclick="resetCtrlConfig()">Reset Defaults</button>
-        </div>
-        <div id="ctrl-msg" class="ctrl-msg"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── Lidar tab ─── -->
-  <div id="tab-lidar" class="tab-content">
-    <div class="lidar-wrap">
-      <div class="lidar-controls">
-        <button id="lidar-toggle" class="primary" onclick="toggleLidar()">Start Scan</button>
-        <span class="lidar-status" id="lidar-status">Stopped</span>
-        <span class="lidar-stats" id="lidar-stats"></span>
-        <label class="cam-slider-label">
-          Range (m)
-          <input type="range" id="lidar-range" min="1" max="20" value="8" step="1">
-          <span id="lidar-range-val">8</span>
-        </label>
-      </div>
-      <div class="lidar-view">
-        <canvas id="lidar-canvas" width="700" height="700"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── Network tab ─── -->
-  <div id="tab-network" class="tab-content">
-    <div class="net-wrap">
-      <div class="net-header">
-        <h2>Network Interfaces</h2>
-        <button onclick="loadNetwork()">Refresh</button>
-      </div>
-      <div id="net-loading" class="ctrl-hint">Loading...</div>
-      <div id="net-interfaces" class="net-interfaces"></div>
-
-      <div id="net-wifi-section" class="net-wifi-section" style="display:none">
-
-        <!-- WiFi Client mode -->
-        <div id="net-wifi-client">
-          <div class="net-header">
-            <h2>WiFi Networks</h2>
-            <button id="wifi-scan-btn" onclick="scanWifi()">Scan</button>
-            <span id="wifi-scan-status" class="ctrl-hint"></span>
-            <button class="net-ap-start-btn" onclick="openApSetup()">Start Access Point</button>
-          </div>
-          <div id="wifi-list" class="wifi-list">
-            <div class="ctrl-hint" style="padding:14px">Click Scan to search for WiFi networks.</div>
-          </div>
-
-          <div class="card net-wifi-connect" id="wifi-connect-panel" style="display:none">
-            <h3>Connect to WiFi</h3>
-            <div class="net-field">
-              <label>SSID</label>
-              <input type="text" id="wifi-ssid" readonly>
+      <div class="dashboard-accordion-body" id="dashboard-components-body" hidden>
+        <div class="dashboard-component-grid dashboard-component-grid-expanded">
+          <div class="dashboard-component-slot" data-component="wheels">
+            <div class="dashboard-component-tile dashboard-component-summary" id="card-wheels"
+                 data-dashboard-component="wheels">
+              <span class="component-icon">◉</span>
+              <span>
+                <strong>Wheels</strong>
+                <small id="dash-wheels-sub">Drive: --</small>
+              </span>
+              <b id="dash-wheels-state">CHECKING</b>
             </div>
-            <div class="net-field" id="wifi-password-field">
-              <label>Password</label>
-              <div class="net-pw-row">
-                <input type="password" id="wifi-password" placeholder="Leave empty for open networks">
-                <button type="button" class="net-pw-toggle" onclick="toggleWifiPw()" title="Show/hide password">Show</button>
+
+            <article class="dashboard-component-detail" id="dashboard-detail-wheels">
+              <div class="dashboard-detail-grid">
+                <div class="kv"><span class="label">Backend</span><span class="value" id="w-backend">--</span></div>
+                <div class="kv"><span class="label">Error</span><span class="value" id="w-error">None</span></div>
+                <div class="kv"><span class="label">Left speed</span><span class="value"><span id="w-left">0</span> m/s</span></div>
+                <div class="bar-container"><div class="bar-fill" id="bar-left" style="width:0%"></div></div>
+                <div class="kv"><span class="label">Right speed</span><span class="value"><span id="w-right">0</span> m/s</span></div>
+                <div class="bar-container"><div class="bar-fill" id="bar-right" style="width:0%"></div></div>
+                <div class="kv"><span class="label">Left current</span><span class="value"><span id="w-current-left">--</span> A</span></div>
+                <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-left" style="width:0%"></div></div>
+                <div class="kv"><span class="label">Right current</span><span class="value"><span id="w-current-right">--</span> A</span></div>
+                <div class="bar-container"><div class="bar-fill bar-current" id="bar-current-right" style="width:0%"></div></div>
               </div>
-            </div>
-            <div class="btn-row">
-              <button class="primary" id="wifi-connect-btn" onclick="connectWifi()">Connect</button>
-              <button onclick="closeWifiPanel()">Cancel</button>
-            </div>
-            <div id="wifi-msg" class="ctrl-msg"></div>
-          </div>
-
-          <!-- AP setup panel (appears when "Start Access Point" clicked) -->
-          <div class="card net-ap-setup" id="ap-setup-panel" style="display:none">
-            <h3>Start Access Point</h3>
-            <p class="ctrl-hint">WiFi will disconnect from any network and become an access point. Other devices can connect to the robot directly.</p>
-            <div class="net-field">
-              <label>AP Name (SSID)</label>
-              <input type="text" id="ap-ssid" value="HorseShitBot" placeholder="HorseShitBot">
-            </div>
-            <div class="net-field">
-              <label>Password (min 8 chars, or leave empty for open)</label>
-              <input type="password" id="ap-password" placeholder="Optional">
-            </div>
-            <div class="net-field">
-              <label>Band</label>
-              <select id="ap-band">
-                <option value="bg">2.4 GHz</option>
-                <option value="a">5 GHz</option>
-              </select>
-            </div>
-            <div class="btn-row">
-              <button class="primary" id="ap-start-btn" onclick="startAp()">Start AP</button>
-              <button onclick="closeApSetup()">Cancel</button>
-            </div>
-            <div id="ap-msg" class="ctrl-msg"></div>
-          </div>
-        </div>
-
-        <!-- AP active mode -->
-        <div id="net-ap-section" style="display:none">
-          <div class="card net-ap-active">
-            <h2>Access Point Active</h2>
-            <div class="net-ap-info">
-              <div class="kv"><span class="label">SSID</span><span class="value" id="ap-current-ssid">--</span></div>
-              <div class="kv"><span class="label">IP Address</span><span class="value" id="ap-current-ip">10.0.0.1</span></div>
-              <p class="ctrl-hint" style="margin-top:10px">
-                The robot is broadcasting a WiFi network. Connect your device to the SSID above, then access the dashboard at the IP shown.
-              </p>
-            </div>
-            <div class="btn-row" style="margin-top:12px">
-              <button class="danger" onclick="stopAp()">Stop Access Point</button>
-            </div>
-            <div id="ap-msg" class="ctrl-msg"></div>
-          </div>
-        </div>
-
-      </div>
-
-      <div id="net-config-modal" class="net-modal" style="display:none">
-        <div class="net-modal-inner card">
-          <h2 id="net-cfg-title">Configure Interface</h2>
-          <div class="net-field">
-            <label>Mode</label>
-            <select id="net-cfg-mode" onchange="onNetModeChange()">
-              <option value="auto">DHCP (Automatic)</option>
-              <option value="manual">Static IP</option>
-            </select>
-          </div>
-          <div id="net-cfg-static-fields" style="display:none">
-            <div class="net-field">
-              <label>IP Address</label>
-              <input type="text" id="net-cfg-ip" placeholder="192.168.1.100">
-            </div>
-            <div class="net-field">
-              <label>Prefix Length</label>
-              <input type="number" id="net-cfg-prefix" value="24" min="1" max="32">
-            </div>
-            <div class="net-field">
-              <label>Gateway</label>
-              <input type="text" id="net-cfg-gateway" placeholder="192.168.1.1 (optional)">
-            </div>
-            <div class="net-field">
-              <label>DNS</label>
-              <input type="text" id="net-cfg-dns" placeholder="8.8.8.8 (optional)">
-            </div>
-            <div class="net-divider"></div>
-            <div class="net-field">
-              <label class="net-cb-label">
-                <input type="checkbox" id="net-cfg-dhcpd" onchange="onDhcpdToggle()">
-                Enable DHCP Server on this interface
-              </label>
-            </div>
-            <div id="net-cfg-dhcpd-fields" style="display:none">
-              <div class="net-field">
-                <label>DHCP Range Start</label>
-                <input type="text" id="net-cfg-dhcpd-start" placeholder="192.168.1.100">
+              <div class="btn-row">
+                <button onclick="cmd('wheel_driver_node','stop')">Stop</button>
+                <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">E-Stop</button>
+                <button onclick="switchBackend()">Switch Backend</button>
               </div>
-              <div class="net-field">
-                <label>DHCP Range End</label>
-                <input type="text" id="net-cfg-dhcpd-end" placeholder="192.168.1.200">
-              </div>
+            </article>
+          </div>
+
+          <div class="dashboard-component-slot" data-component="brush">
+            <div class="dashboard-component-tile dashboard-component-summary"
+                 data-dashboard-component="brush">
+              <span class="component-icon">♨</span>
+              <span>
+                <strong>Brush</strong>
+                <small id="dash-brush-sub">State: --</small>
+              </span>
+              <b id="dash-brush-state">CHECKING</b>
             </div>
+
+            <article class="dashboard-component-detail" id="dashboard-detail-brush">
+              <div class="dashboard-detail-grid">
+                <div class="kv"><span class="label">State</span><span class="value" id="brush-state">IDLE</span></div>
+                <div class="kv"><span class="label">Direction</span><span class="value" id="brush-dir">--</span></div>
+                <div class="kv"><span class="label">Referenced</span><span class="value" id="brush-ref">No</span></div>
+              </div>
+              <div class="btn-row">
+                <button onclick="cmd('brush_node','open')">Open</button>
+                <button onclick="cmd('brush_node','close')">Close</button>
+                <button onclick="cmd('brush_node','stop')">Stop</button>
+                <button onclick="cmd('brush_node','reference')">Reference</button>
+              </div>
+              <div class="jog-row">
+                <input class="jog-input" id="jog-brush" step="0.1" type="number" value="1"/>
+                <span class="jog-unit">turns</span>
+                <button class="primary" onclick="jogMotor(4, 'jog-brush')">Move</button>
+              </div>
+            </article>
           </div>
-          <div class="btn-row" style="margin-top:16px">
-            <button class="primary" onclick="applyNetConfig()">Apply</button>
-            <button onclick="closeNetConfig()">Cancel</button>
+
+          <div class="dashboard-component-slot" data-component="lift">
+            <div class="dashboard-component-tile dashboard-component-summary"
+                 data-dashboard-component="lift">
+              <span class="component-icon">↕</span>
+              <span>
+                <strong>Lift</strong>
+                <small id="dash-lift-sub">State: --</small>
+              </span>
+              <b id="dash-lift-state">CHECKING</b>
+            </div>
+
+            <article class="dashboard-component-detail" id="dashboard-detail-lift">
+              <div class="dashboard-detail-grid">
+                <div class="kv"><span class="label">State</span><span class="value" id="lift-state">IDLE</span></div>
+                <div class="kv"><span class="label">Direction</span><span class="value" id="lift-dir">--</span></div>
+                <div class="kv"><span class="label">Referenced</span><span class="value" id="lift-ref">No</span></div>
+              </div>
+              <div class="btn-row">
+                <button onclick="cmd('lift_node','open')">Open</button>
+                <button onclick="cmd('lift_node','close')">Close</button>
+                <button onclick="cmd('lift_node','stop')">Stop</button>
+                <button onclick="cmd('lift_node','reference')">Reference</button>
+              </div>
+            </article>
           </div>
-          <div id="net-cfg-msg" class="ctrl-msg"></div>
+
+          <div class="dashboard-component-slot" data-component="bin-door">
+            <div class="dashboard-component-tile dashboard-component-summary"
+                 data-dashboard-component="bin-door">
+              <span class="component-icon">▯</span>
+              <span>
+                <strong>Bin Door</strong>
+                <small id="dash-bin-sub">State: --</small>
+              </span>
+              <b id="dash-bin-state">CHECKING</b>
+            </div>
+
+            <article class="dashboard-component-detail" id="dashboard-detail-bin-door">
+              <div class="dashboard-detail-grid">
+                <div class="kv"><span class="label">State</span><span class="value" id="bin_door-state">IDLE</span></div>
+                <div class="kv"><span class="label">Direction</span><span class="value" id="bin_door-dir">--</span></div>
+                <div class="kv"><span class="label">Referenced</span><span class="value" id="bin_door-ref">No</span></div>
+              </div>
+              <div class="btn-row">
+                <button onclick="cmd('bin_door_node','open')">Open</button>
+                <button onclick="cmd('bin_door_node','close')">Close</button>
+                <button onclick="cmd('bin_door_node','stop')">Stop</button>
+                <button onclick="cmd('bin_door_node','reference')">Reference</button>
+              </div>
+              <div class="jog-row">
+                <input class="jog-input" id="jog-door" step="0.1" type="number" value="1"/>
+                <span class="jog-unit">turns</span>
+                <input class="jog-input" id="jog-door-speed" max="1500" min="1" step="10" type="number" value="300"/>
+                <span class="jog-unit">RPM</span>
+                <input class="jog-input" id="jog-door-acc" max="255" min="0" step="1" type="number" value="3"/>
+                <span class="jog-unit">acc</span>
+                <button class="primary" onclick="jogMotor(6, 'jog-door', 'jog-door-speed', 'jog-door-acc')">Move</button>
+              </div>
+            </article>
+          </div>
         </div>
       </div>
+    </section>
+
+    <section class="dashboard-accordion" id="dashboard-hardware-section">
+      <button class="dashboard-accordion-heading" type="button"
+              onclick="toggleDashboardSection('dashboard-hardware-body', this)"
+              aria-expanded="false">
+        <span class="dashboard-heading-icon">▦</span>
+        <span>
+          <strong>Hardware diagnostics</strong>
+          <small>Expand to view all hardware and system diagnostics</small>
+        </span>
+        <em>⌃</em>
+      </button>
+
+      <div class="dashboard-accordion-body" id="dashboard-hardware-body" hidden>
+        <div class="dashboard-diagnostic-groups" id="dashboard-diagnostic-workspace">
+
+          <section class="dashboard-diagnostic-group dashboard-diagnostic-group-motors">
+            <div class="diagnostic-category-tile diagnostic-category-summary"
+                 id="diagnostic-tile-motors">
+              <span class="diagnostic-category-icon">M</span>
+              <span>
+                <strong>Motor diagnostics</strong>
+                <small id="dash-motor-diagnostics-summary">No scan data</small>
+              </span>
+            </div>
+
+            <section class="dashboard-diagnostic-panel dashboard-diagnostic-motors-panel"
+                     id="dashboard-diagnostic-motors" hidden>
+              <header>
+                <div>
+                  <h3>Motor diagnostics</h3>
+                  <p>Per-motor online state and current configuration</p>
+                </div>
+              </header>
+
+              <div class="diagnostic-summary-grid">
+                <div><span>Motor bus</span><strong id="hw-mks-bus">--</strong></div>
+                <div><span>Online motors</span><strong id="diag-motors-online">--</strong></div>
+                <div><span>Offline motors</span><strong id="diag-motors-offline">--</strong></div>
+              </div>
+
+              <div id="hw-motors" class="dashboard-motor-list"></div>
+
+              <div class="btn-row" id="hw-save-defaults-row">
+                <button onclick="scanMotors()">Scan motor bus</button>
+                <button onclick="saveMotorDefaults()">Save currents as default</button>
+                <span class="ctrl-msg" id="hw-save-msg"></span>
+              </div>
+            </section>
+          </section>
+
+          <div class="dashboard-diagnostic-secondary-grid">
+
+            <section class="dashboard-diagnostic-group">
+              <div class="diagnostic-category-tile diagnostic-category-summary"
+                   id="diagnostic-tile-drive">
+                <span class="diagnostic-category-icon">D</span>
+                <span>
+                  <strong>Drive backend</strong>
+                  <small id="dash-drive-diagnostics-summary">Checking backend</small>
+                </span>
+              </div>
+
+              <section class="dashboard-diagnostic-panel"
+                       id="dashboard-diagnostic-drive" hidden>
+                <header>
+                  <div>
+                    <h3>Drive backend diagnostics</h3>
+                    <p>Active wheel backend, power bus and current wheel-driver errors</p>
+                  </div>
+                </header>
+
+                <div class="diagnostic-summary-grid">
+                  <div><span>Backend</span><strong id="diag-drive-backend">--</strong></div>
+                  <div><span>ODrive</span><strong id="hw-odrive">--</strong></div>
+                  <div><span>Bus voltage</span><strong id="diag-drive-vbus">--</strong></div>
+                  <div><span>Driver error</span><strong id="diag-drive-error">--</strong></div>
+                </div>
+
+                <div class="btn-row">
+                  <button onclick="switchBackend()">Switch backend</button>
+                  <button onclick="cmd('wheel_driver_node','stop')">Stop wheels</button>
+                  <button class="danger" onclick="cmd('wheel_driver_node','stop_fast')">Emergency stop</button>
+                </div>
+              </section>
+            </section>
+
+            <section class="dashboard-diagnostic-group">
+              <div class="diagnostic-category-tile diagnostic-category-summary"
+                   id="diagnostic-tile-thermal">
+                <span class="diagnostic-category-icon">T</span>
+                <span>
+                  <strong>Thermal zones</strong>
+                  <small id="dash-thermal-diagnostics-summary">Waiting for telemetry</small>
+                </span>
+              </div>
+
+              <section class="dashboard-diagnostic-panel"
+                       id="dashboard-diagnostic-thermal" hidden>
+                <header>
+                  <div>
+                    <h3>Thermal-zone diagnostics</h3>
+                    <p>All Jetson thermal zones and their current temperatures</p>
+                  </div>
+                </header>
+
+                <div class="diagnostic-summary-grid">
+                  <div><span>Zones reported</span><strong id="diag-thermal-count">--</strong></div>
+                  <div><span>Maximum</span><strong id="diag-thermal-max">--</strong></div>
+                  <div><span>Warning threshold</span><strong>65°C</strong></div>
+                  <div><span>Critical threshold</span><strong>85°C</strong></div>
+                </div>
+
+                <div class="thermal-zones" id="thermal-zones">
+                  <span class="thermal-placeholder">Waiting for data...</span>
+                </div>
+              </section>
+            </section>
+
+            <section class="dashboard-diagnostic-group">
+              <div class="diagnostic-category-tile diagnostic-category-summary"
+                   id="diagnostic-tile-power">
+                <span class="diagnostic-category-icon">P</span>
+                <span>
+                  <strong>Power telemetry</strong>
+                  <small id="dash-power-diagnostics-summary">No power telemetry</small>
+                </span>
+              </div>
+
+              <section class="dashboard-diagnostic-panel"
+                       id="dashboard-diagnostic-power" hidden>
+                <header>
+                  <div>
+                    <h3>Power telemetry</h3>
+                    <p>Battery and drive-power values supplied by the robot backend</p>
+                  </div>
+                </header>
+
+                <div class="diagnostic-summary-grid">
+                  <div><span>Battery</span><strong id="diag-power-battery">Not reported</strong></div>
+                  <div><span>ODrive bus</span><strong id="diag-power-vbus">Not reported</strong></div>
+                  <div><span>Left current</span><strong id="diag-power-left-current">Not reported</strong></div>
+                  <div><span>Right current</span><strong id="diag-power-right-current">Not reported</strong></div>
+                </div>
+
+                <p class="diagnostic-unavailable-note" id="diag-power-note">
+                  No dedicated battery telemetry is currently present in the WebSocket payload.
+                </p>
+              </section>
+            </section>
+
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="dashboard-bottom-grid">
+      <article class="dashboard-card dashboard-alerts-card" id="dashboard-alerts-card">
+        <header class="dashboard-card-heading compact-dashboard-heading">
+          <span class="dashboard-heading-icon warning-icon">!</span>
+          <div>
+            <h2>Alerts &amp; issue diagnostics</h2>
+            <p>Warnings include evidence, impact and a direct next action</p>
+          </div>
+          <button type="button" class="dashboard-secondary-button"
+                  id="dashboard-view-diagnostics" onclick="openDashboardDiagnostics()">
+            View issue details
+          </button>
+        </header>
+
+        <div class="dashboard-alert-list" id="dashboard-alert-list">
+          <div class="dashboard-no-alerts">
+            <span>✓</span>
+            <div><strong>No active alerts</strong><small>All reported systems are operating normally</small></div>
+          </div>
+        </div>
+
+        <section class="dashboard-issue-diagnostics" id="dashboard-issue-diagnostics" hidden>
+          <header>
+            <div>
+              <span class="issue-severity-label" id="issue-severity-label">DIAGNOSTIC</span>
+              <h3 id="issue-diagnostic-title">Issue details</h3>
+              <p id="issue-diagnostic-summary"></p>
+            </div>
+            <button type="button" onclick="closeDashboardDiagnostics()" aria-label="Close issue diagnostics">×</button>
+          </header>
+          <div class="issue-diagnostic-layout">
+            <div class="issue-diagnostic-evidence" id="issue-diagnostic-evidence"></div>
+            <div class="issue-diagnostic-guidance">
+              <div>
+                <span>Operational impact</span>
+                <p id="issue-diagnostic-impact">--</p>
+              </div>
+              <div>
+                <span>Recommended action</span>
+                <p id="issue-diagnostic-action-text">--</p>
+              </div>
+              <div class="issue-action-buttons" id="issue-action-buttons"></div>
+            </div>
+          </div>
+        </section>
+      </article>
+
+      <article class="dashboard-card dashboard-quick-stats" id="dashboard-quick-stats">
+        <header class="dashboard-card-heading compact-dashboard-heading">
+          <span class="dashboard-heading-icon">◴</span>
+          <div><h2>Quick Statistics</h2><p>Current robot and session overview</p></div>
+        </header>
+        <div class="quick-stats-grid">
+          <div><span>◷</span><small>Uptime</small><strong id="dash-uptime">--</strong></div>
+          <div><span>▷</span><small>Runtime Today</small><strong id="dash-runtime">0m</strong></div>
+          <div><span>⌁</span><small>Distance Today</small><strong id="dash-distance">0 m</strong></div>
+          <div><span>▣</span><small>Bags Recorded</small><strong id="dash-bags-recorded">--</strong></div>
+          <div><span>▤</span><small>Storage Remaining</small><strong id="dash-storage-remaining">--</strong></div>
+        </div>
+      </article>
+    </div>
+
+    <footer class="dashboard-footer">
+      <span>HorseShitBot Control Panel</span><i>•</i><span>ROS 2 Humble</span><i>•</i><span>v1.02</span>
+    </footer>
+  </div>
+</section>
+
+<!-- Recordings -->
+<section class="tab-content" id="tab-recordings">
+<div class="recordings-page">
+<div class="recordings-grid">
+<!-- Top left: Camera preview -->
+<article class="recording-panel preview-panel camera-preview-panel">
+<div class="panel-header">
+<div class="panel-title">
+<span aria-hidden="true" class="panel-icon">
+<svg viewbox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+</span>
+<h3>Camera Preview</h3>
+</div>
+<div class="panel-actions">
+<span class="cam-state" id="cam-state">Stopped</span>
+<button class="compact preview-toggle" id="cam-toggle" onclick="toggleCamera()" type="button">
+<span class="button-play">▶</span> Start Preview
+</button>
+</div>
+</div>
+<div class="camera-grid">
+<div class="camera-feed-card">
+<span class="feed-label">Color</span>
+<div class="preview-frame">
+<img alt="Color camera stream" id="cam-color"/>
+<div class="preview-empty" id="cam-color-empty">
+<svg viewbox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+<strong>No preview</strong>
+<span>Start preview to see feed</span>
+</div>
+</div>
+</div>
+<div class="camera-feed-card">
+<span class="feed-label">Depth</span>
+<div class="preview-frame">
+<img alt="Depth camera stream" id="cam-depth"/>
+<div class="preview-empty" id="cam-depth-empty">
+<svg viewbox="0 0 24 24"><path d="M3 19h18L15 9l-3 4-2-3z"></path><path d="M15 5l2-3 2 3"></path></svg>
+<strong>No preview</strong>
+<span>Start preview to see feed</span>
+</div>
+</div>
+</div>
+</div>
+<div class="camera-controls">
+<label class="slider-control">
+<span>FPS</span>
+<input id="cam-fps" max="15" min="1" type="range" value="10"/>
+<output id="cam-fps-val">10</output>
+</label>
+<span class="control-divider"></span>
+<label class="slider-control">
+<span>Quality</span>
+<input id="cam-quality" max="95" min="10" type="range" value="50"/>
+<output id="cam-quality-val">50</output>
+</label>
+</div>
+</article>
+
+<!-- Top right: LiDAR preview -->
+<article class="recording-panel preview-panel lidar-preview-panel">
+<div class="panel-header">
+<div class="panel-title">
+<span aria-hidden="true" class="panel-icon">
+<svg viewbox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><circle cx="12" cy="12" r="7"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+</span>
+<h3>LiDAR Preview</h3>
+</div>
+<div class="panel-actions">
+<span class="lidar-status" id="lidar-status">Stopped</span>
+<span class="lidar-stats" id="lidar-stats"></span>
+<button class="compact preview-toggle" id="lidar-toggle" onclick="toggleLidar()" type="button">
+<span class="button-play">▶</span> Start Preview
+</button>
+</div>
+</div>
+<div class="lidar-preview-layout">
+<div class="lidar-view">
+<canvas height="700" id="lidar-canvas" width="700"></canvas>
+</div>
+<label class="lidar-range-control">
+<span>LiDAR Range (m)</span>
+<div class="vertical-range-wrap">
+<span>20</span>
+<input id="lidar-range" max="20" min="1" orient="vertical" step="1" type="range" value="10"/>
+<span>1</span>
+</div>
+<div class="lidar-range-output"><output id="lidar-range-val">10</output><span>m</span></div>
+</label>
+</div>
+</article>
+
+<!-- Bottom left: Perception recording -->
+<article class="recording-panel recorder-panel perception-recorder-panel" id="topic-picker-perception">
+<div class="panel-header recorder-heading">
+<div class="panel-title">
+<span aria-hidden="true" class="panel-icon">
+<svg viewbox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+</span>
+<h3>Perception Recording</h3>
+</div>
+</div>
+<div class="topic-checklist" data-topic-profile="perception">
+<button aria-controls="topic-checklist-panel-perception" aria-expanded="false" class="topic-checklist-trigger" type="button">
+<span class="topic-trigger-icon" aria-hidden="true">☷</span>
+<span>Topic checklist</span>
+<span class="topic-picker-hint" id="topic-picker-hint-perception"></span>
+<span class="topic-trigger-chevron" aria-hidden="true">⌄</span>
+</button>
+<div class="topic-checklist-body" hidden="" id="topic-checklist-panel-perception">
+<div id="topic-groups-perception"></div>
+<div class="topic-actions-row">
+<button onclick="saveBagTopics('perception')" type="button">Apply selected topics</button>
+<div class="ctrl-msg" id="topic-msg-perception"></div>
+</div>
+</div>
+</div>
+<div class="recorder-status-row">
+<span class="rec-dot-lg" id="rec-dot-lg-perception"></span>
+<strong class="rec-bar-label" id="rec-bar-label-perception">Idle</strong>
+<span class="rec-bar-detail" id="rec-bar-time-perception">--</span>
+<span class="rec-bar-detail rec-bar-frames" id="rec-bar-frames-perception">-- frames</span>
+</div>
+<div class="recorder-footer">
+<div class="topic-counts-block">
+<span class="topic-counts-title">Topic counts</span>
+<div class="topic-counts-list">
+<span>Total <strong id="topic-count-total-perception">--</strong></span>
+<span>Enabled <strong id="topic-count-enabled-perception">--</strong></span>
+<span>Disabled <strong id="topic-count-disabled-perception">--</strong></span>
+</div>
+</div>
+<div class="recorder-button-wrap">
+<button class="recording-action recording-toggle off" id="rec-bar-toggle-perception" onclick="toggleRecording('perception', event)" type="button">
+<span class="recording-action-icon" id="rec-bar-toggle-icon-perception">◎</span>
+<span id="rec-bar-toggle-text-perception">Start Recording</span>
+</button>
+</div>
+</div>
+</article>
+
+<!-- Bottom right: Mapping recording -->
+<article class="recording-panel recorder-panel mapping-recorder-panel" id="topic-picker-mapping">
+<div class="panel-header recorder-heading">
+<div class="panel-title">
+<span aria-hidden="true" class="panel-icon">
+<svg viewbox="0 0 24 24"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"></path><path d="M9 3v15M15 6v15"></path></svg>
+</span>
+<h3>Mapping Recording</h3>
+</div>
+</div>
+<div class="topic-checklist" data-topic-profile="mapping">
+<button aria-controls="topic-checklist-panel-mapping" aria-expanded="false" class="topic-checklist-trigger" type="button">
+<span class="topic-trigger-icon" aria-hidden="true">☷</span>
+<span>Topic checklist</span>
+<span class="topic-picker-hint" id="topic-picker-hint-mapping"></span>
+<span class="topic-trigger-chevron" aria-hidden="true">⌄</span>
+</button>
+<div class="topic-checklist-body" hidden="" id="topic-checklist-panel-mapping">
+<div id="topic-groups-mapping"></div>
+<div class="topic-actions-row">
+<button onclick="saveBagTopics('mapping')" type="button">Apply selected topics</button>
+<div class="ctrl-msg" id="topic-msg-mapping"></div>
+</div>
+</div>
+</div>
+<div class="recorder-status-row">
+<span class="rec-dot-lg" id="rec-dot-lg-mapping"></span>
+<strong class="rec-bar-label" id="rec-bar-label-mapping">Idle</strong>
+<span class="rec-bar-detail" id="rec-bar-time-mapping">--</span>
+<span class="rec-bar-detail rec-bar-frames" id="rec-bar-frames-mapping">-- frames</span>
+</div>
+<div class="recorder-footer">
+<div class="topic-counts-block">
+<span class="topic-counts-title">Topic counts</span>
+<div class="topic-counts-list">
+<span>Total <strong id="topic-count-total-mapping">--</strong></span>
+<span>Enabled <strong id="topic-count-enabled-mapping">--</strong></span>
+<span>Disabled <strong id="topic-count-disabled-mapping">--</strong></span>
+</div>
+</div>
+<div class="recorder-button-wrap">
+<button class="recording-action recording-toggle off" id="rec-bar-toggle-mapping" onclick="toggleRecording('mapping', event)" type="button">
+<span class="recording-action-icon" id="rec-bar-toggle-icon-mapping">◎</span>
+<span id="rec-bar-toggle-text-mapping">Start Recording</span>
+</button>
+</div>
+</div>
+</article>
+</div>
+</div>
+</section>
+<!-- Recorded Bags -->
+<section class="tab-content" id="tab-recorded-bags">
+<div class="bags-wrap">
+<div class="bags-header">
+<div>
+<h2>Recorded Bags</h2>
+<p>Saved perception and mapping recordings, grouped by recording date.</p>
+</div>
+<span class="bags-summary" id="bags-summary"></span>
+<button class="primary" id="bags-refresh" onclick="loadBags()" type="button">Refresh</button>
+</div>
+<div class="bags-toolbar card">
+<label class="bags-filter-field">
+<span>Recording date</span>
+<input id="bags-date-filter" onchange="renderBags()" type="date"/>
+</label>
+<label class="bags-filter-field">
+<span>Sort</span>
+<select id="bags-sort" onchange="renderBags()">
+<option value="desc">Newest first</option>
+<option value="asc">Oldest first</option>
+</select>
+</label>
+<button id="bags-clear-date" onclick="clearBagDateFilter()" type="button">Clear date</button>
+<span class="bags-last-updated" id="bags-last-updated">Not loaded yet</span>
+</div>
+<div class="disk-bar-wrap card" id="disk-bar-wrap" style="display:none">
+<div class="disk-labels"><span id="disk-label-used"></span><span id="disk-label-free"></span></div>
+<div class="disk-bar"><div class="disk-bar-bags" id="disk-bar-bags"></div><div class="disk-bar-other" id="disk-bar-other"></div></div>
+</div>
+<div class="ctrl-hint" id="bags-loading">Select Refresh to load recordings.</div>
+<div class="bag-profile-grid" id="bags-profile-grid" style="display:none">
+<section class="bag-profile-card">
+<header class="bag-profile-header">
+<div><span class="bag-profile-dot perception"></span><h3>Perception</h3></div>
+<span id="bags-count-perception">0 recordings</span>
+</header>
+<div class="bag-date-list" id="bags-perception"></div>
+</section>
+<section class="bag-profile-card">
+<header class="bag-profile-header">
+<div><span class="bag-profile-dot mapping"></span><h3>Mapping</h3></div>
+<span id="bags-count-mapping">0 recordings</span>
+</header>
+<div class="bag-date-list" id="bags-mapping"></div>
+</section>
+<section class="bag-profile-card" id="bags-other-card" style="display:none">
+<header class="bag-profile-header">
+<div><span class="bag-profile-dot other"></span><h3>Other</h3></div>
+<span id="bags-count-other">0 recordings</span>
+</header>
+<div class="bag-date-list" id="bags-other"></div>
+</section>
+</div>
+<div class="empty-state" id="bags-empty" style="display:none">No recordings match the selected date.</div>
+</div>
+</section>
+<!-- Controller -->
+<section class="tab-content" id="tab-controller">
+<div class="controller-shell">
+  <div class="controller-status-card card">
+    <div class="controller-status-main">
+      <span class="controller-status-icon connected" id="controller-status-icon" aria-hidden="true">✓</span>
+      <div class="controller-status-copy">
+        <span class="controller-card-eyebrow">Gamepad connection</span>
+        <strong id="controller-gamepad-name">Searching for a paired gamepad…</strong>
+      </div>
+    </div>
+
+    <div class="controller-status-meta">
+      <div class="controller-status-item">
+        <span>Battery</span>
+        <strong id="controller-gamepad-battery">--</strong>
+      </div>
+      <div class="controller-status-item">
+        <span>Bluetooth</span>
+        <strong id="controller-gamepad-mac">--</strong>
+      </div>
+    </div>
+
+    <div class="controller-status-actions">
+      <button class="primary" id="gp-reconnect-btn" type="button" onclick="controllerGamepadButtonAction()">
+        Connect gamepad
+      </button>
+      <span class="ctrl-msg" id="gp-reconnect-msg"></span>
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <div class="controller-main-grid">
+    <div class="controller-left-column">
+      <div class="controller-layout-card card">
+        <div class="controller-card-header">
+          <div>
+            <h2>Gamepad Layout</h2>
+            <p>Xbox-style controller</p>
+          </div>
+        </div>
+
+        <div class="controller-layout-hero">
+          <img alt="Gamepad layout" src="/static/controller.png"/>
+        </div>
+
+        <div class="controller-layout-legend">
+          <span class="controller-legend-chip"><b>L3</b><span>Left Stick Press</span></span>
+          <span class="controller-legend-chip"><b>R3</b><span>Right Stick Press</span></span>
+          <span class="controller-legend-chip"><b>LT</b><span>Left Trigger</span></span>
+          <span class="controller-legend-chip"><b>RT</b><span>Right Trigger</span></span>
+        </div>
+      </div>
+
+      <div class="controller-tips-card card">
+        <div class="controller-card-header">
+          <div>
+            <h2>Tips</h2>
+          </div>
+        </div>
+        <ul class="controller-tips-list">
+          <li>Live input highlights the button or axis you press.</li>
+          <li>Hold actions are active only while the button is held.</li>
+          <li>E-STOP is always active and overrides other commands.</li>
+          <li>Changes take effect immediately after saving.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="controller-assign-card card">
+      <div class="controller-card-header controller-assign-header">
+        <div>
+          <h2>Button Assignments</h2>
+          <p>Press a control to highlight it. Choose an action, then save.</p>
+        </div>
+        <span class="controller-live-pill">LIVE INPUT</span>
+      </div>
+
+      <div class="ctrl-hint" id="ctrl-loading">Loading config...</div>
+      <div class="controller-assignment-board" id="ctrl-table" style="display:none">
+        <div class="controller-assignment-columns" id="ctrl-columns"></div>
+      </div>
+
+      <div class="controller-actions-row">
+        <div class="controller-actions-left">
+          <button type="button" onclick="resetCtrlConfig()">Reset to defaults</button>
+          <button type="button" onclick="saveCtrlDefaults()">Save as defaults</button>
+        </div>
+        <button class="primary" type="button" onclick="saveCtrlConfig()">Save assignments</button>
+      </div>
+
+      <div class="ctrl-msg" id="ctrl-msg"></div>
+    </div>
+  </div>
+</div>
+</section>
+<!-- Network -->
+<section class="tab-content" id="tab-network">
+<div class="net-wrap">
+<div class="net-header">
+<div><h2>Network Interfaces</h2><p>Manage robot connectivity, Wi-Fi, and access-point settings.</p></div>
+<button class="primary" onclick="loadNetwork()">Refresh</button>
+</div>
+<div class="ctrl-hint" id="net-loading">Loading...</div>
+<div class="net-interfaces" id="net-interfaces"></div>
+<div class="net-wifi-section" id="net-wifi-section" style="display:none">
+<div id="net-wifi-client">
+<div class="net-header compact-header">
+<div><h2>Wi-Fi Networks</h2><p>Scan and connect the robot to a nearby network.</p></div>
+<button id="wifi-scan-btn" onclick="scanWifi()">Scan</button>
+<span class="ctrl-hint" id="wifi-scan-status"></span>
+<button class="net-ap-start-btn" onclick="openApSetup()">Start Access Point</button>
+</div>
+<div class="wifi-list" id="wifi-list"><div class="ctrl-hint padded-hint">Click Scan to search for Wi-Fi networks.</div></div>
+<div class="card net-wifi-connect" id="wifi-connect-panel" style="display:none">
+<h3>Connect to Wi-Fi</h3>
+<div class="net-field"><label>SSID</label><input id="wifi-ssid" readonly="" type="text"/></div>
+<div class="net-field" id="wifi-password-field">
+<label>Password</label>
+<div class="net-pw-row"><input id="wifi-password" placeholder="Leave empty for open networks" type="password"/><button class="net-pw-toggle" onclick="toggleWifiPw()" type="button">Show</button></div>
+</div>
+<div class="btn-row"><button class="primary" id="wifi-connect-btn" onclick="connectWifi()">Connect</button><button onclick="closeWifiPanel()">Cancel</button></div>
+<div class="ctrl-msg" id="wifi-msg"></div>
+</div>
+<div class="card net-ap-setup" id="ap-setup-panel" style="display:none">
+<h3>Start Access Point</h3>
+<p class="ctrl-hint">Wi-Fi will disconnect from any network and become an access point. Other devices can then connect directly to the robot.</p>
+<div class="net-field"><label>AP Name (SSID)</label><input id="ap-ssid" placeholder="HorseShitBot" type="text" value="HorseShitBot"/></div>
+<div class="net-field"><label>Password (minimum 8 characters, or leave empty)</label><input id="ap-password" placeholder="Optional" type="password"/></div>
+<div class="net-field"><label>Band</label><select id="ap-band"><option value="bg">2.4 GHz</option><option value="a">5 GHz</option></select></div>
+<div class="btn-row"><button class="primary" id="ap-start-btn" onclick="startAp()">Start AP</button><button onclick="closeApSetup()">Cancel</button></div>
+</div>
+</div>
+<div id="net-ap-section" style="display:none">
+<div class="card net-ap-active">
+<h2>Access Point Active</h2>
+<div class="net-ap-info">
+<div class="kv"><span class="label">SSID</span><span class="value" id="ap-current-ssid">--</span></div>
+<div class="kv"><span class="label">IP Address</span><span class="value" id="ap-current-ip">10.0.0.1</span></div>
+<p class="ctrl-hint">The robot is broadcasting a Wi-Fi network. Connect your device to the SSID above, then open the dashboard at the displayed IP address.</p>
+</div>
+<div class="btn-row"><button class="danger" onclick="stopAp()">Stop Access Point</button></div>
+</div>
+</div>
+<div class="ctrl-msg" id="ap-msg"></div>
+</div>
+<div class="net-modal" id="net-config-modal" style="display:none">
+<div class="net-modal-inner card">
+<h2 id="net-cfg-title">Configure Interface</h2>
+<div class="net-field"><label>Mode</label><select id="net-cfg-mode" onchange="onNetModeChange()"><option value="auto">DHCP (Automatic)</option><option value="manual">Static IP</option></select></div>
+<div id="net-cfg-static-fields" style="display:none">
+<div class="net-field"><label>IP Address</label><input id="net-cfg-ip" placeholder="192.168.1.100" type="text"/></div>
+<div class="net-field"><label>Prefix Length</label><input id="net-cfg-prefix" max="32" min="1" type="number" value="24"/></div>
+<div class="net-field"><label>Gateway</label><input id="net-cfg-gateway" placeholder="192.168.1.1 (optional)" type="text"/></div>
+<div class="net-field"><label>DNS</label><input id="net-cfg-dns" placeholder="8.8.8.8 (optional)" type="text"/></div>
+<div class="net-divider"></div>
+<div class="net-field"><label class="net-cb-label"><input id="net-cfg-dhcpd" onchange="onDhcpdToggle()" type="checkbox"/>Enable DHCP Server on this interface</label></div>
+<div id="net-cfg-dhcpd-fields" style="display:none">
+<div class="net-field"><label>DHCP Range Start</label><input id="net-cfg-dhcpd-start" placeholder="192.168.1.100" type="text"/></div>
+<div class="net-field"><label>DHCP Range End</label><input id="net-cfg-dhcpd-end" placeholder="192.168.1.200" type="text"/></div>
+</div>
+</div>
+<div class="btn-row"><button class="primary" onclick="applyNetConfig()">Apply</button><button onclick="closeNetConfig()">Cancel</button></div>
+<div class="ctrl-msg" id="net-cfg-msg"></div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+<script src="/static/app.js"></script>
 </body>
 </html>

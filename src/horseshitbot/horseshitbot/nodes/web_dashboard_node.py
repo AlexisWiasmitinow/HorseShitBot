@@ -7,6 +7,7 @@ and robot control from a browser.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from typing import Optional
 import json
 import os
@@ -28,7 +29,7 @@ from rclpy.qos import (
     QoSHistoryPolicy,
     QoSDurabilityPolicy,
 )
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32
 
 from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
 from horseshitbot_interfaces.srv import MksSetSpeed, MksMoveTurns, MksSetCurrent, ActuatorCommand, SwitchBackend
@@ -39,6 +40,12 @@ try:
     _HAS_SENSOR_MSGS = True
 except ImportError:
     _HAS_SENSOR_MSGS = False
+
+try:
+    from sensor_msgs.msg import BatteryState as RosBatteryState
+    _HAS_BATTERY_MSG = True
+except ImportError:
+    _HAS_BATTERY_MSG = False
 
 try:
     import cv2
@@ -78,6 +85,161 @@ def _read_thermal_zones() -> list[dict]:
             continue
         zones.append({"zone": zdir.name, "type": zone_type, "temp_c": round(temp_c, 1)})
     return zones
+
+
+def _read_cpu_times() -> tuple[int, int] | None:
+    """Return (total_ticks, idle_ticks) from /proc/stat."""
+    try:
+        first_line = Path("/proc/stat").read_text().splitlines()[0]
+        fields = [int(value) for value in first_line.split()[1:]]
+        if len(fields) < 4:
+            return None
+        idle = fields[3] + (fields[4] if len(fields) > 4 else 0)
+        return sum(fields), idle
+    except Exception:
+        return None
+
+
+def _read_memory_gb() -> tuple[float | None, float | None]:
+    """Return used and total RAM in GiB from /proc/meminfo."""
+    values: dict[str, int] = {}
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            key, raw = line.split(":", 1)
+            values[key] = int(raw.strip().split()[0])
+    except Exception:
+        return None, None
+
+    total_kb = values.get("MemTotal")
+    available_kb = values.get("MemAvailable")
+    if total_kb is None:
+        return None, None
+    if available_kb is None:
+        available_kb = (
+            values.get("MemFree", 0)
+            + values.get("Buffers", 0)
+            + values.get("Cached", 0)
+        )
+
+    used_kb = max(0, total_kb - available_kb)
+    divisor = 1024.0 * 1024.0
+    return used_kb / divisor, total_kb / divisor
+
+
+def _read_gpu_percent() -> float | None:
+    """Read Jetson GPU utilisation from known sysfs locations.
+
+    Jetson commonly exposes a value in the range 0..1000, where 1000 is 100%.
+    Some kernels expose 0..100 instead.
+    """
+    candidates = [
+        Path("/sys/devices/gpu.0/load"),
+        Path("/sys/devices/platform/17000000.gpu/load"),
+        Path("/sys/class/devfreq/17000000.gpu/load"),
+    ]
+
+    for base in (Path("/sys/devices/platform"), Path("/sys/class/devfreq")):
+        if not base.is_dir():
+            continue
+        try:
+            candidates.extend(base.glob("*gpu*/load"))
+            candidates.extend(base.glob("*gpu*/device/load"))
+        except Exception:
+            pass
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            raw = float(candidate.read_text().strip())
+        except Exception:
+            continue
+
+        if raw < 0:
+            continue
+        percent = raw / 10.0 if raw > 100.0 else raw
+        return round(max(0.0, min(100.0, percent)), 1)
+
+    return None
+
+
+def _read_uptime_seconds() -> float | None:
+    try:
+        return float(Path("/proc/uptime").read_text().split()[0])
+    except Exception:
+        return None
+
+
+class _SystemMetricsSampler:
+    """Stateful CPU sampler plus stateless memory/storage/GPU readers."""
+
+    def __init__(self):
+        self._previous_cpu = _read_cpu_times()
+
+    def sample(self) -> dict:
+        current_cpu = _read_cpu_times()
+        cpu_percent = None
+
+        if self._previous_cpu is not None and current_cpu is not None:
+            total_delta = current_cpu[0] - self._previous_cpu[0]
+            idle_delta = current_cpu[1] - self._previous_cpu[1]
+            if total_delta > 0:
+                cpu_percent = 100.0 * (1.0 - idle_delta / total_delta)
+                cpu_percent = round(max(0.0, min(100.0, cpu_percent)), 1)
+
+        if current_cpu is not None:
+            self._previous_cpu = current_cpu
+
+        memory_used_gb, memory_total_gb = _read_memory_gb()
+
+        try:
+            disk = shutil.disk_usage("/")
+            storage_used_gb = disk.used / (1024.0 ** 3)
+            storage_total_gb = disk.total / (1024.0 ** 3)
+            storage_free_gb = disk.free / (1024.0 ** 3)
+        except Exception:
+            storage_used_gb = None
+            storage_total_gb = None
+            storage_free_gb = None
+
+        gpu_percent = _read_gpu_percent()
+
+        return {
+            "sampled_at": time.time(),
+            "cpu_percent": cpu_percent,
+            "gpu_percent": gpu_percent,
+            "gpu_available": gpu_percent is not None,
+            "memory_used_gb": (
+                round(memory_used_gb, 2)
+                if memory_used_gb is not None
+                else None
+            ),
+            "memory_total_gb": (
+                round(memory_total_gb, 2)
+                if memory_total_gb is not None
+                else None
+            ),
+            "storage_used_gb": (
+                round(storage_used_gb, 2)
+                if storage_used_gb is not None
+                else None
+            ),
+            "storage_total_gb": (
+                round(storage_total_gb, 2)
+                if storage_total_gb is not None
+                else None
+            ),
+            "storage_free_gb": (
+                round(storage_free_gb, 2)
+                if storage_free_gb is not None
+                else None
+            ),
+            "uptime_sec": _read_uptime_seconds(),
+        }
+
 
 
 
@@ -231,6 +393,8 @@ class _RosBridge:
             "gamepad": {},
             "network": [],
             "thermals": [],
+            "system_metrics": {},
+            "battery": {},
             "lidar": {},
             "lidar_points": [],
         }
@@ -242,6 +406,7 @@ class _RosBridge:
 
         self._start_network_poller()
         self._start_thermal_poller()
+        self._start_system_metrics_poller()
 
         ros_node.create_subscription(String, "/wheel_status", self._cb_wheel, 10)
         ros_node.create_subscription(String, "/mks_bus/status", self._cb_mks_bus, 10)
@@ -253,6 +418,19 @@ class _RosBridge:
         ros_node.create_subscription(String, "/mapping_recorder/status",
                                      lambda m: self._cb_bag_recorder("mapping_recorder", m), 10)
         ros_node.create_subscription(String, "/gamepad/status", self._cb_gamepad, 10)
+
+        # Optional robot-power inputs. These subscriptions are harmless when
+        # no battery/Modbus node is publishing yet.
+        ros_node.create_subscription(Float32, "/battery/voltage", self._cb_battery_voltage, 10)
+        ros_node.create_subscription(String, "/battery/status_json", self._cb_battery_json, 10)
+        if _HAS_BATTERY_MSG:
+            ros_node.create_subscription(
+                RosBatteryState,
+                "/battery/status",
+                self._cb_battery_state,
+                10,
+            )
+
         ros_node.create_subscription(String, "/lidar/status", self._cb_lidar_status, 10)
         ros_node.create_subscription(String, "/lidar/points", self._cb_lidar_points, 10)
 
@@ -297,6 +475,29 @@ class _RosBridge:
         t = threading.Thread(target=_loop, daemon=True)
         t.start()
 
+    def _start_system_metrics_poller(self):
+        """Collect host metrics without blocking ROS callbacks or FastAPI."""
+        sampler = _SystemMetricsSampler()
+
+        def _loop():
+            while True:
+                try:
+                    metrics = sampler.sample()
+                except Exception as exc:
+                    metrics = {
+                        "sampled_at": time.time(),
+                        "error": str(exc),
+                    }
+
+                with self._lock:
+                    self._state["system_metrics"] = metrics
+
+                time.sleep(1.0)
+
+        t = threading.Thread(target=_loop, daemon=True)
+        t.start()
+
+
     def _cb_wheel(self, msg: String):
         try:
             data = json.loads(msg.data)
@@ -329,6 +530,9 @@ class _RosBridge:
             data = json.loads(msg.data)
         except Exception:
             data = {"raw": msg.data}
+
+        data["_received_at"] = time.time()
+
         with self._lock:
             self._state[key] = data
 
@@ -339,6 +543,79 @@ class _RosBridge:
             data = {"raw": msg.data}
         with self._lock:
             self._state["gamepad"] = data
+
+    def _merge_battery(self, update: dict):
+        with self._lock:
+            current = dict(self._state.get("battery", {}))
+            current.update(update)
+            current["updated_at"] = time.time()
+            self._state["battery"] = current
+
+    def _cb_battery_voltage(self, msg: Float32):
+        self._merge_battery({
+            "voltage": float(msg.data),
+            "source": "/battery/voltage",
+        })
+
+    def _cb_battery_json(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            data = {"raw": msg.data}
+
+        percentage = data.get("percentage", data.get("percent"))
+        try:
+            if percentage is not None:
+                percentage = float(percentage)
+                if 0.0 <= percentage <= 1.0:
+                    percentage *= 100.0
+                data["percent"] = round(percentage, 1)
+        except Exception:
+            pass
+
+        data.setdefault("source", "/battery/status_json")
+        self._merge_battery(data)
+
+    def _cb_battery_state(self, msg):
+        percentage = None
+        try:
+            raw_percentage = float(msg.percentage)
+            if np.isfinite(raw_percentage) and raw_percentage >= 0:
+                percentage = (
+                    raw_percentage * 100.0
+                    if raw_percentage <= 1.0
+                    else raw_percentage
+                )
+        except Exception:
+            pass
+
+        data = {
+            "source": "/battery/status",
+            "voltage": (
+                float(msg.voltage)
+                if np.isfinite(float(msg.voltage))
+                else None
+            ),
+            "current": (
+                float(msg.current)
+                if np.isfinite(float(msg.current))
+                else None
+            ),
+            "temperature": (
+                float(msg.temperature)
+                if np.isfinite(float(msg.temperature))
+                else None
+            ),
+            "percent": (
+                round(percentage, 1)
+                if percentage is not None
+                else None
+            ),
+            "present": bool(msg.present),
+            "power_supply_status": int(msg.power_supply_status),
+            "power_supply_health": int(msg.power_supply_health),
+        }
+        self._merge_battery(data)
 
     def _cb_lidar_status(self, msg: String):
         try:
@@ -498,6 +775,33 @@ class WebDashboardNode(Node):
             with bridge._lock:
                 return bridge._state.get("thermals", [])
 
+        @app.get("/api/system-health")
+        async def system_health():
+            """Current Jetson/Linux host metrics used by the dashboard."""
+            with bridge._lock:
+                return dict(bridge._state.get("system_metrics", {}))
+
+        @app.get("/api/power-status")
+        async def power_status():
+            """Robot battery data when available, plus ODrive fallback values."""
+            with bridge._lock:
+                battery = dict(bridge._state.get("battery", {}))
+                wheel = dict(bridge._state.get("wheel_status", {}))
+
+            diag = wheel.get("diag") or {}
+            return {
+                "battery": battery,
+                "battery_available": bool(battery),
+                "drive_bus_voltage": diag.get("vbus"),
+                "left_motor_current": wheel.get("current_left"),
+                "right_motor_current": wheel.get("current_right"),
+                "note": (
+                    "Robot battery percentage requires a publisher on "
+                    "/battery/status or /battery/status_json. "
+                    "ODrive bus voltage is not the same as battery percentage."
+                ),
+            }
+
         @app.get("/api/controller-config")
         async def get_controller_config():
             cfg = _load_config()
@@ -601,25 +905,67 @@ class WebDashboardNode(Node):
                 cli.call_async(req)
             return {"success": True, "message": f"called {srv_name}"}
 
-        @app.post("/api/recording/{profile}/start")
-        async def start_recording(profile: str):
+        async def _call_recorder_trigger(profile: str, action: str):
             clients = ros_node._rec_clients.get(profile)
             if not clients:
-                return {"success": False, "message": f"unknown profile: {profile}"}
-            if not clients["start"].service_is_ready():
-                return {"success": False, "message": f"{profile} recorder not available"}
-            clients["start"].call_async(Trigger.Request())
-            return {"success": True, "message": f"{profile} start_recording called"}
+                return JSONResponse(
+                    {"success": False, "message": f"unknown profile: {profile}"},
+                    status_code=404,
+                )
+
+            client = clients[action]
+            if not client.service_is_ready():
+                return JSONResponse(
+                    {
+                        "success": False,
+                        "message": f"{profile} recorder {action} service not available",
+                    },
+                    status_code=503,
+                )
+
+            future = client.call_async(Trigger.Request())
+            deadline = time.monotonic() + 8.0
+
+            while not future.done() and time.monotonic() < deadline:
+                await asyncio.sleep(0.05)
+
+            if not future.done():
+                return JSONResponse(
+                    {
+                        "success": False,
+                        "message": f"{profile} recorder {action} timed out",
+                    },
+                    status_code=504,
+                )
+
+            try:
+                result = future.result()
+            except Exception as exc:
+                return JSONResponse(
+                    {"success": False, "message": str(exc)},
+                    status_code=500,
+                )
+
+            success = bool(getattr(result, "success", False))
+            message = getattr(result, "message", "") or (
+                f"{profile} recorder {action} completed"
+                if success
+                else f"{profile} recorder rejected {action}"
+            )
+
+            status_code = 200 if success else 409
+            return JSONResponse(
+                {"success": success, "message": message},
+                status_code=status_code,
+            )
+
+        @app.post("/api/recording/{profile}/start")
+        async def start_recording(profile: str):
+            return await _call_recorder_trigger(profile, "start")
 
         @app.post("/api/recording/{profile}/stop")
         async def stop_recording(profile: str):
-            clients = ros_node._rec_clients.get(profile)
-            if not clients:
-                return {"success": False, "message": f"unknown profile: {profile}"}
-            if not clients["stop"].service_is_ready():
-                return {"success": False, "message": f"{profile} recorder not available"}
-            clients["stop"].call_async(Trigger.Request())
-            return {"success": True, "message": f"{profile} stop_recording called"}
+            return await _call_recorder_trigger(profile, "stop")
 
         # ── Lidar ──────────────────────────────────────────────────
 
@@ -929,6 +1275,44 @@ class WebDashboardNode(Node):
                     )
                 mac = gp["mac"]
             return await _run_in_thread(bth.connect_device, mac)
+
+        @app.post("/api/bluetooth/disconnect")
+        async def bluetooth_disconnect(body: dict = {}):
+            mac = body.get("mac", "")
+            if not mac:
+                gp = await _run_in_thread(bth.get_last_connected_gamepad)
+                if not gp:
+                    return JSONResponse(
+                        {"success": False, "message": "No paired gamepad found"},
+                        status_code=404,
+                    )
+                mac = gp["mac"]
+
+            def _disconnect():
+                try:
+                    proc = subprocess.run(
+                        ["bluetoothctl", "disconnect", mac],
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                    )
+                    combined = f"{proc.stdout}\n{proc.stderr}".strip()
+                    lowered = combined.lower()
+                    success = (
+                        proc.returncode == 0
+                        or "successful" in lowered
+                        or "disconnected" in lowered
+                        or "not connected" in lowered
+                    )
+                    return {
+                        "success": bool(success),
+                        "mac": mac,
+                        "message": combined or ("Disconnected" if success else "Disconnect failed"),
+                    }
+                except Exception as exc:
+                    return {"success": False, "mac": mac, "message": str(exc)}
+
+            return await _run_in_thread(_disconnect)
 
         @app.get("/api/bluetooth/gamepad")
         async def bluetooth_gamepad():
