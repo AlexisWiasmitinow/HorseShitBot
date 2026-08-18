@@ -20,6 +20,16 @@ _DEVNULL = subprocess.DEVNULL
 _last_bt_restart: float = 0.0
 _BT_RESTART_COOLDOWN = 60.0  # seconds between bluetooth service restarts
 
+# Extra pads to try on Reconnect after the preferred / last-known MAC.
+_RECONNECT_EXTRA_MACS = [
+    "83:25:11:06:D7:50",
+]
+
+_GAMEPAD_KEYWORDS = (
+    "controller", "gamepad", "game pad", "xbox", "data frog",
+    "datafrog", "gamesir", "wireless", "joystick", "pro controller",
+)
+
 
 def _run(cmd: list[str], timeout: int = 5) -> subprocess.CompletedProcess:
     try:
@@ -132,13 +142,9 @@ def get_paired_devices() -> list[dict]:
 def get_last_connected_gamepad() -> dict | None:
     """Find the most recently paired gamepad-like device."""
     devices = get_paired_devices()
-    gamepad_keywords = [
-        "controller", "gamepad", "game pad", "xbox", "data frog",
-        "datafrog", "gamesir", "wireless", "joystick", "pro controller",
-    ]
     for dev in devices:
         name_lower = dev["name"].lower()
-        if any(kw in name_lower for kw in gamepad_keywords):
+        if any(kw in name_lower for kw in _GAMEPAD_KEYWORDS):
             return dev
     return devices[0] if devices else None
 
@@ -175,7 +181,46 @@ def connect_device(mac: str) -> dict:
             ok = r.returncode == 0 or "successful" in combined.lower()
 
     msg = r.stdout.strip() or r.stderr.strip()
-    return {"success": ok, "message": msg}
+    return {"success": ok, "message": msg, "mac": mac}
+
+
+def reconnect_gamepad(preferred_mac: str = "") -> dict:
+    """Try to connect a gamepad, falling through a list of MACs.
+
+    Order: preferred MAC (from the UI / last-known pad), then
+    ``_RECONNECT_EXTRA_MACS``, then any other paired gamepad-like devices.
+    Stops at the first successful ``bluetoothctl connect``.
+    """
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def _add(mac: str) -> None:
+        mac = (mac or "").strip()
+        if not mac:
+            return
+        key = mac.upper()
+        if key not in seen:
+            seen.add(key)
+            candidates.append(mac)
+
+    _add(preferred_mac)
+    for extra in _RECONNECT_EXTRA_MACS:
+        _add(extra)
+    for dev in get_paired_devices():
+        name_lower = dev.get("name", "").lower()
+        if any(kw in name_lower for kw in _GAMEPAD_KEYWORDS):
+            _add(dev.get("mac", ""))
+
+    if not candidates:
+        return {"success": False, "message": "No paired gamepad found"}
+
+    last = {"success": False, "message": "No attempt"}
+    for mac in candidates:
+        logger.info("Reconnect trying %s", mac)
+        last = connect_device(mac)
+        if last.get("success"):
+            return last
+    return last
 
 
 def disconnect_device(mac: str) -> dict:

@@ -920,15 +920,10 @@ class WebDashboardNode(Node):
         @app.post("/api/bluetooth/reconnect")
         async def bluetooth_reconnect(body: dict = {}):
             mac = body.get("mac", "")
-            if not mac:
-                gp = await _run_in_thread(bth.get_last_connected_gamepad)
-                if not gp:
-                    return JSONResponse(
-                        {"success": False, "message": "No paired gamepad found"},
-                        status_code=404,
-                    )
-                mac = gp["mac"]
-            return await _run_in_thread(bth.connect_device, mac)
+            result = await _run_in_thread(bth.reconnect_gamepad, mac)
+            if not result.get("success") and result.get("message") == "No paired gamepad found":
+                return JSONResponse(result, status_code=404)
+            return result
 
         @app.get("/api/bluetooth/gamepad")
         async def bluetooth_gamepad():
