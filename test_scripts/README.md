@@ -283,6 +283,75 @@ python3 icm20948_i2c_test.py --accel-fs 4 --gyro-fs 500
 
 ---
 
+### `gim8115_rs485_test.py` — GIM8115-9 Joint Motor (custom RS485)
+
+Tests a GIM8115-9 actuator over RS485 using SteadyWin's **custom** protocol from
+`docs/Motor_GIM8115-9/自定义RS485通信协议_3.03b0.pdf` (header `0xAE` host / `0xAC` slave,
+little-endian payloads, CRC16-Modbus).
+
+**This is not Modbus RTU.** Stock motors answer the custom protocol; a Modbus client
+will get no reply. The Modbus register CSV in the same docs folder only applies if
+cmd `0x0A` reports a non-zero RS485-Modbus protocol version.
+
+Position units: **16384 counts = 360°**. Moves default to trapezoid command `0x26` with `--speed`.
+
+**Dependencies:**
+
+```bash
+pip install pyserial
+```
+
+**Usage:**
+
+```bash
+# Windows
+python test_scripts/gim8115_rs485_test.py --port COM9 --info
+python test_scripts/gim8115_rs485_test.py --port COM9 --move 90 --speed 10
+python test_scripts/gim8115_rs485_test.py --port COM9 --move 180 --speed 5 --accel 2 --wait 60
+
+# Velocity mode (tracked-robot style): run at RPM while streaming encoder distance
+python test_scripts/gim8115_rs485_test.py --port COM9 --velocity 20
+python test_scripts/gim8115_rs485_test.py --port COM9 --velocity 15 --until-deg 360 --accel 30
+python test_scripts/gim8115_rs485_test.py --port COM9 --velocity -10 --duration 5
+
+# Torture / endurance: ±DEG back-and-forth until Ctrl+C (temp every 10 cycles)
+python test_scripts/gim8115_rs485_test.py --port COM9 --torture 90 --speed 20
+python test_scripts/gim8115_rs485_test.py --port COM9 --torture 180 --speed 30 --temp-every 10 --cycles 100
+# Lift weights off the floor first, put them down after (also on Ctrl+C)
+python test_scripts/gim8115_rs485_test.py --port COM9 --torture 90 --speed 20 --lift 30
+
+# Bus reliability: poll status only (no motion) until Ctrl+C
+python test_scripts/gim8115_rs485_test.py --port COM9 --bus-test
+python test_scripts/gim8115_rs485_test.py --port COM9 --bus-test --rate 5 --duration 60
+
+# Linux
+python3 test_scripts/gim8115_rs485_test.py -p /dev/ttyUSB0 --info
+python3 test_scripts/gim8115_rs485_test.py -p /dev/ttyUSB0 --velocity 20
+
+# Probe addresses 1-16 (+ public 0xFF)
+python test_scripts/gim8115_rs485_test.py --port COM9 --probe
+
+# Clear fault, leave enabled after move
+python test_scripts/gim8115_rs485_test.py --port COM9 --clear-fault --move 30 --no-disable
+```
+
+Defaults from the PDF: baud **115200** 8N1, address **1**. `--port` is required.
+
+- **`--move`**: trapezoid position cmd `0x26` with `--speed` (RPM, default 30). Optional `--accel`/`--decel` (RPM/s). `--speed 0` = simple `0x23`.
+- **`--velocity`**: velocity cmd `0x21` — hold signed RPM and stream encoder Δ (counts / degrees / revs). Stop with Ctrl+C, `--duration SEC`, or `--until-deg DEG`. Optional `--accel` (RPM/s; omit = max). `--rate` sets print Hz.
+- **`--torture DEG`**: oscillate `+DEG` then `-DEG` at `--speed` until Ctrl+C (or `--cycles N`). Counts cycles; prints temperature every `--temp-every` cycles (default 10). Ends with a summary (cycles, temps, encoder drift).
+- **`--lift DEG`**: with `--torture`, move `+DEG` once before cycling (raise weights). After cycling (or Ctrl+C), soft-stop if needed and return to the recorded floor position — not a blind `-DEG`, so mid-cycle aborts still put weights down correctly.
+- **`--bus-test`**: poll status (`0x0B`) only — no enable/move. Measures RS485 OK/fail rate. `--rate` (default 10 Hz), `--duration`, optional `--gap` for inter-frame spacing.
+
+**What to look for:**
+- `--info` prints versions; `RS485 Modbus: v0` means Modbus is not available on that driver
+- `--move 90` increases multi-turn angle by ~90° then velocity returns near 0
+- `--velocity` prints rising Δ counts while measured vel tracks the command; Ctrl+C disables cleanly
+- `--torture` cycle count climbs; temp log every N cycles; encoder drift stays small if the joint is free
+- `--bus-test` success rate stays near 100%; FAIL lines / error breakdown show truncated or timed-out replies if the link is flaky
+
+---
+
 ### `datafrog_controller_test.py` — Data Frog Bluetooth Gamepad
 
 Tests a Bluetooth gamepad (Data Frog or similar Xbox-style controller) via `evdev`. Verifies axes, buttons, and rumble/vibration.
