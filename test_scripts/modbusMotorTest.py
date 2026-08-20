@@ -475,7 +475,7 @@ def main():
         print("Error connecting to RS485 port")
         return
     # setAddress(1)
-    # setBaudRate(6)
+    # setBaudRate(2)
     # exit()
 
     microsteps = 16
