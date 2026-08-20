@@ -13,7 +13,7 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import BatteryState
 from std_msgs.msg import Bool, Float32
 
-from horseshitbot.horseshitbot.modbus_adc import AdcRegisterMap, ModbusRtuClient, N43VD04
+from horseshitbot.modbus_adc import AdcRegisterMap, ModbusRtuClient, N43VD04
 
 
 class BatteryModbusNode(Node):
