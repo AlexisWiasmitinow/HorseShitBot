@@ -4,7 +4,8 @@ import time
 from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient
 
-PORT = "/dev/ttyUSB0"
+# PORT = "/dev/ttyUSB0"
+PORT = "/dev/mksbus"
 BAUDRATES = [19200, 9600, 4800, 2400, 1200]
 SLAVES = range(33, 34)
 
