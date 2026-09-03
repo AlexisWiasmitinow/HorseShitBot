@@ -32,7 +32,7 @@ from rclpy.qos import (
 from std_msgs.msg import String, Float32
 
 from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
-from horseshitbot_interfaces.srv import MksSetSpeed, MksMoveTurns, MksSetCurrent, ActuatorCommand, SwitchBackend
+from horseshitbot_interfaces.srv import MksMoveTurns, MksSetCurrent, ActuatorCommand, SwitchBackend
 from std_srvs.srv import Trigger
 
 try:

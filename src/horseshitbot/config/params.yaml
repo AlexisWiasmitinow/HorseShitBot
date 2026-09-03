@@ -40,7 +40,11 @@ wheel_driver_node:
     accel_rpm_s: 2000.0
     decel_rpm_s: 2000.0
     stop_decel_rpm_s: 99999.0
-    watchdog_sec: 0.8
+    watchdog_sec: 0.2
+    # Deadline for one /mks/set_speed service future. Healthy writes take
+    # milliseconds; 1.5 s also covers two serial calls at the configured
+    # timeout/retry limit when both wheel requests are queued.
+    mks_request_timeout_sec: 1.5
     # ODrive-specific
     odrive_port: "/dev/odrive"
     odrive_baud: 115200

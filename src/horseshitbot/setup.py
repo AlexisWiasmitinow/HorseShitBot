@@ -18,7 +18,7 @@ setup(
     ],
     install_requires=[
         "setuptools",
-        "pymodbus>=3.10",
+        "pymodbus>=3.6,<4",
         "pyserial",
         "Pillow",
         "luma.lcd",

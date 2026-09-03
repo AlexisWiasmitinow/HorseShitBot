@@ -2,5 +2,7 @@ uint8 motor_id
 float32 rpm
 uint8 accel
 bool invert_dir
+uint64 command_id
 ---
 bool success
+bool stale

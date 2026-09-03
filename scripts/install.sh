@@ -39,6 +39,13 @@ apt-get install -y --no-install-recommends \
   hostapd \
   dnsmasq
 
+# Keep pymodbus distribution-managed and enforce the API range used by the
+# compatibility layer. apt installs it when absent, upgrades an older package
+# when a suitable repository candidate exists, and fails rather than replacing
+# system Python packages with a root pip installation.
+apt-get satisfy -y --no-install-recommends \
+  'python3-pymodbus (>= 3.6), python3-pymodbus (<< 4)'
+
 # ── ROS 2 Humble apt repo ────────────────────────────────────────
 if ! apt-cache show ros-humble-ros-base &>/dev/null; then
   echo "--- Adding ROS 2 Humble apt repository ---"
@@ -87,20 +94,19 @@ if [ "$ROS_ONLY" = false ]; then
     apt-get install -y --no-install-recommends python3-pip
   fi
 
-  # Remove stale apt pymodbus (too old for our codebase)
-  apt-get remove -y python3-pymodbus 2>/dev/null || true
+  # pymodbus is intentionally installed by apt above.  On Ubuntu 24.04 this
+  # keeps ROS 2 Jazzy on the supported system-Python pymodbus 3.6 API instead
+  # of replacing a distribution-owned package with a root pip installation.
 
   python3 -m pip install --break-system-packages \
     luma.lcd \
     Pillow \
-    "pymodbus>=3.10" \
     pyserial \
     evdev \
     2>/dev/null \
   || python3 -m pip install \
     luma.lcd \
     Pillow \
-    "pymodbus>=3.10" \
     pyserial \
     evdev
 fi

@@ -16,6 +16,7 @@ from horseshitbot_interfaces.srv import MksSetSpeed, MksMoveTurns, MksSetCurrent
 from std_srvs.srv import Trigger
 
 from ..drivers.mks_bus import BusCfg, MksBus, MODE_SR_CLOSE
+from ..drivers.mks_command_state import MksCommandHighWater
 
 _DEFAULTS_FILE = Path.home() / ".config" / "horseshitbot" / "motor_defaults.json"
 
@@ -44,6 +45,7 @@ class MksBusNode(Node):
 
         self._bus = MksBus(BusCfg(port=port, baud=baud, timeout=timeout, retries=retries))
         self._bus_connected = False
+        self._speed_command_ids = MksCommandHighWater()
 
         self.create_service(MksSetSpeed, "/mks/set_speed", self._srv_set_speed)
         self.create_service(MksMoveTurns, "/mks/move_turns", self._srv_move_turns)
@@ -219,16 +221,28 @@ class MksBusNode(Node):
         self._status_pub.publish(msg)
 
     def _srv_set_speed(self, request, response):
+        motor_id = int(request.motor_id)
+        command_id = int(request.command_id)
+        if not self._speed_command_ids.admit(motor_id, command_id):
+            response.success = False
+            response.stale = True
+            self.get_logger().warning(
+                f"stale set_speed rejected motor={motor_id} "
+                f"command_id={command_id}"
+            )
+            return response
+
+        response.stale = False
         try:
             self._bus.set_speed_signed(
-                unit_id=int(request.motor_id),
+                unit_id=motor_id,
                 rpm_signed=float(request.rpm),
                 acc=int(request.accel),
                 invert_dir=bool(request.invert_dir),
             )
             response.success = True
         except Exception as e:
-            self.get_logger().warning(f"set_speed failed motor={request.motor_id}: {e}")
+            self.get_logger().warning(f"set_speed failed motor={motor_id}: {e}")
             response.success = False
         return response
 
@@ -278,18 +292,23 @@ class MksBusNode(Node):
         return response
 
     def _srv_init_servo(self, request, response):
-        try:
-            for mid in range(1, 7):
-                try:
-                    self._bus.init_servo(mid, mode=MODE_SR_CLOSE,
-                                        microsteps=self._microsteps, enable=True)
-                except Exception:
-                    pass
-            response.success = True
-            response.message = "init_servo done"
-        except Exception as e:
-            response.success = False
-            response.message = str(e)
+        failed = []
+        for mid in range(1, 7):
+            try:
+                self._bus.init_servo(
+                    mid,
+                    mode=MODE_SR_CLOSE,
+                    microsteps=self._microsteps,
+                    enable=True,
+                )
+            except Exception as exc:
+                failed.append(f"{mid}:{exc}")
+        response.success = not failed
+        response.message = (
+            "init_servo done"
+            if not failed
+            else f"init_servo partial fail: {', '.join(failed)}"
+        )
         return response
 
     def _srv_emergency_stop_wheels(self, request, response):
@@ -335,17 +354,18 @@ class MksBusNode(Node):
         return response
 
     def _srv_clear_errors(self, request, response):
-        try:
-            for mid in range(1, 7):
-                try:
-                    self._bus.clear_error_state(mid, mode=MODE_SR_CLOSE)
-                except Exception:
-                    pass
-            response.success = True
-            response.message = "errors cleared"
-        except Exception as e:
-            response.success = False
-            response.message = str(e)
+        failed = []
+        for mid in range(1, 7):
+            try:
+                self._bus.clear_error_state(mid, mode=MODE_SR_CLOSE)
+            except Exception as exc:
+                failed.append(f"{mid}:{exc}")
+        response.success = not failed
+        response.message = (
+            "errors cleared"
+            if not failed
+            else f"clear errors partial fail: {', '.join(failed)}"
+        )
         return response
 
     def destroy_node(self):
