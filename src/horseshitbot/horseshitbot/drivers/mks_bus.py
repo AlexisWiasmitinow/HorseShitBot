@@ -16,6 +16,11 @@ from .pymodbus_compat import ModbusSerialClient, RTU_FRAMER, call_with_device
 
 _pymodbus_logger = logging.getLogger("pymodbus")
 
+
+class ModbusBusBusy(RuntimeError):
+    """A low-priority read cannot start without delaying a motor transaction."""
+
+
 REG_WORKMODE = 0x0082
 REG_RUN_CURRENT = 0x0083
 REG_MICROSTEPS = 0x0084
@@ -86,13 +91,14 @@ def validate_modbus_response(
 @dataclass
 class BusCfg:
     port: str
-    baud: int = 38400
+    baud: int = 19200
     timeout: float = 0.35
     retries: int = 3
     inter_delay: float = 0.002
     # Used by probe() only — keep this small so health checks against
     # missing motors don't stall the whole bus. A typical successful
-    # round-trip at 115200 baud is ~3 ms, so 60 ms gives 20× slack.
+    # one-register round-trip at 19200 baud is ~9 ms, so 60 ms gives
+    # substantial USB/device turnaround margin.
     probe_timeout: float = 0.06
 
 
@@ -216,6 +222,61 @@ class MksBus:
         )
         return list(rr.registers)
 
+    def read_regs_once_if_idle(
+        self,
+        unit_id: int,
+        addr: int,
+        count: int = 1,
+        timeout: float = 0.03,
+    ) -> list[int]:
+        """Perform one tightly bounded low-priority holding-register read.
+
+        This never waits for the bus lock, retries, or reconnects. Motor calls
+        therefore win whenever they already own the client. A motor request
+        arriving after this transaction starts can wait for this one timeout.
+        """
+        if count < 1:
+            raise ValueError("count must be at least 1")
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        if not self.lock.acquire(blocking=False):
+            raise ModbusBusBusy("motor transaction owns the Modbus bus")
+
+        previous_retries = getattr(self.client, "retries", None)
+        previous_timeout = self._get_client_timeout()
+        transaction_started = False
+        try:
+            if previous_retries is None or previous_timeout is None:
+                raise RuntimeError(
+                    "installed pymodbus does not expose bounded retry/timeout controls"
+                )
+            if hasattr(self.client, "connected") and not self.client.connected:
+                raise RuntimeError("Modbus bus is disconnected")
+
+            self.client.retries = 0
+            self._set_client_timeout(timeout)
+            transaction_started = True
+            response = call_with_device(
+                self.client.read_holding_registers,
+                unit_id,
+                address=addr,
+                count=count,
+            )
+            validate_modbus_response(
+                response,
+                f"low-priority read failed unit={unit_id} addr=0x{addr:04X}",
+                expected_registers=count,
+            )
+            return list(response.registers)
+        finally:
+            if previous_retries is not None:
+                self.client.retries = previous_retries
+            if previous_timeout is not None:
+                self._set_client_timeout(previous_timeout)
+            if transaction_started and self.cfg.inter_delay > 0:
+                time.sleep(self.cfg.inter_delay)
+            self.lock.release()
+
     def read_input_regs(self, unit_id: int, addr: int, count: int = 1):
         def _call():
             return call_with_device(
@@ -234,8 +295,8 @@ class MksBus:
     def probe(self, unit_id: int) -> bool:
         """Quick single-attempt connectivity check (no retries, no reconnect).
         Uses a short probe-specific timeout so missing motors don't stall the
-        single-threaded executor — a normal probe round-trip is ~3 ms, so the
-        default 60 ms is plenty for a healthy bus.
+        shared bus — a normal probe round-trip at 19200 baud is ~9 ms, so the
+        default 60 ms leaves substantial device/USB turnaround margin.
         Suppresses pymodbus log noise for expected timeouts."""
         self._ensure_connected()
         prev_level = _pymodbus_logger.level
