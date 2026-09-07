@@ -1,0 +1,22 @@
+battery_modbus_node:
+  ros__parameters:
+    # The ADC must be commissioned explicitly before enabling this node.
+    # IDs 1-6 are reserved for motors.
+    slave_id: 7
+    channel: 1
+    read_period_sec: 1.0
+    request_timeout_sec: 0.2
+
+    channel_base_register: 0
+    raw_scale: 100.0
+    voltage_divider_factor: 0.5
+    voltage_offset: 0.0
+    voltage_multiplier: 1.0
+
+    # Placeholder thresholds for the current 24 V-class battery.
+    low_voltage: 22.0
+    critical_voltage: 21.0
+    critical_confirmations: 3
+
+    # Acquisition/status only. OS shutdown is intentionally not implemented.
+    shutdown_enabled: false

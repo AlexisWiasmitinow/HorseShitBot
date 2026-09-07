@@ -4,6 +4,7 @@ Launch file for the complete HorseShitBot ROS 2 system.
 Arguments:
   enable_camera:=true/false   — enable/disable RealSense + bag recorder (default true)
   enable_mks:=true/false      — enable/disable MKS bus node (default true)
+  enable_battery:=true/false  — enable shared-bus battery monitor (default false)
   enable_lidar:=true/false    — enable/disable lidar node (default true)
   enable_imu:=true/false      — enable/disable ICM-20948 IMU node (default true)
 
@@ -27,9 +28,11 @@ def _launch_setup(context):
         params_file = params_override
     else:
         params_file = os.path.join(pkg_dir, "config", "params.yaml")
+    battery_params = os.path.join(pkg_dir, "config", "battery_modbus.yaml")
 
     enable_camera = LaunchConfiguration("enable_camera").perform(context).lower() == "true"
     enable_mks = LaunchConfiguration("enable_mks").perform(context).lower() == "true"
+    enable_battery = LaunchConfiguration("enable_battery").perform(context).lower() == "true"
     enable_lidar = LaunchConfiguration("enable_lidar").perform(context).lower() == "true"
     enable_imu = LaunchConfiguration("enable_imu").perform(context).lower() == "true"
     
@@ -41,6 +44,15 @@ def _launch_setup(context):
             executable="mks_bus_node",
             name="mks_bus_node",
             parameters=[params_file],
+            output="screen",
+        ))
+
+    if enable_battery:
+        nodes.append(Node(
+            package="horseshitbot",
+            executable="battery_modbus_node",
+            name="battery_modbus_node",
+            parameters=[battery_params],
             output="screen",
         ))
 
@@ -189,6 +201,9 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("enable_camera", default_value="true"),
         DeclareLaunchArgument("enable_mks", default_value="true"),
+        # Keep disabled until the ADC is explicitly commissioned as ID 7 at
+        # 19200 baud. The node never changes hardware configuration itself.
+        DeclareLaunchArgument("enable_battery", default_value="false"),
         DeclareLaunchArgument("enable_lidar", default_value="true"),
         DeclareLaunchArgument("enable_imu", default_value="true"),
         DeclareLaunchArgument("params_file", default_value=""),

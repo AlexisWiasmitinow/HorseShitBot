@@ -1,13 +1,21 @@
 mks_bus_node:
   ros__parameters:
     port: "/dev/mksbus"
-    baud: 115200
-    # Per-call Modbus timeout. A normal write/read at 115200 baud is ~3 ms
-    # round-trip, so 0.1 s gives ~30× slack. The old 0.35 s value meant
+    baud: 19200
+    # Per-call Modbus timeout. A normal acknowledged speed write at 19200
+    # baud occupies roughly 12 ms of wire time, so 0.1 s leaves substantial
+    # device/USB turnaround margin. The old 0.35 s value meant
     # every Modbus retry against a missing motor would block the
-    # single-threaded executor for >1 s, starving /mks/set_speed.
+    # bus for >1 s, starving /mks/set_speed.
     timeout: 0.1
     retries: 2
+    # Low-priority ADC reads never retry or reconnect. At 19200 8N1, an
+    # 8-byte request takes ~4.6 ms; adding this 30 ms response timeout and
+    # the 2 ms RTU inter-delay bounds nominal bus locking to ~36.6 ms.
+    adc_timeout_sec: 0.03
+    # Do not start ADC work in the service-completion handoff where a
+    # retained pending STOP is about to be dispatched.
+    adc_idle_guard_sec: 0.05
     microsteps: 16
     # 1, 2 = left/right tracks; 3, 5 = lift (dual); 4 = brush; 6 = bin door.
     # Listed motors get init'd (MODE_SR_CLOSE, microsteps, enable) at startup,

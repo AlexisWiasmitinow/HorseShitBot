@@ -6,16 +6,26 @@ port contention.  Publishes per-motor connectivity on /mks_bus/status.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 from pathlib import Path
+import threading
+import time
 
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import String
-from horseshitbot_interfaces.srv import MksSetSpeed, MksMoveTurns, MksSetCurrent
+from horseshitbot_interfaces.srv import (
+    ModbusReadHoldingRegister,
+    MksMoveTurns,
+    MksSetCurrent,
+    MksSetSpeed,
+)
 from std_srvs.srv import Trigger
 
-from ..drivers.mks_bus import BusCfg, MksBus, MODE_SR_CLOSE
+from ..drivers.mks_bus import BusCfg, MksBus, MODE_SR_CLOSE, ModbusBusBusy
 from ..drivers.mks_command_state import MksCommandHighWater
 
 _DEFAULTS_FILE = Path.home() / ".config" / "horseshitbot" / "motor_defaults.json"
@@ -26,12 +36,14 @@ class MksBusNode(Node):
         super().__init__("mks_bus_node")
 
         self.declare_parameter("port", "/dev/mksbus")
-        self.declare_parameter("baud", 38400)
-        self.declare_parameter("timeout", 0.35)
-        self.declare_parameter("retries", 3)
-        self.declare_parameter("motor_ids", [3, 4, 5, 6])
+        self.declare_parameter("baud", 19200)
+        self.declare_parameter("timeout", 0.1)
+        self.declare_parameter("retries", 2)
+        self.declare_parameter("motor_ids", [1, 2, 3, 4, 5, 6])
         self.declare_parameter("health_hz", 0.5)
         self.declare_parameter("microsteps", 16)
+        self.declare_parameter("adc_timeout_sec", 0.03)
+        self.declare_parameter("adc_idle_guard_sec", 0.05)
 
         port = self.get_parameter("port").get_parameter_value().string_value
         baud = self.get_parameter("baud").get_parameter_value().integer_value
@@ -42,10 +54,23 @@ class MksBusNode(Node):
         )
         health_hz = self.get_parameter("health_hz").get_parameter_value().double_value
         self._microsteps = self.get_parameter("microsteps").get_parameter_value().integer_value
+        self._adc_timeout = (
+            self.get_parameter("adc_timeout_sec").get_parameter_value().double_value
+        )
+        self._adc_idle_guard = max(
+            0.0,
+            self.get_parameter(
+                "adc_idle_guard_sec"
+            ).get_parameter_value().double_value,
+        )
 
         self._bus = MksBus(BusCfg(port=port, baud=baud, timeout=timeout, retries=retries))
         self._bus_connected = False
         self._speed_command_ids = MksCommandHighWater()
+        self._motor_activity_lock = threading.Lock()
+        self._motor_operations = 0
+        self._last_motor_activity = time.monotonic()
+        self._adc_callback_group = MutuallyExclusiveCallbackGroup()
 
         self.create_service(MksSetSpeed, "/mks/set_speed", self._srv_set_speed)
         self.create_service(MksMoveTurns, "/mks/move_turns", self._srv_move_turns)
@@ -62,6 +87,12 @@ class MksBusNode(Node):
         # on resume; can also be invoked manually for recovery.
         self.create_service(Trigger, "/mks/release_emergency_stop_wheels",
                             self._srv_release_emergency_stop_wheels)
+        self.create_service(
+            ModbusReadHoldingRegister,
+            "/modbus/read_holding_register",
+            self._srv_read_holding_register,
+            callback_group=self._adc_callback_group,
+        )
         self.declare_parameter("wheel_motor_ids", [1, 2])
         self._wheel_motor_ids = list(
             self.get_parameter("wheel_motor_ids").get_parameter_value().integer_array_value
@@ -79,17 +110,30 @@ class MksBusNode(Node):
         except Exception as e:
             self.get_logger().error(f"MKS bus connection failed: {e}")
 
-        # No periodic probing — the bus is otherwise idle when the robot
-        # isn't moving, so polling just burns CPU and adds latency to
-        # /mks/set_speed calls on the single-threaded executor. We still
-        # republish the last known status periodically so newly-connected
-        # WebSocket clients in the dashboard don't have to wait for the
-        # next manual scan to see anything.
+        # No periodic motor probing — it would consume shared-bus bandwidth
+        # and add latency to /mks/set_speed. Republish cached status only.
         period = 1.0 / max(0.1, health_hz)
         self.create_timer(period, self._publish_status)
         self.create_service(Trigger, "/mks/scan", self._srv_scan)
 
+    @contextmanager
+    def _motor_operation(self):
+        """Mark motor work before it can wait for the serial transaction lock."""
+        with self._motor_activity_lock:
+            self._motor_operations += 1
+            self._last_motor_activity = time.monotonic()
+        try:
+            yield
+        finally:
+            with self._motor_activity_lock:
+                self._motor_operations -= 1
+                self._last_motor_activity = time.monotonic()
+
     def _scan_motors(self, reinit_new: bool = False):
+        with self._motor_operation():
+            self._scan_motors_locked(reinit_new)
+
+    def _scan_motors_locked(self, reinit_new: bool = False):
         """Probe every motor_id and update _motor_online. If reinit_new is
         True, run init_servo for motors that have just come online (or that
         were online at start-up and we're scanning for the first time)."""
@@ -126,7 +170,6 @@ class MksBusNode(Node):
 
         online_ids = [m for m in self._motor_ids if self._motor_online[m]]
         if online_ids:
-            import time
             time.sleep(0.05)
             self._apply_saved_defaults(online_ids)
         self._publish_status()
@@ -234,12 +277,13 @@ class MksBusNode(Node):
 
         response.stale = False
         try:
-            self._bus.set_speed_signed(
-                unit_id=motor_id,
-                rpm_signed=float(request.rpm),
-                acc=int(request.accel),
-                invert_dir=bool(request.invert_dir),
-            )
+            with self._motor_operation():
+                self._bus.set_speed_signed(
+                    unit_id=motor_id,
+                    rpm_signed=float(request.rpm),
+                    acc=int(request.accel),
+                    invert_dir=bool(request.invert_dir),
+                )
             response.success = True
         except Exception as e:
             self.get_logger().warning(f"set_speed failed motor={motor_id}: {e}")
@@ -253,15 +297,16 @@ class MksBusNode(Node):
             f"move_turns: motor={mid} turns={turns} speed={request.speed_rpm} acc={request.accel}"
         )
         try:
-            self._bus.move_turns(
-                unit_id=mid,
-                turns=turns,
-                speed_rpm=int(request.speed_rpm) if request.speed_rpm > 0 else 300,
-                acc=int(request.accel) if request.accel > 0 else 3,
-                invert_dir=bool(request.invert_dir),
-                closed_loop=True,
-                microsteps=self._microsteps,
-            )
+            with self._motor_operation():
+                self._bus.move_turns(
+                    unit_id=mid,
+                    turns=turns,
+                    speed_rpm=int(request.speed_rpm) if request.speed_rpm > 0 else 300,
+                    acc=int(request.accel) if request.accel > 0 else 3,
+                    invert_dir=bool(request.invert_dir),
+                    closed_loop=True,
+                    microsteps=self._microsteps,
+                )
             response.success = True
             response.message = f"moving {turns} turns"
             self.get_logger().info(f"move_turns: motor={mid} command sent")
@@ -276,12 +321,19 @@ class MksBusNode(Node):
             mid = int(request.motor_id)
             if mid not in self._motor_current:
                 self._motor_current[mid] = {}
-            if request.run_current_ma > 0:
-                self._bus.set_run_current(mid, int(request.run_current_ma))
-                self._motor_current[mid]["run_current_ma"] = int(request.run_current_ma)
-            if request.hold_current_pct > 0:
-                self._bus.set_hold_current_pct(mid, int(request.hold_current_pct))
-                self._motor_current[mid]["hold_current_pct"] = int(request.hold_current_pct)
+            with self._motor_operation():
+                if request.run_current_ma > 0:
+                    self._bus.set_run_current(mid, int(request.run_current_ma))
+                    self._motor_current[mid]["run_current_ma"] = int(
+                        request.run_current_ma
+                    )
+                if request.hold_current_pct > 0:
+                    self._bus.set_hold_current_pct(
+                        mid, int(request.hold_current_pct)
+                    )
+                    self._motor_current[mid]["hold_current_pct"] = int(
+                        request.hold_current_pct
+                    )
             response.success = True
             response.message = f"motor {mid}: run={request.run_current_ma}mA hold={request.hold_current_pct}%"
             self.get_logger().info(response.message)
@@ -293,16 +345,17 @@ class MksBusNode(Node):
 
     def _srv_init_servo(self, request, response):
         failed = []
-        for mid in range(1, 7):
-            try:
-                self._bus.init_servo(
-                    mid,
-                    mode=MODE_SR_CLOSE,
-                    microsteps=self._microsteps,
-                    enable=True,
-                )
-            except Exception as exc:
-                failed.append(f"{mid}:{exc}")
+        with self._motor_operation():
+            for mid in range(1, 7):
+                try:
+                    self._bus.init_servo(
+                        mid,
+                        mode=MODE_SR_CLOSE,
+                        microsteps=self._microsteps,
+                        enable=True,
+                    )
+                except Exception as exc:
+                    failed.append(f"{mid}:{exc}")
         response.success = not failed
         response.message = (
             "init_servo done"
@@ -316,11 +369,12 @@ class MksBusNode(Node):
         even if some motors didn't acknowledge — at e-stop time we'd rather
         send the command on the others than abort the whole thing."""
         failed = []
-        for mid in self._wheel_motor_ids:
-            try:
-                self._bus.emergency_stop(mid)
-            except Exception as exc:
-                failed.append(f"{mid}:{exc}")
+        with self._motor_operation():
+            for mid in self._wheel_motor_ids:
+                try:
+                    self._bus.emergency_stop(mid)
+                except Exception as exc:
+                    failed.append(f"{mid}:{exc}")
         response.success = not failed
         response.message = (
             "wheel e-stop sent"
@@ -336,11 +390,12 @@ class MksBusNode(Node):
         set_speed commands again. Without this, REG_SPEED writes are
         silently ignored even though they return success."""
         failed = []
-        for mid in self._wheel_motor_ids:
-            try:
-                self._bus.release_emergency_stop(mid)
-            except Exception as exc:
-                failed.append(f"{mid}:{exc}")
+        with self._motor_operation():
+            for mid in self._wheel_motor_ids:
+                try:
+                    self._bus.release_emergency_stop(mid)
+                except Exception as exc:
+                    failed.append(f"{mid}:{exc}")
         response.success = not failed
         response.message = (
             "wheel e-stop released"
@@ -355,17 +410,62 @@ class MksBusNode(Node):
 
     def _srv_clear_errors(self, request, response):
         failed = []
-        for mid in range(1, 7):
-            try:
-                self._bus.clear_error_state(mid, mode=MODE_SR_CLOSE)
-            except Exception as exc:
-                failed.append(f"{mid}:{exc}")
+        with self._motor_operation():
+            for mid in range(1, 7):
+                try:
+                    self._bus.clear_error_state(mid, mode=MODE_SR_CLOSE)
+                except Exception as exc:
+                    failed.append(f"{mid}:{exc}")
         response.success = not failed
         response.message = (
             "errors cleared"
             if not failed
             else f"clear errors partial fail: {', '.join(failed)}"
         )
+        return response
+
+    def _srv_read_holding_register(self, request, response):
+        """Serve one low-priority, non-retrying ADC-style register read."""
+        device_id = int(request.device_id)
+        address = int(request.address)
+        response.success = False
+        response.busy = False
+        response.value = 0
+
+        if not 1 <= device_id <= 247:
+            response.message = "device_id must be in 1..247"
+            return response
+
+        # Motor callbacks mark themselves before waiting on MksBus.lock. Do
+        # not let a new ADC read enter while any such operation is active.
+        # The short quiet guard also closes the handoff gap while a completed
+        # non-zero request dispatches its retained pending STOP.
+        with self._motor_activity_lock:
+            motor_active = self._motor_operations > 0
+            motor_recent = (
+                time.monotonic() - self._last_motor_activity
+                < self._adc_idle_guard
+            )
+            if motor_active or motor_recent:
+                response.busy = True
+                response.message = "motor transaction active or recently completed"
+                return response
+
+        try:
+            values = self._bus.read_regs_once_if_idle(
+                unit_id=device_id,
+                addr=address,
+                count=1,
+                timeout=self._adc_timeout,
+            )
+            response.success = True
+            response.value = int(values[0])
+            response.message = "ok"
+        except ModbusBusBusy as exc:
+            response.busy = True
+            response.message = str(exc)
+        except Exception as exc:
+            response.message = str(exc)
         return response
 
     def destroy_node(self):
@@ -376,10 +476,13 @@ class MksBusNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = MksBusNode()
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
