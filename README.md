@@ -45,9 +45,14 @@ Technical details: see `docs/training_perception_navigation.md` and `docs/slam_g
 
 ```bash
 cd ~/HorseShitBot
-colcon build --packages-select horseshitbot
-source install/setup.bash
+./scripts/build_workspace.sh
 ```
+
+The build helper uses `colcon build --symlink-install` and records a fingerprint
+of `src/`. It rebuilds all workspace packages when build-relevant source
+content changes, including launch files, web static files, and interface
+definitions. Use `./scripts/build_workspace.sh --force` for an unconditional
+rebuild.
 
 ## Configure
 
@@ -63,13 +68,56 @@ Key parameters:
 
 ## Run
 
-Launch the full system:
+The supported startup command builds when needed, sources ROS 2 Humble and the
+workspace install, and launches `robot_launch.py`:
 
 ```bash
-ros2 launch horseshitbot robot_launch.py
+cd ~/HorseShitBot
+./scripts/start.sh
 ```
 
-The web dashboard will be available at `http://<PI_IP>:8080`.
+Source changes under `src/` therefore affect the next normal start without
+rebuilding unnecessarily. To force a rebuild and then start, use:
+
+```bash
+./scripts/buildstart.sh
+# Equivalent:
+./scripts/start.sh --rebuild
+```
+
+Startup options:
+
+- `--no-camera` skips the RealSense node. The two bag recorder nodes remain
+  available because recording profiles are independently selected in the
+  dashboard and the mapping recorder does not require a camera.
+- `--no-mks` skips `mks_bus_node` and the MKS lift/brush/bin-door nodes, and
+  explicitly selects the existing ODrive wheel backend.
+- `--no-lidar` skips the lidar node and its static transform.
+- `--drive-only` starts the wheel dependency, wheel driver, and gamepad only.
+
+The current supported web UI is `web_dashboard_node`, available at
+`http://<ROBOT_IP>:8080`.
+
+### Start at boot with systemd
+
+`systemd/robot-web.service` is a per-user service that calls the same supported
+`scripts/start.sh` path. It expects the checkout at `~/HorseShitBot`; `%h`
+resolves to the service user's home directory.
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp ~/HorseShitBot/systemd/robot-web.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now robot-web.service
+
+# Allow the user service to start at boot before interactive login:
+sudo loginctl enable-linger "$USER"
+```
+
+Inspect it with `systemctl --user status robot-web.service` and
+`journalctl --user -u robot-web.service`. The service starts the complete ROS 2
+stack, including `web_dashboard_node` on port 8080; it does not start the
+legacy port-8000 application.
 
 ## Test Scripts
 
@@ -146,7 +194,10 @@ ros2 bag play ~/rosbags/<bag_name> --topics /camera/color/image_raw
 
 ## Legacy FastAPI App
 
-The original FastAPI web controller is still in `robot_web/` for reference:
+The original FastAPI web controller on port 8000 remains in `robot_web/` for
+reference only. It is not part of `scripts/start.sh`, `robot_launch.py`, or the
+systemd service. If it is deliberately needed for legacy testing, start it
+manually:
 
 ```bash
 python3 -m venv .venv

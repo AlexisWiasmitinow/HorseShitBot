@@ -2,13 +2,15 @@
 Launch file for the complete HorseShitBot ROS 2 system.
 
 Arguments:
-  enable_camera:=true/false   — enable/disable RealSense + bag recorder (default true)
-  enable_mks:=true/false      — enable/disable MKS bus node (default true)
+  enable_camera:=true/false   — enable/disable RealSense (recorders are independent)
+  enable_mks:=true/false      — enable/disable MKS bus and MKS actuators (default true)
   enable_lidar:=true/false    — enable/disable lidar node (default true)
   enable_imu:=true/false      — enable/disable ICM-20948 IMU node (default true)
+  wheel_backend:=mks/odrive   — optional wheel backend override
 
 Example:
-  ros2 launch horseshitbot robot_launch.py enable_camera:=false enable_mks:=false
+  ros2 launch horseshitbot robot_launch.py enable_camera:=false
+  ros2 launch horseshitbot robot_launch.py enable_mks:=false wheel_backend:=odrive
 """
 
 import os
@@ -32,45 +34,62 @@ def _launch_setup(context):
     enable_mks = LaunchConfiguration("enable_mks").perform(context).lower() == "true"
     enable_lidar = LaunchConfiguration("enable_lidar").perform(context).lower() == "true"
     enable_imu = LaunchConfiguration("enable_imu").perform(context).lower() == "true"
-    
+    wheel_backend = LaunchConfiguration("wheel_backend").perform(context).strip().lower()
+
+    if wheel_backend and wheel_backend not in {"mks", "odrive"}:
+        raise RuntimeError(
+            f"Invalid wheel_backend '{wheel_backend}'; expected 'mks' or 'odrive'."
+        )
+    if not enable_mks and wheel_backend != "odrive":
+        raise RuntimeError(
+            "enable_mks:=false requires wheel_backend:=odrive; "
+            "the MKS wheel backend cannot run without mks_bus_node."
+        )
+
+    wheel_parameters = [params_file]
+    if wheel_backend:
+        wheel_parameters.append({"wheel_backend": wheel_backend})
+
     nodes = []
 
     if enable_mks:
-        nodes.append(Node(
-            package="horseshitbot",
-            executable="mks_bus_node",
-            name="mks_bus_node",
-            parameters=[params_file],
-            output="screen",
-        ))
+        nodes += [
+            Node(
+                package="horseshitbot",
+                executable="mks_bus_node",
+                name="mks_bus_node",
+                parameters=[params_file],
+                output="screen",
+            ),
+            Node(
+                package="horseshitbot",
+                executable="lift_node",
+                name="lift_node",
+                parameters=[params_file],
+                output="screen",
+            ),
+            Node(
+                package="horseshitbot",
+                executable="brush_node",
+                name="brush_node",
+                parameters=[params_file],
+                output="screen",
+            ),
+            Node(
+                package="horseshitbot",
+                executable="bin_door_node",
+                name="bin_door_node",
+                parameters=[params_file],
+                output="screen",
+            ),
+        ]
 
     nodes += [
         Node(
             package="horseshitbot",
             executable="wheel_driver_node",
             name="wheel_driver_node",
-            parameters=[params_file],
-            output="screen",
-        ),
-        Node(
-            package="horseshitbot",
-            executable="lift_node",
-            name="lift_node",
-            parameters=[params_file],
-            output="screen",
-        ),
-        Node(
-            package="horseshitbot",
-            executable="brush_node",
-            name="brush_node",
-            parameters=[params_file],
-            output="screen",
-        ),
-        Node(
-            package="horseshitbot",
-            executable="bin_door_node",
-            name="bin_door_node",
-            parameters=[params_file],
+            parameters=wheel_parameters,
             output="screen",
         ),
         Node(
@@ -114,7 +133,8 @@ def _launch_setup(context):
                         "--frame-id", "base_link", "--child-frame-id", "laser"],
         ))
 
-    # Bag recorders (always launched — topics are selectable via dashboard)
+    # Bag recorders are independent of camera startup; topics are selectable
+    # through the dashboard and the mapping profile does not require a camera.
     nodes += [
         Node(
             package="horseshitbot",
@@ -140,24 +160,6 @@ def _launch_setup(context):
             parameters=[params_file],
             output="screen",
         ))
-
-    # Bag recorders
-    nodes += [
-        Node(
-            package="horseshitbot",
-            executable="bag_recorder_node",
-            name="perception_recorder",
-            parameters=[params_file],
-            output="screen",
-        ),
-        Node(
-            package="horseshitbot",
-            executable="bag_recorder_node",
-            name="mapping_recorder",
-            parameters=[params_file],
-            output="screen",
-        ),
-    ]
 
     if enable_camera:
         from launch.actions import IncludeLaunchDescription
@@ -191,6 +193,7 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_mks", default_value="true"),
         DeclareLaunchArgument("enable_lidar", default_value="true"),
         DeclareLaunchArgument("enable_imu", default_value="true"),
+        DeclareLaunchArgument("wheel_backend", default_value=""),
         DeclareLaunchArgument("params_file", default_value=""),
         OpaqueFunction(function=_launch_setup),
     ])

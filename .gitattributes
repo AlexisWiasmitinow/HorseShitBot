@@ -1,0 +1,3 @@
+# These existing files are stored with CRLF line endings.
+README.md whitespace=cr-at-eol
+systemd/robot-web.service whitespace=cr-at-eol

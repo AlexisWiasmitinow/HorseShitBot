@@ -12,7 +12,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
@@ -23,6 +23,9 @@ def generate_launch_description():
     map_yaml = LaunchConfiguration("map")
     use_sim_time = LaunchConfiguration("use_sim_time")
     params_file = LaunchConfiguration("params_file")
+    wheel_backend = PythonExpression([
+        "'odrive' if '", enable_mks, "'.lower() == 'false' else ''"
+    ])
 
     pkg_dir = get_package_share_directory("horseshitbot")
 
@@ -35,6 +38,9 @@ def generate_launch_description():
             "enable_camera": enable_camera,
             "enable_mks": enable_mks,
             "enable_lidar": enable_lidar,
+            # Preserve params.yaml when MKS is enabled; select the existing
+            # ODrive backend when the MKS bus is explicitly disabled.
+            "wheel_backend": wheel_backend,
             "params_file": params_file,
         }.items(),
     )

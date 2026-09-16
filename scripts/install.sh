@@ -187,11 +187,7 @@ find "$REPO_DIR" -name '*.py' -o -name '*.sh' -o -name '*.yaml' -o -name '*.xml'
 # ── Build ROS 2 workspace ────────────────────────────────────────
 echo ""
 echo "--- Building ROS 2 workspace ---"
-sudo -u "$REAL_USER" bash -c "
-  source /opt/ros/humble/setup.bash
-  cd '$REPO_DIR'
-  colcon build
-"
+sudo -u "$REAL_USER" "$SCRIPT_DIR/build_workspace.sh" --force
 
 echo ""
 echo "=== Install complete ==="

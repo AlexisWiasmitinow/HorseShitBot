@@ -1,15 +1,14 @@
 [Unit]
-Description=Horseshitbot Robot Web
-After=network.target
+Description=HorseShitBot ROS 2 stack and web dashboard
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/horseshitbot_robot_web_clean
-EnvironmentFile=/home/pi/horseshitbot_robot_web_clean/.env
-ExecStart=/home/pi/horseshitbot_robot_web_clean/.venv/bin/uvicorn robot_web.main:app --host 0.0.0.0 --port 8000
+WorkingDirectory=%h/HorseShitBot
+ExecStart=%h/HorseShitBot/scripts/start.sh
+KillSignal=SIGINT
+TimeoutStopSec=20
 Restart=on-failure
-RestartSec=2
+RestartSec=5
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
