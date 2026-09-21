@@ -238,6 +238,80 @@ class PymodbusCompatTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "expected 2 registers"):
             validate_modbus_response(short, "read", expected_registers=2)
 
+    def test_single_write_accepts_legacy_scalar_value(self):
+        response = SimpleNamespace(
+            isError=lambda: False,
+            address=0x0082,
+            value=4,
+        )
+        self.assertIs(
+            validate_modbus_response(
+                response,
+                "write",
+                expected_address=0x0082,
+                expected_value=4,
+            ),
+            response,
+        )
+
+    def test_single_write_accepts_new_registers_value(self):
+        response = SimpleNamespace(
+            isError=lambda: False,
+            address=0x0082,
+            registers=[4],
+        )
+        self.assertIs(
+            validate_modbus_response(
+                response,
+                "write",
+                expected_address=0x0082,
+                expected_value=4,
+            ),
+            response,
+        )
+
+    def test_single_write_rejects_wrong_address(self):
+        response = SimpleNamespace(
+            isError=lambda: False,
+            address=0x0083,
+            registers=[4],
+        )
+        with self.assertRaisesRegex(RuntimeError, "address mismatch"):
+            validate_modbus_response(
+                response,
+                "write",
+                expected_address=0x0082,
+                expected_value=4,
+            )
+
+    def test_single_write_rejects_wrong_registers_value(self):
+        response = SimpleNamespace(
+            isError=lambda: False,
+            address=0x0082,
+            registers=[5],
+        )
+        with self.assertRaisesRegex(RuntimeError, "value mismatch"):
+            validate_modbus_response(
+                response,
+                "write",
+                expected_address=0x0082,
+                expected_value=4,
+            )
+
+    def test_single_write_rejects_empty_registers(self):
+        response = SimpleNamespace(
+            isError=lambda: False,
+            address=0x0082,
+            registers=[],
+        )
+        with self.assertRaisesRegex(RuntimeError, "no echoed register value"):
+            validate_modbus_response(
+                response,
+                "write",
+                expected_address=0x0082,
+                expected_value=4,
+            )
+
     def test_modbus_response_validation_rejects_wrong_write_echo(self):
         single = SimpleNamespace(
             isError=lambda: False,

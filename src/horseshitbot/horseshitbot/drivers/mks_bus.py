@@ -78,8 +78,18 @@ def validate_modbus_response(
             )
     if expected_address is not None and getattr(response, "address", None) != expected_address:
         raise RuntimeError(f"{err_ctx}: write response address mismatch")
-    if expected_value is not None and getattr(response, "value", None) != expected_value:
-        raise RuntimeError(f"{err_ctx}: write response value mismatch")
+    if expected_value is not None:
+        missing = object()
+        echoed_value = getattr(response, "value", missing)
+        if echoed_value is missing:
+            registers = getattr(response, "registers", None)
+            if not isinstance(registers, (list, tuple)) or not registers:
+                raise RuntimeError(
+                    f"{err_ctx}: write response has no echoed register value"
+                )
+            echoed_value = registers[0]
+        if echoed_value != expected_value:
+            raise RuntimeError(f"{err_ctx}: write response value mismatch")
     if (
         expected_write_count is not None
         and getattr(response, "count", None) != expected_write_count
