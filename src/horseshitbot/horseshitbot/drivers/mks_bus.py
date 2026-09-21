@@ -58,6 +58,7 @@ def validate_modbus_response(
     expected_address: int | None = None,
     expected_value: int | None = None,
     expected_write_count: int | None = None,
+    allow_zero_write_count: bool = False,
 ):
     """Raise unless a pymodbus response is an explicit successful response."""
     if response is None:
@@ -93,6 +94,10 @@ def validate_modbus_response(
     if (
         expected_write_count is not None
         and getattr(response, "count", None) != expected_write_count
+        and not (
+            allow_zero_write_count
+            and getattr(response, "count", None) == 0
+        )
     ):
         raise RuntimeError(f"{err_ctx}: write response count mismatch")
     return response
@@ -215,6 +220,7 @@ class MksBus:
             err_ctx,
             expected_address=addr,
             expected_write_count=len(values_u16),
+            allow_zero_write_count=True,
         )
 
     def read_regs(self, unit_id: int, addr: int, count: int = 1):
