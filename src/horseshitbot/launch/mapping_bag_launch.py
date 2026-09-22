@@ -31,6 +31,10 @@ def _launch_setup(context):
 
     enable_mks = LaunchConfiguration("enable_mks").perform(context).lower() == "true"
 
+    wheel_parameters = [params_file]
+    if not enable_mks:
+        wheel_parameters.append({"wheel_backend": "odrive"})
+
     nodes = []
 
     if enable_mks:
@@ -47,7 +51,7 @@ def _launch_setup(context):
             package="horseshitbot",
             executable="wheel_driver_node",
             name="wheel_driver_node",
-            parameters=[params_file],
+            parameters=wheel_parameters,
             output="screen",
         ),
         Node(

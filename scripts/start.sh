@@ -4,8 +4,8 @@
 #
 # Usage:
 #   ./scripts/start.sh                  # launch everything
-#   ./scripts/start.sh --no-camera      # skip RealSense + bag recorder
-#   ./scripts/start.sh --no-mks         # skip MKS bus node (ODrive-only setup)
+#   ./scripts/start.sh --no-camera      # skip RealSense (recorders stay available)
+#   ./scripts/start.sh --no-mks         # use ODrive; skip MKS bus and actuators
 #   ./scripts/start.sh --no-lidar       # skip lidar node
 #   ./scripts/start.sh --drive-only     # just wheel driver + gamepad (no launch file)
 #   ./scripts/start.sh --rebuild        # force colcon build before launching
@@ -28,6 +28,10 @@ fi
 EXISTING_PID=$(pgrep -f "ros2 launch horseshitbot|ros2 run horseshitbot" | grep -v "$$" || true)
 if [ -n "$EXISTING_PID" ]; then
   echo "HorseShitBot is already running (PID: $EXISTING_PID)."
+  if [ ! -t 0 ]; then
+    echo "ERROR: Cannot replace it from a non-interactive startup."
+    exit 1
+  fi
   echo "  [k] Kill it and restart"
   echo "  [q] Quit"
   read -r -n1 -p "> " choice
@@ -62,15 +66,18 @@ for arg in "$@"; do
     --no-lidar)    ENABLE_LIDAR=false ;;
     --drive-only)  DRIVE_ONLY=true ;;
     --rebuild)     FORCE_REBUILD=true ;;
+    *)
+      echo "ERROR: Unknown argument: $arg" >&2
+      exit 2
+      ;;
   esac
 done
 
-# ── Build if requested ────────────────────────────────────────────
-if [ "$FORCE_REBUILD" = true ] || [ ! -f "$REPO_DIR/install/setup.bash" ]; then
-  echo "Building workspace..."
-  cd "$REPO_DIR"
-  colcon build
-  echo ""
+# ── Build when source changed ────────────────────────────────────
+if [ "$FORCE_REBUILD" = true ]; then
+  "$SCRIPT_DIR/build_workspace.sh" --force
+else
+  "$SCRIPT_DIR/build_workspace.sh"
 fi
 
 source "$REPO_DIR/install/setup.bash"
@@ -80,13 +87,29 @@ PARAMS="$REPO_DIR/src/horseshitbot/config/params.yaml"
 # ── Launch ───────────────────────────────────────────────────────
 if [ "$DRIVE_ONLY" = true ]; then
   echo "=== HorseShitBot — Drive Only ==="
-  echo "  wheel_driver_node + gamepad_teleop_node"
+  if [ "$ENABLE_MKS" = true ]; then
+    echo "  mks_bus_node + wheel_driver_node + gamepad_teleop_node"
+  else
+    echo "  wheel_driver_node (ODrive) + gamepad_teleop_node"
+  fi
   echo "  Ctrl+C to stop"
   echo ""
 
+  PIDS=""
+  if [ "$ENABLE_MKS" = true ]; then
+    ros2 run horseshitbot mks_bus_node \
+      --ros-args --params-file "$PARAMS" &
+    PIDS="$!"
+  fi
+
+  WHEEL_ARGS=(--ros-args --params-file "$PARAMS")
+  if [ "$ENABLE_MKS" = false ]; then
+    WHEEL_ARGS+=(-p wheel_backend:=odrive)
+  fi
+
   ros2 run horseshitbot wheel_driver_node \
-    --ros-args --params-file "$PARAMS" &
-  PIDS="$!"
+    "${WHEEL_ARGS[@]}" &
+  PIDS="$PIDS $!"
 
   ros2 run horseshitbot gamepad_teleop_node \
     --ros-args --params-file "$PARAMS" &
@@ -106,14 +129,18 @@ if [ "$DRIVE_ONLY" = true ]; then
 else
   echo "=== HorseShitBot — Full Launch ==="
   [ "$ENABLE_CAMERA" = false ] && echo "  (camera disabled)"
-  [ "$ENABLE_MKS" = false ]    && echo "  (MKS bus disabled)"
+  [ "$ENABLE_MKS" = false ]    && echo "  (MKS disabled; ODrive wheel backend selected)"
   [ "$ENABLE_LIDAR" = false ]  && echo "  (lidar disabled)"
   echo "  Ctrl+C to stop"
   echo ""
+
+  WHEEL_BACKEND=""
+  [ "$ENABLE_MKS" = false ] && WHEEL_BACKEND="odrive"
 
   ros2 launch horseshitbot robot_launch.py \
     enable_camera:="$ENABLE_CAMERA" \
     enable_mks:="$ENABLE_MKS" \
     enable_lidar:="$ENABLE_LIDAR" \
+    wheel_backend:="$WHEEL_BACKEND" \
     params_file:="$PARAMS"
 fi

@@ -10,15 +10,5 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
-source /opt/ros/humble/setup.bash
-
-echo "=== Building workspace ==="
-cd "$REPO_DIR"
-colcon build
-echo ""
-
-source "$REPO_DIR/install/setup.bash"
-
-exec "$SCRIPT_DIR/start.sh" "$@"
+exec "$SCRIPT_DIR/start.sh" --rebuild "$@"
