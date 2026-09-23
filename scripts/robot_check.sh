@@ -197,10 +197,10 @@ else
     warn "Wheel update rate is not 50 Hz"
 fi
 
-if grep -Eq 'slave_id:[[:space:]]*7' "$BATTERY_PARAMS"; then
-    ok "ADC/battery configured for Modbus ID 7"
+if grep -Eq 'slave_id:[[:space:]]*33' "$BATTERY_PARAMS"; then
+    ok "N43IC04 configured for Modbus ID 33"
 else
-    warn "ADC is not configured for expected Modbus ID 7"
+    warn "ADC is not configured for verified Modbus ID 33"
 fi
 
 section "4. GAMEPAD / INPUT"
@@ -401,11 +401,12 @@ else
 fi
 
 if [ "$CHECK_ADC" = true ]; then
-    section "7. ADC / BATTERY CHECK"
+    section "7. ADC RAW CHANNEL CHECK"
 
     echo "ADC expectation:"
-    echo "  Modbus ID : 7"
-    echo "  Register  : 0 (channel 1)"
+    echo "  Model     : N43IC04"
+    echo "  Modbus ID : 33"
+    echo "  Registers : 0-3 (raw channels 1-4)"
     echo "  Bus       : same /dev/mksbus @ 19200"
     echo
 
@@ -413,34 +414,17 @@ if [ "$CHECK_ADC" = true ]; then
         ok "Shared Modbus read service available"
 
         echo
-        echo "--- Raw ADC register read ---"
-        ros2 service call \
-            /modbus/read_holding_register \
-            horseshitbot_interfaces/srv/ModbusReadHoldingRegister \
-            "{device_id: 7, address: 0}"
+        echo "--- Shared-bus raw ADC reads ---"
+        if python3 "$REPO_DIR/test_scripts/adc_shared_bus_test.py" \
+            --device-id 33 \
+            --rounds 1 \
+            --delay 0.1; then
+            ok "All four raw ADC channels responded"
+        else
+            fail "One or more raw ADC channel reads failed"
+        fi
     else
         fail "/modbus/read_holding_register service unavailable"
-    fi
-
-    setsid ros2 run horseshitbot battery_modbus_node \
-        --ros-args \
-        --params-file "$BATTERY_PARAMS" \
-        > /tmp/hsb_adc_check.log 2>&1 &
-    ADC_PID=$!
-    PIDS="$PIDS $ADC_PID"
-
-    sleep 3
-
-    echo
-    echo "--- Battery node log ---"
-    cat /tmp/hsb_adc_check.log
-
-    echo
-    echo "--- Battery status ---"
-    if timeout 5 ros2 topic echo --once /battery/status_json; then
-        ok "ADC/battery reading received"
-    else
-        warn "No ADC/battery reading received"
     fi
 fi
 

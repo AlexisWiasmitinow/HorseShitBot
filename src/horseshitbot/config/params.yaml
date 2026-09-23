@@ -9,10 +9,8 @@ mks_bus_node:
     # bus for >1 s, starving /mks/set_speed.
     timeout: 0.1
     retries: 2
-    # Low-priority ADC reads never retry or reconnect. At 19200 8N1, an
-    # 8-byte request takes ~4.6 ms; adding this 30 ms response timeout and
-    # the 2 ms RTU inter-delay bounds nominal bus locking to ~36.6 ms.
-    adc_timeout_sec: 0.03
+    # Verified minimum for reliable N43IC04 channel reads on the assembled bus.
+    adc_timeout_sec: 0.1
     # Do not start ADC work in the service-completion handoff where a
     # retained pending STOP is about to be dispatched.
     adc_idle_guard_sec: 0.05

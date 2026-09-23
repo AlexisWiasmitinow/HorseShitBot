@@ -1,42 +1,50 @@
 #!/usr/bin/env python3
+"""Read-only, direct-serial diagnostic for the HorseShitBot N43IC04.
+
+This tool owns the serial port directly. Stop mks_bus_node before using it.
+It reads FC03 holding registers only and never writes ADC configuration.
+"""
+
+from __future__ import annotations
 
 import argparse
-import glob
-import os
+from pathlib import Path
 import sys
 import time
 
-from pymodbus import FramerType
-from pymodbus.client import ModbusSerialClient
+
+PACKAGE_ROOT = Path(__file__).resolve().parent / "src" / "horseshitbot"
+sys.path.insert(0, str(PACKAGE_ROOT))
+
+from horseshitbot.drivers.mks_bus import validate_modbus_response  # noqa: E402
+from horseshitbot.drivers.pymodbus_compat import (  # noqa: E402
+    ModbusSerialClient,
+    RTU_FRAMER,
+    call_with_device,
+)
 
 
-# ============================================================
-# ADC SETTINGS
-# ============================================================
-
-# Taken from our existing modbus_adc_tool.py
-DEFAULT_BAUDS = [9600, 19200, 4800, 2400, 1200]
-
-# Try the most likely Modbus addresses first.
-DEFAULT_SLAVES = range(1, 11)
-
-# N43VD04 input values
 CHANNEL_START_REGISTER = 0x0000
 CHANNEL_COUNT = 4
+ADDRESS_REGISTER = 0x00FD
+BAUD_REGISTER = 0x00FE
+BAUD_CODES = {
+    0: 1200,
+    1: 2400,
+    2: 4800,
+    3: 9600,
+    4: 19200,
+}
 
-# Existing HorseShitBot ADC code assumes:
-# raw / 100 = voltage measured by ADC
-RAW_SCALE = 100.0
+
+def parse_int(value: str) -> int:
+    return int(value, 0)
 
 
-# ============================================================
-# MODBUS
-# ============================================================
-
-def make_client(port, baudrate, timeout=0.4):
+def make_client(port: str, baudrate: int, timeout: float):
     return ModbusSerialClient(
         port=port,
-        framer=FramerType.RTU,
+        framer=RTU_FRAMER,
         baudrate=baudrate,
         bytesize=8,
         parity="N",
@@ -46,384 +54,171 @@ def make_client(port, baudrate, timeout=0.4):
     )
 
 
-def read_raw_channels(client, slave):
-    """
-    Read the four ADC channels.
-
-    Modbus function 03:
-        Read Holding Registers
-
-    Registers:
-        0x0000 = CH1
-        0x0001 = CH2
-        0x0002 = CH3
-        0x0003 = CH4
-    """
-
-    try:
-        result = client.read_holding_registers(
-            address=CHANNEL_START_REGISTER,
-            count=CHANNEL_COUNT,
-            device_id=slave,
-        )
-
-        if result is None or result.isError():
-            return None
-
-        if not hasattr(result, "registers"):
-            return None
-
-        if len(result.registers) < CHANNEL_COUNT:
-            return None
-
-        return result.registers[:CHANNEL_COUNT]
-
-    except Exception:
-        return None
-
-
-# ============================================================
-# CONVERSION
-# ============================================================
-
-def convert_voltage(raw, divider_factor):
-    adc_voltage = raw / RAW_SCALE
-
-    # Existing HorseShitBot definition:
-    #
-    # ADC_voltage = real_voltage * divider_factor
-    #
-    # therefore:
-    #
-    # real_voltage = ADC_voltage / divider_factor
-
-    real_voltage = adc_voltage / divider_factor
-
-    return adc_voltage, real_voltage
-
-
-# ============================================================
-# USB PORT DETECTION
-# ============================================================
-
-def find_serial_ports():
-    ports = []
-
-    for pattern in (
-        "/dev/ttyUSB*",
-        "/dev/ttyACM*",
-    ):
-        ports.extend(glob.glob(pattern))
-
-    return sorted(set(ports))
-
-
-# ============================================================
-# DEVICE SEARCH
-# ============================================================
-
-def probe(port, baudrate, slave):
-    client = make_client(port, baudrate)
-
-    try:
-        if not client.connect():
-            return None
-
-        return read_raw_channels(client, slave)
-
-    except Exception:
-        return None
-
-    finally:
-        client.close()
-
-
-def scan_device(port=None):
-    if port:
-        ports = [port]
-    else:
-        ports = find_serial_ports()
-
-    if not ports:
-        print()
-        print("ERROR: No USB serial device found.")
-        print()
-        print("Expected something like:")
-        print("  /dev/ttyUSB0")
-        print()
-        print("Check:")
-        print("  1. USB-RS485 adapter is plugged in")
-        print("  2. ADC has power")
-        print("  3. USB cable/adapter works")
-        return None
-
-    print()
-    print("USB serial ports:")
-    for p in ports:
-        print(f"  {p}")
-
-    print()
-    print("Scanning for ADC...")
-    print()
-
-    for current_port in ports:
-
-        if not os.access(current_port, os.R_OK | os.W_OK):
-            print(
-                f"WARNING: No read/write permission for {current_port}"
-            )
-
-        for baud in DEFAULT_BAUDS:
-
-            print(
-                f"Trying {current_port} @ {baud} baud...",
-                flush=True,
-            )
-
-            client = make_client(current_port, baud)
-
-            try:
-                if not client.connect():
-                    continue
-
-                for slave in DEFAULT_SLAVES:
-
-                    values = read_raw_channels(
-                        client,
-                        slave,
-                    )
-
-                    if values is not None:
-
-                        print()
-                        print("=" * 60)
-                        print("ADC FOUND")
-                        print("=" * 60)
-                        print(f"Port:   {current_port}")
-                        print(f"Baud:   {baud}")
-                        print(f"Slave:  {slave}")
-                        print("=" * 60)
-
-                        return (
-                            current_port,
-                            baud,
-                            slave,
-                            values,
-                        )
-
-            except PermissionError:
-                print()
-                print(
-                    f"PERMISSION ERROR opening {current_port}"
-                )
-                print()
-                print("Your user probably needs the 'dialout' group:")
-                print()
-                print("  sudo usermod -aG dialout $USER")
-                print()
-                print("Then log out and back in.")
-                return None
-
-            except Exception:
-                pass
-
-            finally:
-                client.close()
-
-    return None
-
-
-# ============================================================
-# DISPLAY
-# ============================================================
-
-def show_readings(values, divider_factor):
-    print()
-
-    for index, raw in enumerate(values, start=1):
-
-        adc_voltage, real_voltage = convert_voltage(
-            raw,
-            divider_factor,
-        )
-
-        print(
-            f"CH{index}: "
-            f"raw={raw:5d}   "
-            f"ADC={adc_voltage:7.3f} V   "
-            f"real={real_voltage:7.3f} V"
-        )
-
-
-# ============================================================
-# CONTINUOUS READING
-# ============================================================
-
-def watch(port, baudrate, slave, divider_factor):
-    client = make_client(
-        port,
-        baudrate,
-        timeout=0.5,
+def read_holding(client, device_id: int, address: int, count: int) -> list[int]:
+    response = call_with_device(
+        client.read_holding_registers,
+        device_id,
+        address=address,
+        count=count,
     )
+    validate_modbus_response(
+        response,
+        f"FC03 read device={device_id} address=0x{address:04X}",
+        expected_registers=count,
+    )
+    return [int(value) for value in response.registers[:count]]
 
+
+def print_channels(values: list[int]) -> None:
+    for index, raw in enumerate(values, start=1):
+        register = CHANNEL_START_REGISTER + index - 1
+        print(f"CH{index} register=0x{register:04X} raw={raw}")
+
+
+def read_device(args) -> int:
+    client = make_client(args.port, args.baudrate, args.timeout)
     if not client.connect():
-        print(f"Could not open {port}")
+        print(f"ERROR: could not open {args.port}", file=sys.stderr)
         return 1
 
-    print()
-    print("Continuous ADC reading")
-    print("Press Ctrl+C to stop.")
-    print()
-
     try:
-
         while True:
-
-            values = read_raw_channels(
+            values = read_holding(
                 client,
-                slave,
+                args.slave,
+                CHANNEL_START_REGISTER,
+                CHANNEL_COUNT,
             )
+            print_channels(values)
 
-            if values is None:
-                print("READ ERROR")
-            else:
-
-                line = []
-
-                for channel, raw in enumerate(
-                    values,
-                    start=1,
-                ):
-                    _, voltage = convert_voltage(
-                        raw,
-                        divider_factor,
-                    )
-
-                    line.append(
-                        f"CH{channel}={voltage:.3f}V"
-                    )
-
+            if args.read_config:
+                address = read_holding(
+                    client, args.slave, ADDRESS_REGISTER, 1
+                )[0]
+                baud_code = read_holding(
+                    client, args.slave, BAUD_REGISTER, 1
+                )[0]
                 print(
-                    "   ".join(line),
-                    flush=True,
+                    f"device_address_register=0x{ADDRESS_REGISTER:04X} "
+                    f"value={address}"
+                )
+                print(
+                    f"baud_register=0x{BAUD_REGISTER:04X} "
+                    f"code={baud_code} "
+                    f"baud={BAUD_CODES.get(baud_code, 'UNKNOWN')}"
                 )
 
-            time.sleep(1)
-
+            if not args.watch:
+                return 0
+            time.sleep(args.period)
     except KeyboardInterrupt:
-        print()
-        print("Stopped.")
-
+        print("\nStopped.")
+        return 130
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     finally:
         client.close()
 
+
+def scan(args) -> int:
+    found = []
+    for baudrate in args.baudrates:
+        print(
+            f"Scanning {args.port} at {baudrate} baud, "
+            f"IDs {args.start_id}..{args.end_id}",
+            flush=True,
+        )
+        client = make_client(args.port, baudrate, args.timeout)
+        if not client.connect():
+            print(f"ERROR: could not open {args.port}", file=sys.stderr)
+            continue
+        try:
+            for device_id in range(args.start_id, args.end_id + 1):
+                try:
+                    values = read_holding(
+                        client,
+                        device_id,
+                        CHANNEL_START_REGISTER,
+                        CHANNEL_COUNT,
+                    )
+                except Exception:
+                    continue
+                print(
+                    f"RESPONDER baud={baudrate} device_id={device_id} "
+                    f"raw_channels={values}"
+                )
+                found.append((baudrate, device_id, values))
+        finally:
+            client.close()
+
+    if not found:
+        print("No FC03 responder found.", file=sys.stderr)
+        return 1
     return 0
 
 
-# ============================================================
-# MAIN
-# ============================================================
-
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
-        description="HorseShitBot N43VD04 ADC test"
+        description="Read-only offline N43IC04 direct-serial diagnostic"
     )
-
     parser.add_argument(
-        "--port",
-        default=None,
-        help="Serial port, e.g. /dev/ttyUSB0",
-    )
-
-    parser.add_argument(
-        "--divider-factor",
-        type=float,
-        default=1.0,
-        help=(
-            "Voltage divider factor. "
-            "Use 1.0 for direct ADC voltage. "
-            "Existing HSB code notes 0.5 for final robot."
-        ),
-    )
-
-    parser.add_argument(
-        "--watch",
+        "--ros-stopped",
         action="store_true",
-        help="Continuously print ADC voltages",
+        help="confirm mks_bus_node and every other serial owner are stopped",
     )
-
+    parser.add_argument("--port", default="/dev/mksbus")
+    parser.add_argument("--baudrate", type=int, default=19200)
+    parser.add_argument("--slave", type=parse_int, default=33)
+    parser.add_argument("--timeout", type=float, default=0.4)
+    parser.add_argument(
+        "--read-config",
+        action="store_true",
+        help="also read device address 0x00FD and baud code 0x00FE",
+    )
+    parser.add_argument("--watch", action="store_true")
+    parser.add_argument("--period", type=float, default=1.0)
+    parser.add_argument(
+        "--scan",
+        action="store_true",
+        help="scan configurable IDs/baudrates instead of reading one device",
+    )
+    parser.add_argument("--start-id", type=int, default=1)
+    parser.add_argument(
+        "--end-id",
+        type=int,
+        default=40,
+        help="default includes verified ID 33 without scanning all 247 IDs",
+    )
+    parser.add_argument(
+        "--baudrates",
+        type=int,
+        nargs="+",
+        default=[19200],
+        help="baudrates used by --scan; default is only verified 19200",
+    )
     args = parser.parse_args()
 
-    print("=" * 60)
-    print("HORSESHITBOT ADC TEST")
-    print("=" * 60)
-
-    print()
-    print("Searching for USB -> RS485 -> ADC...")
-
-    result = scan_device(args.port)
-
-    if result is None:
-
-        print()
-        print("=" * 60)
-        print("ADC NOT FOUND")
-        print("=" * 60)
-
-        print()
-        print("Check this chain:")
-        print()
-        print("PowerAIBox")
-        print("   |")
-        print("   +-- USB-RS485 adapter")
-        print("            |")
-        print("            +-- RS485 A/B")
-        print("                    |")
-        print("                    +-- ADC")
-        print()
-        print("Also check that the ADC itself has power.")
-
-        return 1
-
-    port, baud, slave, values = result
-
-    show_readings(
-        values,
-        args.divider_factor,
-    )
-
-    print()
-    print("=" * 60)
-    print("SUCCESS")
-    print("=" * 60)
-
-    print()
-    print("The complete communication chain works:")
-    print()
-    print(
-        f"PowerAIBox -> {port} -> RS485 -> "
-        f"ADC slave {slave}"
-    )
-
-    if args.watch:
-        return watch(
-            port,
-            baud,
-            slave,
-            args.divider_factor,
+    if not args.ros_stopped:
+        parser.error(
+            "--ros-stopped is required: stop mks_bus_node and all serial owners"
         )
+    if not 1 <= args.slave <= 247:
+        parser.error("--slave must be in 1..247")
+    if not 1 <= args.start_id <= args.end_id <= 247:
+        parser.error("scan range must satisfy 1 <= start-id <= end-id <= 247")
+    if args.timeout <= 0:
+        parser.error("--timeout must be positive")
+    if args.period < 0:
+        parser.error("--period must be non-negative")
 
-    print()
-    print("For continuous measurements run:")
-    print()
     print(
-        f"python3 adc_test.py "
-        f"--port {port} "
-        f"--divider-factor {args.divider_factor} "
-        f"--watch"
+        "WARNING: direct serial ownership enabled. mks_bus_node must be stopped.",
+        file=sys.stderr,
     )
+    print("READ-ONLY: this tool sends FC03 requests and performs no writes.")
 
-    return 0
+    return scan(args) if args.scan else read_device(args)
 
 
 if __name__ == "__main__":
