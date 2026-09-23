@@ -76,8 +76,6 @@ def register_map(args) -> AdcRegisterMap:
         channel_base_register=args.channel_base_register,
         address_register=args.address_register,
         baudrate_register=args.baudrate_register,
-        raw_scale=args.raw_scale,
-        voltage_divider_factor=args.divider_factor,
     )
 
 
@@ -94,11 +92,7 @@ def command_read(args) -> int:
         raw = read_register(
             client, args.slave, mapping.channel_register(args.channel)
         )
-        reading = mapping.convert(raw, args.channel)
-        print(
-            f"raw={raw} adc_voltage={reading['adc_voltage']:.3f}V "
-            f"battery_voltage={reading['battery_voltage']:.3f}V"
-        )
+        print(f"channel={args.channel} raw={raw}")
     finally:
         client.close()
     return 0
@@ -176,14 +170,12 @@ def command_set_baud(args) -> int:
 def add_common(parser):
     parser.add_argument("--port", default="/dev/mksbus")
     parser.add_argument("--baudrate", type=int, default=19200)
-    parser.add_argument("--slave", type=parse_int, default=7)
+    parser.add_argument("--slave", type=parse_int, default=33)
     parser.add_argument("--timeout", type=float, default=0.1)
     parser.add_argument("--channel", type=int, default=1)
     parser.add_argument("--channel-base-register", type=parse_int, default=0)
-    parser.add_argument("--address-register", type=parse_int, default=0x000E)
-    parser.add_argument("--baudrate-register", type=parse_int, default=0x000F)
-    parser.add_argument("--raw-scale", type=float, default=100.0)
-    parser.add_argument("--divider-factor", type=float, default=0.5)
+    parser.add_argument("--address-register", type=parse_int, default=0x00FD)
+    parser.add_argument("--baudrate-register", type=parse_int, default=0x00FE)
 
 
 def main() -> int:

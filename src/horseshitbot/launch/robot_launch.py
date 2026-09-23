@@ -203,8 +203,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("enable_camera", default_value="true"),
         DeclareLaunchArgument("enable_mks", default_value="true"),
-        # Keep disabled until the ADC is explicitly commissioned as ID 7 at
-        # 19200 baud. The node never changes hardware configuration itself.
+        # Keep disabled until N43IC04 raw-current scaling is verified.
+        # Hardware is commissioned as ID 33 at 19200 baud.
         DeclareLaunchArgument("enable_battery", default_value="false"),
         DeclareLaunchArgument("enable_lidar", default_value="true"),
         DeclareLaunchArgument("enable_imu", default_value="true"),
