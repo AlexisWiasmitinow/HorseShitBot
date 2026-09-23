@@ -134,7 +134,7 @@ else
   echo "  Ctrl+C to stop"
   echo ""
 
-  WHEEL_BACKEND=""
+  WHEEL_BACKEND="mks"
   [ "$ENABLE_MKS" = false ] && WHEEL_BACKEND="odrive"
 
   ros2 launch horseshitbot robot_launch.py \
