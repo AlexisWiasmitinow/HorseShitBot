@@ -24,7 +24,7 @@ class BatteryModbusNode(Node):
     def __init__(self):
         super().__init__("battery_modbus_node")
 
-        self.declare_parameter("slave_id", 7)
+        self.declare_parameter("slave_id", 33)
         self.declare_parameter("channel", 1)
         self.declare_parameter("read_period_sec", 1.0)
         self.declare_parameter("request_timeout_sec", 0.2)
