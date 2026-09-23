@@ -1,4 +1,4 @@
-"""Transport-free helpers for the N43VD04-style Modbus ADC.
+"""Transport-free helpers for the N43IC04 Modbus acquisition module.
 
 ROS serial ownership deliberately does not live here. The bus node reads one
 raw register and battery_modbus_node uses this module only for conversion.
@@ -22,10 +22,9 @@ CODE_TO_BAUD = {code: baud for baud, code in BAUD_TO_CODE.items()}
 @dataclass(frozen=True)
 class AdcRegisterMap:
     channel_base_register: int = 0x0000
-    # These configuration defaults came from the older structured ADC driver.
-    # Confirm them against the exact installed module before any write.
-    address_register: int = 0x000E
-    baudrate_register: int = 0x000F
+    address_register: int = 0x00FD
+    baudrate_register: int = 0x00FE
+    # Legacy conversion placeholders, not verified N43IC04 protocol scaling.
     raw_scale: float = 100.0
     voltage_divider_factor: float = 1.0
     voltage_offset: float = 0.0

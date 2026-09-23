@@ -1,12 +1,13 @@
 battery_modbus_node:
   ros__parameters:
-    # The ADC must be commissioned explicitly before enabling this node.
-    # IDs 1-6 are reserved for motors.
-    slave_id: 7
+    # Verified N43IC04 configuration. IDs 1-6 are reserved for motors.
+    slave_id: 33
     channel: 1
     read_period_sec: 1.0
     request_timeout_sec: 0.2
 
+    # Legacy, UNVERIFIED conversion placeholders. Keep battery_modbus_node
+    # disabled until the external current transducer scaling is established.
     channel_base_register: 0
     raw_scale: 100.0
     voltage_divider_factor: 0.5
