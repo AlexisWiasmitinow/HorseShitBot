@@ -270,7 +270,7 @@
             <div class="health-progress"><i id="dash-storage-bar"></i></div>
           </div>
           <div class="health-row">
-            <span>Power</span>
+            <span>Battery</span>
             <strong id="dash-battery-value">--</strong>
             <div class="health-progress health-progress-green"><i id="dash-battery-bar"></i></div>
           </div>
@@ -628,6 +628,9 @@
                 </header>
 
                 <div class="diagnostic-summary-grid">
+                  <div><span>Pack voltage</span><strong id="diag-power-voltage">Not reported</strong></div>
+                  <div><span>Battery state</span><strong id="diag-power-state">Not reported</strong></div>
+                  <div><span>Thresholds</span><strong id="diag-power-thresholds">Not reported</strong></div>
                   <div><span>Battery</span><strong id="diag-power-battery">Not reported</strong></div>
                   <div><span>ODrive bus</span><strong id="diag-power-vbus">Not reported</strong></div>
                   <div><span>Left current</span><strong id="diag-power-left-current">Not reported</strong></div>
@@ -635,7 +638,7 @@
                 </div>
 
                 <p class="diagnostic-unavailable-note" id="diag-power-note">
-                  No dedicated battery telemetry is currently present in the WebSocket payload.
+                  No battery voltage is being published yet.
                 </p>
               </section>
             </section>
