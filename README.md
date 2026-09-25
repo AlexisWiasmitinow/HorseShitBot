@@ -24,6 +24,7 @@ Technical details: see `docs/training_perception_navigation.md` and `docs/slam_g
 | `web_dashboard_node` | FastAPI web UI for settings, control, and live diagnostics |
 | `status_screen_node` | Renders live status on the on-robot ILI9341 2.8" TFT (SPI) |
 | `bag_recorder_node` | Programmatic rosbag2 recording of camera topics for ML training |
+| `battery_modbus_node` | Battery voltage via the shared Modbus bus, low-voltage warning and shutdown |
 | `realsense2_camera` | Official Intel RealSense wrapper (colour + depth, D415) |
 
 ### Hardware
@@ -118,6 +119,106 @@ Inspect it with `systemctl --user status robot-web.service` and
 `journalctl --user -u robot-web.service`. The service starts the complete ROS 2
 stack, including `web_dashboard_node` on port 8080; it does not start the
 legacy port-8000 application.
+
+## Battery Monitoring and Low-Voltage Shutdown
+
+`battery_modbus_node` reads channel 1 of the N43IC04 acquisition module
+(Modbus ID 33, 19200 baud) through `mks_bus_node`'s
+`/modbus/read_holding_register` service. It never opens a serial port itself,
+so it cannot contend with the motor bus. It is configured in
+`src/horseshitbot/config/battery_modbus.yaml` and is started with
+`enable_battery:=true`:
+
+```bash
+ros2 launch horseshitbot battery_modbus_launch.py   # battery node alone
+ros2 launch horseshitbot robot_launch.py enable_battery:=true
+```
+
+### Calibration
+
+Measured on the assembled robot (2026-09-25):
+
+| Battery | Raw count |
+|---------|-----------|
+| 20 V | 970 |
+| 22 V | 1068 |
+| 24 V | 1167 |
+| 26 V | 1265 |
+| 28 V | 1364 |
+
+The response is linear, so the conversion is
+
+```
+battery_voltage = (raw + 15.2) / 49.25
+```
+
+which reproduces every measured point to better than 0.005 V. The constants are
+the `raw_offset_counts` and `counts_per_volt` parameters.
+
+### Thresholds
+
+| Voltage | Behaviour |
+|---------|-----------|
+| above 22.0 V | normal |
+| at or below 22.0 V | low-battery warning (`/battery/low`, dashboard warning, `WARN` diagnostic) |
+| at or below 20.0 V | critical (`/battery/critical`, `ERROR` diagnostic) |
+| at or below 20.0 V for 5 s | safe motor stop, then Jetson shutdown |
+
+The critical timer is wall-clock based (`critical_hold_sec`), so brief sag under
+motor load does not trigger a shutdown, and a slow poll loop cannot shorten the
+confirmation window. A recovery above 20.0 V or a failed ADC read restarts the
+timer. The shutdown request is latched and runs at most once per boot.
+
+The shutdown sequence calls the existing safe-stop services in
+`safe_stop_services` — `/wheel_driver_node/stop_fast` (which fires the
+hardware-level MKS `REG_EMERGENCY_STOP`) plus the lift, brush, and bin-door
+stops — waits `safe_stop_grace_sec` for the stop frames to reach the motors,
+and then runs `shutdown_command`, which defaults to
+`sudo -n /usr/sbin/shutdown -h now`.
+
+### Deployment prerequisite: passwordless shutdown
+
+The stack does not run as root, so powering off must be the one command it may
+run without a password. Grant exactly that and nothing more:
+
+```bash
+sudo tee /etc/sudoers.d/horseshitbot-shutdown >/dev/null <<'EOF'
+hsb ALL=(root) NOPASSWD: /usr/sbin/shutdown
+EOF
+sudo chmod 0440 /etc/sudoers.d/horseshitbot-shutdown
+sudo visudo -cf /etc/sudoers.d/horseshitbot-shutdown
+```
+
+Check it without powering the robot off:
+
+```bash
+sudo -n /usr/sbin/shutdown --help
+```
+
+`shutdown_command` uses the absolute `/usr/sbin/shutdown` so the sudoers rule
+matches a fixed path rather than whatever `PATH` happens to resolve to. Without
+this file the safe motor stop still runs, but the shutdown command fails and
+the node logs an error telling you to power the robot down manually.
+
+### Observing the battery
+
+```bash
+# Voltage only
+ros2 topic echo /battery/voltage
+
+# Voltage, state, thresholds and the critical hold timer
+ros2 topic echo /battery/status_json
+
+# ROS diagnostics (OK / WARN / ERROR with raw count and thresholds)
+ros2 topic echo /diagnostics
+
+# One-shot human-readable summary
+ros2 service call /battery_modbus_node/get_battery_voltage std_srvs/srv/Trigger
+```
+
+`/battery/status_json` also carries the state, both thresholds, the critical
+hold timer and whether the shutdown has been requested, so a consumer such as
+the web dashboard never has to hard-code the thresholds.
 
 ## Test Scripts
 

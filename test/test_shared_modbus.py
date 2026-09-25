@@ -16,6 +16,18 @@ from horseshitbot.drivers.mks_bus import (  # noqa: E402
 from horseshitbot.drivers.modbus_adc import (  # noqa: E402
     AdcRegisterMap,
     BAUD_TO_CODE,
+    LowVoltageMonitor,
+    raw_to_voltage,
+    voltage_to_raw,
+)
+
+# Bench measurements taken on the robot's battery divider (2026-09-25).
+CALIBRATION_POINTS = (
+    (20.0, 970),
+    (22.0, 1068),
+    (24.0, 1167),
+    (26.0, 1265),
+    (28.0, 1364),
 )
 
 
@@ -109,13 +121,68 @@ class SharedModbusTest(unittest.TestCase):
         self.assertEqual(client.timeout, 0.1)
 
     def test_adc_conversion_and_final_defaults(self):
-        mapping = AdcRegisterMap(voltage_divider_factor=0.5)
-        reading = mapping.convert(1234, channel=1)
+        mapping = AdcRegisterMap()
+        reading = mapping.convert(1364, channel=1)
         self.assertEqual(mapping.channel_register(1), 0)
-        self.assertAlmostEqual(reading["adc_voltage"], 12.34)
-        self.assertAlmostEqual(reading["battery_voltage"], 24.68)
+        self.assertEqual(reading["raw"], 1364)
+        self.assertAlmostEqual(reading["battery_voltage"], 28.004, places=3)
         self.assertEqual(BAUD_TO_CODE[19200], 4)
         self.assertEqual(BusCfg("/dev/mksbus").baud, 19200)
+
+    def test_calibration_reproduces_every_measured_point(self):
+        for expected_voltage, raw in CALIBRATION_POINTS:
+            self.assertAlmostEqual(
+                raw_to_voltage(raw), expected_voltage, delta=0.01
+            )
+            self.assertAlmostEqual(
+                voltage_to_raw(expected_voltage), raw, delta=1.0
+            )
+
+    def test_low_warning_starts_at_threshold_without_shutdown(self):
+        monitor = LowVoltageMonitor()
+        self.assertEqual(monitor.update(22.1, 0.0).state, "normal")
+        status = monitor.update(22.0, 1.0)
+        self.assertEqual(status.state, "low")
+        self.assertTrue(status.low)
+        self.assertFalse(status.critical)
+        self.assertFalse(status.shutdown_due)
+
+    def test_shutdown_requires_the_full_critical_hold_time(self):
+        monitor = LowVoltageMonitor(critical_hold_sec=5.0)
+        self.assertFalse(monitor.update(20.0, 100.0).shutdown_due)
+        self.assertFalse(monitor.update(19.5, 104.9).shutdown_due)
+        status = monitor.update(19.5, 105.0)
+        self.assertTrue(status.shutdown_due)
+        self.assertAlmostEqual(status.critical_for_sec, 5.0)
+
+    def test_recovery_and_read_failure_restart_the_critical_hold(self):
+        monitor = LowVoltageMonitor(critical_hold_sec=5.0)
+        monitor.update(19.8, 0.0)
+        # Load sag that recovers must not accumulate toward a shutdown.
+        self.assertEqual(monitor.update(23.0, 3.0).state, "normal")
+        self.assertFalse(monitor.update(19.8, 4.0).shutdown_due)
+
+        monitor.update(19.8, 5.0)
+        # A dropped ADC read is not a critical sample either.
+        monitor.reset()
+        self.assertFalse(monitor.update(19.8, 8.0).shutdown_due)
+        self.assertTrue(monitor.update(19.8, 13.0).shutdown_due)
+
+    def test_shutdown_is_requested_only_once(self):
+        monitor = LowVoltageMonitor(critical_hold_sec=1.0)
+        monitor.update(19.0, 0.0)
+        self.assertTrue(monitor.update(19.0, 1.0).shutdown_due)
+        self.assertTrue(monitor.shutdown_latched)
+        self.assertFalse(monitor.update(19.0, 2.0).shutdown_due)
+        self.assertFalse(monitor.update(19.0, 60.0).shutdown_due)
+        # Even a full recovery followed by another critical spell stays latched.
+        monitor.update(26.0, 61.0)
+        monitor.update(19.0, 62.0)
+        self.assertFalse(monitor.update(19.0, 70.0).shutdown_due)
+
+    def test_monitor_rejects_inconsistent_thresholds(self):
+        with self.assertRaises(ValueError):
+            LowVoltageMonitor(low_voltage=20.0, critical_voltage=22.0)
 
     def test_battery_runtime_has_no_serial_client(self):
         source = (

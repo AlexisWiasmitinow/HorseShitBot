@@ -5,19 +5,32 @@ battery_modbus_node:
     channel: 1
     read_period_sec: 1.0
     request_timeout_sec: 0.2
-
-    # Legacy, UNVERIFIED conversion placeholders. Keep battery_modbus_node
-    # disabled until the external current transducer scaling is established.
     channel_base_register: 0
-    raw_scale: 100.0
-    voltage_divider_factor: 0.5
-    voltage_offset: 0.0
-    voltage_multiplier: 1.0
 
-    # Placeholder thresholds for the current 24 V-class battery.
+    # Divider calibration measured on the robot (2026-09-25):
+    #   20 V -> 970   22 V -> 1068   24 V -> 1167   26 V -> 1265   28 V -> 1364
+    # battery_voltage = (raw + raw_offset_counts) / counts_per_volt
+    raw_offset_counts: 15.2
+    counts_per_volt: 49.25
+
+    # 24 V-class pack: warn at 22 V, treat 20 V as end of discharge.
     low_voltage: 22.0
-    critical_voltage: 21.0
-    critical_confirmations: 3
+    critical_voltage: 20.0
+    # Voltage must stay at or below critical_voltage for this long before the
+    # shutdown sequence runs. Sag under motor load must not trigger it.
+    critical_hold_sec: 5.0
 
-    # Acquisition/status only. OS shutdown is intentionally not implemented.
-    shutdown_enabled: false
+    # On a confirmed critical battery: run the safe motor-stop path, then
+    # power the Jetson down. The sequence is latched and runs at most once.
+    shutdown_enabled: true
+    safe_stop_services:
+      - "/wheel_driver_node/stop_fast"
+      - "/lift/stop"
+      - "/brush/stop"
+      - "/bin_door/stop"
+    # Time allowed for stop acknowledgements, and again for the stop frames to
+    # reach the motors before the shutdown command is issued.
+    safe_stop_grace_sec: 3.0
+    # Absolute path so the /etc/sudoers.d/horseshitbot-shutdown rule matches a
+    # fixed command rather than whatever PATH resolves to. See the README.
+    shutdown_command: ["sudo", "-n", "/usr/sbin/shutdown", "-h", "now"]
