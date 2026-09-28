@@ -12,8 +12,8 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        ("share/" + package_name + "/launch", ["launch/robot_launch.py", "launch/mapping_bag_launch.py", "launch/nav2_bringup_launch.py", "launch/autonomy_launch.py"]),
-        ("share/" + package_name + "/config", ["config/params.yaml", "config/camera_config.yaml", "config/nav2_params.yaml", "config/slam_toolbox_config.yaml"]),
+        ("share/" + package_name + "/launch", ["launch/robot_launch.py", "launch/mapping_bag_launch.py", "launch/nav2_bringup_launch.py", "launch/autonomy_launch.py", "launch/battery_modbus_launch.py"]),
+        ("share/" + package_name + "/config", ["config/params.yaml", "config/camera_config.yaml", "config/nav2_params.yaml", "config/slam_toolbox_config.yaml", "config/battery_modbus.yaml"]),
         ("share/" + package_name + "/maps", ["maps/README.md"]),
     ],
     install_requires=[
@@ -43,6 +43,7 @@ setup(
             "yolo_detector_node = horseshitbot.nodes.yolo_detector_node:main",
             "lidar_node = horseshitbot.nodes.lidar_node:main",
             "imu_node = horseshitbot.nodes.imu_node:main",
+            "battery_modbus_node = horseshitbot.nodes.battery_modbus_node:main",
         ],
     },
 )
