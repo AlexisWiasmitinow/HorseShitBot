@@ -1,0 +1,7 @@
+uint8 device_id
+uint16 address
+---
+bool success
+bool busy
+uint16 value
+string message

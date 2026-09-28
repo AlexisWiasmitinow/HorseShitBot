@@ -18,6 +18,7 @@ from horseshitbot_interfaces.srv import MksSetSpeed, ActuatorCommand
 from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
 
 from ..drivers.actuator import Actuator, ActuatorConfig, ActuatorState
+from ..drivers.mks_command_state import MksCommandIdGenerator
 
 
 class ActuatorNodeBase(Node):
@@ -71,6 +72,7 @@ class ActuatorNodeBase(Node):
 
         # MKS bus service client
         self._mks_cli = self.create_client(MksSetSpeed, "/mks/set_speed")
+        self._mks_command_ids = MksCommandIdGenerator()
 
         self._actuator = Actuator(cfg=cfg, set_speed_fn=self._mks_set_speed)
 
@@ -112,6 +114,7 @@ class ActuatorNodeBase(Node):
         req.rpm = float(rpm)
         req.accel = int(acc)
         req.invert_dir = bool(invert)
+        req.command_id = self._mks_command_ids.next_id()
         self._mks_cli.call_async(req)
         return True
 

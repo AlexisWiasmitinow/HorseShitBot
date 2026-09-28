@@ -7,11 +7,13 @@ nav_msgs/Odometry, and exposes a service to switch backends at runtime.
 from __future__ import annotations
 
 import math
+import signal
 import threading
 import time
 
 import rclpy
 from rclpy.node import Node
+from rclpy.signals import SignalHandlerOptions
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
 from std_msgs.msg import String
@@ -21,6 +23,11 @@ from tf2_ros import TransformBroadcaster
 from horseshitbot_interfaces.srv import MksSetSpeed, SwitchBackend
 
 from ..drivers.wheel_backend import WheelBackend
+from ..drivers.mks_command_state import (
+    MksCommandDispatcher,
+    MksSpeedCommand,
+    apply_velocity_watchdog,
+)
 from ..drivers.mks_wheel_backend import MksWheelBackend
 from ..drivers.odrive_wheel_backend import ODriveWheelBackend
 
@@ -46,6 +53,10 @@ def _ramp_toward(current, target, rate, dt):
     return nxt
 
 
+def _request_clean_shutdown(signum, frame):
+    raise KeyboardInterrupt
+
+
 class WheelDriverNode(Node):
     def __init__(self):
         super().__init__("wheel_driver_node")
@@ -62,7 +73,8 @@ class WheelDriverNode(Node):
         self.declare_parameter("accel_rpm_s", 120.0)
         self.declare_parameter("decel_rpm_s", 80.0)
         self.declare_parameter("stop_decel_rpm_s", 500.0)
-        self.declare_parameter("watchdog_sec", 0.8)
+        self.declare_parameter("watchdog_sec", 0.2)
+        self.declare_parameter("mks_request_timeout_sec", 1.5)
         self.declare_parameter("odrive_port", "/dev/odrive")
         self.declare_parameter("odrive_baud", 115200)
         self.declare_parameter("odrive_vel_limit", 100.0)
@@ -93,6 +105,7 @@ class WheelDriverNode(Node):
         self._last_cmd_ts = 0.0
         self._stop_fast = False
         self._estopped = False
+        self._shutting_down = False
 
         # Odometry state (integrated from commanded RPM)
         self._wheel_sep = self._p_float("wheel_separation")
@@ -104,8 +117,16 @@ class WheelDriverNode(Node):
         self._odom_theta = 0.0
 
         # MKS bus service client (used when backend == mks). Calls are
-        # issued fire-and-forget from the 50 Hz control loop — see _mks_set_speed.
+        # bounded and acknowledged asynchronously — see _mks_set_speed.
         self._mks_cli = self.create_client(MksSetSpeed, "/mks/set_speed")
+        self._mks_failure_log_ts: dict[int, float] = {}
+        self._mks_commands = MksCommandDispatcher(
+            submit=self._submit_mks_command,
+            service_is_ready=self._mks_cli.service_is_ready,
+            on_failure=self._log_mks_failure,
+            request_timeout_sec=self._p_float("mks_request_timeout_sec"),
+            cancel_request=self._cancel_mks_request,
+        )
         # Hardware-level emergency stop on the wheel motors. Bypasses the
         # MKS acc ramp — see mks_bus.emergency_stop / REG_EMERGENCY_STOP.
         self._mks_estop_cli = self.create_client(Trigger, "/mks/emergency_stop_wheels")
@@ -114,10 +135,6 @@ class WheelDriverNode(Node):
         self._mks_release_estop_cli = self.create_client(
             Trigger, "/mks/release_emergency_stop_wheels"
         )
-        # Last command sent per (motor_id, invert) so we can skip duplicate writes
-        # and keep the Modbus bus available for appendage motors and health probes.
-        self._last_sent_rpm: dict[tuple[int, bool], int] = {}
-
         # Active backend
         self._backend: WheelBackend | None = None
         self._backend_name = ""
@@ -170,34 +187,46 @@ class WheelDriverNode(Node):
 
     def _mks_set_speed(self, motor_id: int, rpm: float, acc: int, invert: bool) -> bool:
         """
-        Fire-and-forget speed command for the MKS backend.
+        Submit a bounded asynchronous speed command for the MKS backend.
 
-        Called from the 50 Hz control loop, so this MUST NOT block — never
-        spin_until_future_complete here, that would re-enter the executor and
-        stall the timer callback well past watchdog_sec, zeroing the command.
-
-        Skips the write if the rounded RPM hasn't changed since last send, so
-        steady-state cruise doesn't hammer the Modbus bus.
+        Each motor has at most one service call in flight and one pending
+        command. Pending non-zero commands are replaced by the latest value;
+        a pending zero is retained until it has been attempted.
         """
-        if not self._mks_cli.service_is_ready():
-            return False
         rpm_i = int(round(float(rpm)))
-        key = (int(motor_id), bool(invert))
-        last = self._last_sent_rpm.get(key)
-        if last is not None and last == rpm_i:
-            return True
-        self._last_sent_rpm[key] = rpm_i
+        command = MksSpeedCommand(
+            motor_id=int(motor_id),
+            rpm=rpm_i,
+            accel=0 if rpm_i == 0 else int(acc),
+            invert_dir=bool(invert),
+        )
+        return self._mks_commands.offer(command)
 
+    def _submit_mks_command(self, command: MksSpeedCommand, command_id: int):
         req = MksSetSpeed.Request()
-        req.motor_id = int(motor_id)
-        req.rpm = float(rpm_i)
-        # MKS manual §6.5: acc=0 → immediate stop; acc>0 → decelerate. Use 0
-        # when commanding 0 RPM so pivot/linear release stops both wheels
-        # without the motor chewing through a queued ramp tail.
-        req.accel = 0 if rpm_i == 0 else int(acc)
-        req.invert_dir = bool(invert)
-        self._mks_cli.call_async(req)
-        return True
+        req.motor_id = command.motor_id
+        req.rpm = float(command.rpm)
+        req.accel = command.accel
+        req.invert_dir = command.invert_dir
+        req.command_id = command_id
+        return self._mks_cli.call_async(req)
+
+    def _cancel_mks_request(self, future) -> None:
+        """Remove an expired request from rclpy's pending-future table."""
+        try:
+            self._mks_cli.remove_pending_request(future)
+        finally:
+            future.cancel()
+
+    def _log_mks_failure(self, command: MksSpeedCommand, reason: str) -> None:
+        now = time.monotonic()
+        last_log = self._mks_failure_log_ts.get(command.key, 0.0)
+        if now - last_log >= 1.0:
+            self._mks_failure_log_ts[command.key] = now
+            self.get_logger().warning(
+                f"MKS speed command failed: motor={command.motor_id} "
+                f"rpm={command.rpm}; retry pending ({reason})"
+            )
 
     # ── backend management ───────────────────────────────────────
 
@@ -257,7 +286,7 @@ class WheelDriverNode(Node):
         dr = _clamp((linear + angular) * self._max_rpm, -self._max_rpm, self._max_rpm)
 
         with self._lock:
-            if not self._stop_fast and not self._estopped:
+            if not self._shutting_down and not self._stop_fast and not self._estopped:
                 self._desired_left = dl
                 self._desired_right = dr
                 self._last_cmd_ts = time.monotonic()
@@ -287,8 +316,7 @@ class WheelDriverNode(Node):
             # Forget the last sent RPM so the first post-resume set_speed is
             # guaranteed to go out (otherwise dedup might swallow it if the
             # value happens to match the pre-estop cruise value).
-            with self._lock:
-                self._last_sent_rpm.clear()
+            self._mks_commands.clear_success()
 
             if self._backend:
                 ok = self._backend.resume()
@@ -330,7 +358,7 @@ class WheelDriverNode(Node):
             self._estopped = True
             # Force the next steady-state 0 to be transmitted (avoid dedup
             # swallowing it on the next control-loop tick).
-            self._last_sent_rpm.clear()
+            self._mks_commands.clear_success()
         if self._backend:
             self._backend.emergency_stop()
         resume_btn = self._resume_button_hint()
@@ -380,17 +408,25 @@ class WheelDriverNode(Node):
 
     def _control_loop(self):
         now = time.monotonic()
+        self._mks_commands.expire_timeouts(now)
         dt = now - self._last_tick
         self._last_tick = now
 
         with self._lock:
-            stop_fast = self._stop_fast
+            stop_fast = self._stop_fast or self._shutting_down
             age = now - self._last_cmd_ts
-            dl = self._desired_left
-            dr = self._desired_right
-
-        if not stop_fast and age > self._watchdog:
-            dl, dr = 0.0, 0.0
+            desired_left, desired_right, expired = apply_velocity_watchdog(
+                self._desired_left,
+                self._desired_right,
+                age,
+                self._watchdog,
+                inhibited=stop_fast,
+            )
+            if expired:
+                self._desired_left = desired_left
+                self._desired_right = desired_right
+            dl = desired_left
+            dr = desired_right
 
         if stop_fast:
             # E-stop: bypass the ramp entirely so we don't gradually decelerate.
@@ -447,6 +483,43 @@ class WheelDriverNode(Node):
         msg.data = status
         self._status_pub.publish(msg)
 
+    def shutdown(self, timeout_sec: float = 1.5) -> bool:
+        """Best-effort acknowledged zero command during normal shutdown."""
+        with self._lock:
+            self._shutting_down = True
+            self._desired_left = 0.0
+            self._desired_right = 0.0
+            self._actual_left = 0.0
+            self._actual_right = 0.0
+
+        if self._backend_name != "mks" or not self._backend:
+            if self._backend:
+                self._backend.stop()
+            return True
+
+        motor_ids = [self._p_int("id_left"), self._p_int("id_right")]
+        if not rclpy.ok():
+            try:
+                self._backend.stop()
+            except Exception as exc:
+                self.get_logger().warning(
+                    f"ROS context unavailable; backend stop failed: {exc}"
+                )
+            return False
+
+        deadline = time.monotonic() + max(0.0, timeout_sec)
+        while time.monotonic() < deadline:
+            self._backend.send_velocity(0.0, 0.0)
+            if self._mks_commands.is_stopped(motor_ids):
+                return True
+            if not rclpy.ok():
+                break
+            rclpy.spin_once(self, timeout_sec=0.02)
+
+        self.get_logger().warning(
+            "Timed out waiting for acknowledged zero-speed wheel commands"
+        )
+        return False
 
     def _update_odometry(self, left_rpm: float, right_rpm: float, dt: float):
         """Integrate wheel RPMs into odometry and publish."""
@@ -492,18 +565,26 @@ class WheelDriverNode(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args)
+    # Keep the ROS context alive while KeyboardInterrupt runs the bounded
+    # acknowledged-stop sequence below. ROS shutdown happens afterward.
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
+    previous_sigterm = signal.signal(signal.SIGTERM, _request_clean_shutdown)
     node = WheelDriverNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
+        try:
+            node.shutdown()
+        except Exception as exc:
+            node.get_logger().warning(f"Wheel shutdown stop failed: {exc}")
         if node._backend:
             try:
-                node._backend.emergency_stop()
                 node._backend.disconnect()
             except Exception:
                 pass
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
+        signal.signal(signal.SIGTERM, previous_sigterm)

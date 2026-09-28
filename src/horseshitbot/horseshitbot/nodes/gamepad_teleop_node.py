@@ -258,6 +258,7 @@ class GamepadTeleopNode(Node):
 
         period = 1.0 / max(1.0, self._rate)
         self.create_timer(period, self._publish_cmd_vel)
+        self.create_timer(0.5, self._check_device_liveness)
 
         self.get_logger().info(
             f"Gamepad teleop node started (config: "
@@ -294,47 +295,107 @@ class GamepadTeleopNode(Node):
     # ── connection ────────────────────────────────────────────────────
 
     def _try_connect(self):
-        self._device = _find_controller(self._device_path, CONTROLLER_NAMES)
-        if self._device:
-            self._connected = True
-            self.get_logger().info(f"Controller found: {self._device.name} ({self._device.path})")
-            caps = self._device.capabilities(verbose=False)
-            if ecodes.EV_ABS in caps:
-                for item in caps[ecodes.EV_ABS]:
-                    code = item[0] if isinstance(item, tuple) else item
-                    info = item[1] if isinstance(item, tuple) else None
-                    self._axis_info[code] = info
+        try:
+            device = _find_controller(self._device_path, CONTROLLER_NAMES)
+        except Exception as exc:
+            device = None
+            self.get_logger().warning(f"Controller discovery failed: {exc}")
+
+        if device:
+            try:
+                axis_info = {}
+                caps = device.capabilities(verbose=False)
+                if ecodes.EV_ABS in caps:
+                    for item in caps[ecodes.EV_ABS]:
+                        code = item[0] if isinstance(item, tuple) else item
+                        info = item[1] if isinstance(item, tuple) else None
+                        axis_info[code] = info
+            except Exception as exc:
+                self.get_logger().warning(f"Controller setup failed: {exc}")
+                try:
+                    device.close()
+                except Exception:
+                    pass
+                device = None
+
+        if device:
+            with self._lock:
+                self._device = device
+                self._connected = True
+                self._axis_info = axis_info
+            self.get_logger().info(f"Controller found: {device.name} ({device.path})")
         else:
-            self._connected = False
+            with self._lock:
+                self._device = None
+                self._connected = False
             self.get_logger().warn("No controller found, will retry...")
 
     def _reader_loop(self):
         while rclpy.ok():
-            if not self._connected or self._device is None:
+            with self._lock:
+                device = self._device if self._connected else None
+            if device is None:
                 time.sleep(2.0)
                 if _HAS_EVDEV:
                     self._try_connect()
                 continue
 
             try:
-                for event in self._device.read_loop():
+                for event in device.read_loop():
                     if not rclpy.ok():
                         return
                     self._handle_event(event)
-            except OSError:
-                self.get_logger().warn("Controller disconnected, zeroing velocity")
-                with self._lock:
-                    self._axis_x = 0.0
-                    self._axis_y = 0.0
-                    self._raxis_x = 0.0
-                    self._raxis_y = 0.0
-                    self._active_inputs.clear()
-                self._dpad_y = None
-                self._dpad_x = None
-                self._lt_pressed = False
-                self._rt_pressed = False
-                self._connected = False
-                self._device = None
+            except OSError as exc:
+                self._mark_device_lost(f"read failed: {exc}", expected=device)
+            except Exception as exc:
+                self._mark_device_lost(
+                    f"reader stopped unexpectedly: {exc}", expected=device
+                )
+
+    def _check_device_liveness(self):
+        """Fail safe only on confirmed evdev device disappearance."""
+        if not _HAS_EVDEV:
+            return
+        with self._lock:
+            device = self._device if self._connected else None
+        if device is None:
+            return
+        try:
+            present = device.path in list_devices()
+        except Exception:
+            return
+        if not present:
+            self._mark_device_lost("evdev device disappeared", expected=device)
+
+    def _mark_device_lost(self, reason: str, expected: InputDevice | None = None):
+        """Clear stale input and immediately publish zero after confirmed loss."""
+        with self._lock:
+            if expected is not None and self._device is not expected:
+                return
+            device = self._device
+            was_connected = self._connected or device is not None
+            self._device = None
+            self._connected = False
+            self._axis_x = 0.0
+            self._axis_y = 0.0
+            self._raxis_x = 0.0
+            self._raxis_y = 0.0
+            self._active_inputs.clear()
+            self._dpad_y = None
+            self._dpad_x = None
+            self._lt_pressed = False
+            self._rt_pressed = False
+            self._cmd_vel_pub.publish(Twist())
+
+        if was_connected:
+            self.get_logger().warning(
+                f"Controller disconnected ({reason}); published zero velocity"
+            )
+        if device is not None:
+            try:
+                device.close()
+            except Exception:
+                pass
 
     # ── event handling ────────────────────────────────────────────────
 
@@ -517,17 +578,21 @@ class GamepadTeleopNode(Node):
             y = self._axis_y
             active = sorted(self._active_inputs)
             btn_map = dict(self._button_map)
-
-        msg = Twist()
-        msg.linear.x = y * self._max_lin
-        msg.angular.z = x * self._max_ang
-        self._cmd_vel_pub.publish(msg)
+            connected = self._connected
+            device_name = self._device.name if self._device else ""
+            # Publish while holding the state lock so a disconnect cannot
+            # publish zero and then be followed by a previously-copied stale
+            # non-zero command from this timer.
+            msg = Twist()
+            msg.linear.x = y * self._max_lin
+            msg.angular.z = x * self._max_ang
+            self._cmd_vel_pub.publish(msg)
 
         bt_info = self._bt_gamepad_info
         status = String()
         status.data = json.dumps({
-            "connected": self._connected,
-            "name": self._device.name if self._device else "",
+            "connected": connected,
+            "name": device_name,
             "active_inputs": active,
             "button_map": btn_map,
             "battery": self._bt_battery,

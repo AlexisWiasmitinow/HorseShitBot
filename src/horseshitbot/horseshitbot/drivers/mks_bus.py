@@ -12,10 +12,14 @@ import threading
 import time
 from dataclasses import dataclass
 
-from pymodbus import FramerType
-from pymodbus.client import ModbusSerialClient
+from .pymodbus_compat import ModbusSerialClient, RTU_FRAMER, call_with_device
 
 _pymodbus_logger = logging.getLogger("pymodbus")
+
+
+class ModbusBusBusy(RuntimeError):
+    """A low-priority read cannot start without delaying a motor transaction."""
+
 
 REG_WORKMODE = 0x0082
 REG_RUN_CURRENT = 0x0083
@@ -47,16 +51,69 @@ def clamp(v, lo, hi):
     return lo if v < lo else hi if v > hi else v
 
 
+def validate_modbus_response(
+    response,
+    err_ctx: str,
+    expected_registers: int = 0,
+    expected_address: int | None = None,
+    expected_value: int | None = None,
+    expected_write_count: int | None = None,
+    allow_zero_write_count: bool = False,
+):
+    """Raise unless a pymodbus response is an explicit successful response."""
+    if response is None:
+        raise RuntimeError(f"{err_ctx}: no response")
+    is_error = getattr(response, "isError", None)
+    if not callable(is_error):
+        raise RuntimeError(f"{err_ctx}: invalid response without isError()")
+    if is_error():
+        raise RuntimeError(f"{err_ctx}: {response}")
+    if expected_registers:
+        registers = getattr(response, "registers", None)
+        if not isinstance(registers, (list, tuple)):
+            raise RuntimeError(f"{err_ctx}: response has no valid registers")
+        if len(registers) < expected_registers:
+            raise RuntimeError(
+                f"{err_ctx}: expected {expected_registers} registers, "
+                f"received {len(registers)}"
+            )
+    if expected_address is not None and getattr(response, "address", None) != expected_address:
+        raise RuntimeError(f"{err_ctx}: write response address mismatch")
+    if expected_value is not None:
+        missing = object()
+        echoed_value = getattr(response, "value", missing)
+        if echoed_value is missing:
+            registers = getattr(response, "registers", None)
+            if not isinstance(registers, (list, tuple)) or not registers:
+                raise RuntimeError(
+                    f"{err_ctx}: write response has no echoed register value"
+                )
+            echoed_value = registers[0]
+        if echoed_value != expected_value:
+            raise RuntimeError(f"{err_ctx}: write response value mismatch")
+    if (
+        expected_write_count is not None
+        and getattr(response, "count", None) != expected_write_count
+        and not (
+            allow_zero_write_count
+            and getattr(response, "count", None) == 0
+        )
+    ):
+        raise RuntimeError(f"{err_ctx}: write response count mismatch")
+    return response
+
+
 @dataclass
 class BusCfg:
     port: str
-    baud: int = 38400
+    baud: int = 19200
     timeout: float = 0.35
     retries: int = 3
     inter_delay: float = 0.002
     # Used by probe() only — keep this small so health checks against
     # missing motors don't stall the whole bus. A typical successful
-    # round-trip at 115200 baud is ~3 ms, so 60 ms gives 20× slack.
+    # one-register round-trip at 19200 baud is ~9 ms, so 60 ms gives
+    # substantial USB/device turnaround margin.
     probe_timeout: float = 0.06
 
 
@@ -69,7 +126,7 @@ class MksBus:
 
         self.client = ModbusSerialClient(
             port=cfg.port,
-            framer=FramerType.RTU,
+            framer=RTU_FRAMER,
             baudrate=cfg.baud,
             bytesize=8,
             parity="N",
@@ -95,15 +152,14 @@ class MksBus:
         except Exception:
             pass
 
-    def _retry(self, call, err_ctx: str):
+    def _retry(self, call, err_ctx: str, expected_registers: int = 0):
         """Execute a Modbus call. Pymodbus handles protocol-level retries;
         we only reconnect if the serial port itself drops."""
         self._ensure_connected()
         try:
             with self.lock:
                 rr = call()
-            if hasattr(rr, "isError") and rr.isError():
-                raise RuntimeError(f"{err_ctx}: {rr}")
+            validate_modbus_response(rr, err_ctx, expected_registers)
             if self.cfg.inter_delay and self.cfg.inter_delay > 0:
                 time.sleep(self.cfg.inter_delay)
             return rr
@@ -121,8 +177,7 @@ class MksBus:
             try:
                 with self.lock:
                     rr = call()
-                if hasattr(rr, "isError") and rr.isError():
-                    raise RuntimeError(f"{err_ctx}: {rr}")
+                validate_modbus_response(rr, err_ctx, expected_registers)
                 if self.cfg.inter_delay and self.cfg.inter_delay > 0:
                     time.sleep(self.cfg.inter_delay)
                 return rr
@@ -130,48 +185,134 @@ class MksBus:
                 raise RuntimeError(f"{err_ctx}: {first_err}") from None
 
     def write_reg(self, unit_id: int, addr: int, value: int):
+        value_u16 = int(value) & 0xFFFF
+        err_ctx = f"write_reg failed unit={unit_id} addr=0x{addr:04X}"
+
         def _call():
-            return self.client.write_register(
+            return call_with_device(
+                self.client.write_register,
+                unit_id,
                 address=addr,
-                value=int(value) & 0xFFFF,
-                device_id=unit_id,
+                value=value_u16,
             )
-        return self._retry(_call, f"write_reg failed unit={unit_id} addr=0x{addr:04X}")
+        response = self._retry(_call, err_ctx)
+        return validate_modbus_response(
+            response,
+            err_ctx,
+            expected_address=addr,
+            expected_value=value_u16,
+        )
 
     def write_regs(self, unit_id: int, addr: int, values: list[int]):
+        values_u16 = [int(v) & 0xFFFF for v in values]
+        err_ctx = f"write_regs failed unit={unit_id} addr=0x{addr:04X}"
+
         def _call():
-            return self.client.write_registers(
+            return call_with_device(
+                self.client.write_registers,
+                unit_id,
                 address=addr,
-                values=[int(v) & 0xFFFF for v in values],
-                device_id=unit_id,
+                values=values_u16,
             )
-        return self._retry(_call, f"write_regs failed unit={unit_id} addr=0x{addr:04X}")
+        response = self._retry(_call, err_ctx)
+        return validate_modbus_response(
+            response,
+            err_ctx,
+            expected_address=addr,
+            expected_write_count=len(values_u16),
+            allow_zero_write_count=True,
+        )
 
     def read_regs(self, unit_id: int, addr: int, count: int = 1):
         def _call():
-            return self.client.read_holding_registers(
+            return call_with_device(
+                self.client.read_holding_registers,
+                unit_id,
                 address=addr,
                 count=count,
-                device_id=unit_id,
             )
-        rr = self._retry(_call, f"read_regs failed unit={unit_id} addr=0x{addr:04X}")
-        return rr.registers if hasattr(rr, "registers") else []
+        rr = self._retry(
+            _call,
+            f"read_regs failed unit={unit_id} addr=0x{addr:04X}",
+            expected_registers=count,
+        )
+        return list(rr.registers)
+
+    def read_regs_once_if_idle(
+        self,
+        unit_id: int,
+        addr: int,
+        count: int = 1,
+        timeout: float = 0.03,
+    ) -> list[int]:
+        """Perform one tightly bounded low-priority holding-register read.
+
+        This never waits for the bus lock, retries, or reconnects. Motor calls
+        therefore win whenever they already own the client. A motor request
+        arriving after this transaction starts can wait for this one timeout.
+        """
+        if count < 1:
+            raise ValueError("count must be at least 1")
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        if not self.lock.acquire(blocking=False):
+            raise ModbusBusBusy("motor transaction owns the Modbus bus")
+
+        previous_retries = getattr(self.client, "retries", None)
+        previous_timeout = self._get_client_timeout()
+        transaction_started = False
+        try:
+            if previous_retries is None or previous_timeout is None:
+                raise RuntimeError(
+                    "installed pymodbus does not expose bounded retry/timeout controls"
+                )
+            if hasattr(self.client, "connected") and not self.client.connected:
+                raise RuntimeError("Modbus bus is disconnected")
+
+            self.client.retries = 0
+            self._set_client_timeout(timeout)
+            transaction_started = True
+            response = call_with_device(
+                self.client.read_holding_registers,
+                unit_id,
+                address=addr,
+                count=count,
+            )
+            validate_modbus_response(
+                response,
+                f"low-priority read failed unit={unit_id} addr=0x{addr:04X}",
+                expected_registers=count,
+            )
+            return list(response.registers)
+        finally:
+            if previous_retries is not None:
+                self.client.retries = previous_retries
+            if previous_timeout is not None:
+                self._set_client_timeout(previous_timeout)
+            if transaction_started and self.cfg.inter_delay > 0:
+                time.sleep(self.cfg.inter_delay)
+            self.lock.release()
 
     def read_input_regs(self, unit_id: int, addr: int, count: int = 1):
         def _call():
-            return self.client.read_input_registers(
+            return call_with_device(
+                self.client.read_input_registers,
+                unit_id,
                 address=addr,
                 count=count,
-                device_id=unit_id,
             )
-        rr = self._retry(_call, f"read_input_regs failed unit={unit_id} addr=0x{addr:04X}")
-        return rr.registers if hasattr(rr, "registers") else []
+        rr = self._retry(
+            _call,
+            f"read_input_regs failed unit={unit_id} addr=0x{addr:04X}",
+            expected_registers=count,
+        )
+        return list(rr.registers)
 
     def probe(self, unit_id: int) -> bool:
         """Quick single-attempt connectivity check (no retries, no reconnect).
         Uses a short probe-specific timeout so missing motors don't stall the
-        single-threaded executor — a normal probe round-trip is ~3 ms, so the
-        default 60 ms is plenty for a healthy bus.
+        shared bus — a normal probe round-trip at 19200 baud is ~9 ms, so the
+        default 60 ms leaves substantial device/USB turnaround margin.
         Suppresses pymodbus log noise for expected timeouts."""
         self._ensure_connected()
         prev_level = _pymodbus_logger.level
@@ -182,10 +323,14 @@ class MksBus:
             self.client.retries = 0
             self._set_client_timeout(self.cfg.probe_timeout)
             with self.lock:
-                rr = self.client.read_input_registers(
-                    address=0x3A, count=1, device_id=unit_id,
+                rr = call_with_device(
+                    self.client.read_input_registers,
+                    unit_id,
+                    address=0x3A,
+                    count=1,
                 )
-            return not (hasattr(rr, "isError") and rr.isError())
+            validate_modbus_response(rr, f"probe failed unit={unit_id}", 1)
+            return True
         except Exception:
             return False
         finally:
@@ -347,29 +492,32 @@ class MksBus:
         self.move_rel_axis(unit_id, offset, speed_rpm=speed_rpm, acc=acc)
 
     def clear_error_state(self, unit_id: int, mode: int | None = None):
+        failures = []
         try:
             self.set_speed_signed(unit_id, 0.0, acc=0, invert_dir=False)
-        except Exception:
-            pass
+        except Exception as exc:
+            failures.append(f"stop: {exc}")
         try:
             self.release_locked_rotor(unit_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            failures.append(f"release protection: {exc}")
         try:
             self.axis_zero(unit_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            failures.append(f"axis zero: {exc}")
         try:
             self.set_enable(unit_id, False)
             time.sleep(0.05)
-        except Exception:
-            pass
+        except Exception as exc:
+            failures.append(f"disable: {exc}")
         if mode is not None:
             try:
                 self.write_reg(unit_id, REG_WORKMODE, int(mode))
-            except Exception:
-                pass
+            except Exception as exc:
+                failures.append(f"mode: {exc}")
         try:
             self.set_enable(unit_id, True)
-        except Exception:
-            pass
+        except Exception as exc:
+            failures.append(f"enable: {exc}")
+        if failures:
+            raise RuntimeError("; ".join(failures))

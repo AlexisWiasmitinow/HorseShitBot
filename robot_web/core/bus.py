@@ -2,8 +2,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from pymodbus import FramerType
-from pymodbus.client import ModbusSerialClient
+from .pymodbus_compat import ModbusSerialClient, RTU_FRAMER, call_with_device
 
 REG_WORKMODE         = 0x0082
 REG_ENABLE           = 0x00F3
@@ -36,30 +35,37 @@ class MksBus:
     def __init__(self, cfg: BusCfg):
         self.cfg = cfg
         self.lock = threading.Lock()
+        self.client = None
 
-        self.client = ModbusSerialClient(
-            port=cfg.port,
-            framer=FramerType.RTU,
-            baudrate=cfg.baud,
+    def _new_client(self):
+        return ModbusSerialClient(
+            port=self.cfg.port,
+            framer=RTU_FRAMER,
+            baudrate=self.cfg.baud,
             bytesize=8,
             parity="N",
             stopbits=1,
-            timeout=cfg.timeout,
+            timeout=self.cfg.timeout,
             retries=0,
         )
 
     def connect(self):
+        if self.client is None:
+            self.client = self._new_client()
         if not self.client.connect():
             raise RuntimeError(f"Cannot open Modbus port: {self.cfg.port}")
 
     def close(self):
         try:
-            self.client.close()
+            if self.client is not None:
+                self.client.close()
         except Exception:
             pass
 
     def _ensure_connected(self):
         try:
+            if self.client is None:
+                self.client = self._new_client()
             if hasattr(self.client, "connected") and not self.client.connected:
                 self.client.connect()
         except Exception:
@@ -97,19 +103,21 @@ class MksBus:
 
     def write_reg(self, unit_id: int, addr: int, value: int):
         def _call():
-            return self.client.write_register(
+            return call_with_device(
+                self.client.write_register,
+                unit_id,
                 address=addr,
                 value=int(value) & 0xFFFF,
-                device_id=unit_id,
             )
         return self._retry(_call, f"write_reg failed unit={unit_id} addr=0x{addr:04X}")
 
     def write_regs(self, unit_id: int, addr: int, values: list[int]):
         def _call():
-            return self.client.write_registers(
+            return call_with_device(
+                self.client.write_registers,
+                unit_id,
                 address=addr,
                 values=[int(v) & 0xFFFF for v in values],
-                device_id=unit_id,
             )
         return self._retry(_call, f"write_regs failed unit={unit_id} addr=0x{addr:04X}")
 

@@ -7,6 +7,7 @@ find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ActuatorState.msg"
+  "srv/ModbusReadHoldingRegister.srv"
   "srv/MksSetSpeed.srv"
   "srv/MksMoveTurns.srv"
   "srv/MksSetCurrent.srv"
