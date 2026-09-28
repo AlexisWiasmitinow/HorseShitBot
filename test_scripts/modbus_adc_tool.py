@@ -8,8 +8,10 @@ any other ROS/legacy bus owner is running.
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 import sys
+import time
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "src" / "horseshitbot"
@@ -134,6 +136,87 @@ def command_scan(args) -> int:
     return 0 if found else 1
 
 
+@dataclass
+class StressResult:
+    attempts: int = 0
+    successes: int = 0
+    failures: int = 0
+    elapsed_sec: float = 0.0
+    interrupted: bool = False
+
+    @property
+    def reads_per_sec(self) -> float:
+        if self.elapsed_sec <= 0.0:
+            return 0.0
+        return self.attempts / self.elapsed_sec
+
+
+def run_stress_loop(
+    read_once,
+    duration_sec: float,
+    delay_sec: float = 0.0,
+    now=time.monotonic,
+    sleep=time.sleep,
+) -> StressResult:
+    """Call read_once repeatedly for duration_sec and tally the outcomes.
+
+    Ctrl+C anywhere in the loop ends it without losing the counts gathered so
+    far. attempts always equals successes + failures.
+    """
+    result = StressResult()
+    start = now()
+    deadline = start + duration_sec
+    while now() < deadline:
+        try:
+            read_once()
+        except KeyboardInterrupt:
+            result.interrupted = True
+            break
+        except Exception:
+            result.attempts += 1
+            result.failures += 1
+        else:
+            result.attempts += 1
+            result.successes += 1
+        if delay_sec > 0.0:
+            try:
+                sleep(delay_sec)
+            except KeyboardInterrupt:
+                result.interrupted = True
+                break
+    result.elapsed_sec = now() - start
+    return result
+
+
+def command_stress(args) -> int:
+    mapping = register_map(args)
+    address = mapping.channel_register(args.channel)
+    client = connect(make_client(args))
+    print(
+        f"stress: port={args.port} slave={args.slave} baud={args.baudrate} "
+        f"channel={args.channel} duration={args.duration_sec}s "
+        f"delay={args.delay_sec}s"
+    )
+    try:
+        # Read-only by construction: this path never calls write_register.
+        result = run_stress_loop(
+            lambda: read_register(client, args.slave, address),
+            duration_sec=args.duration_sec,
+            delay_sec=args.delay_sec,
+        )
+    finally:
+        client.close()
+
+    if result.interrupted:
+        print("interrupted by user")
+    print(
+        f"attempts={result.attempts} ok={result.successes} "
+        f"failed={result.failures} elapsed={result.elapsed_sec:.2f}s "
+        f"rate={result.reads_per_sec:.1f} reads/s"
+    )
+    return 0 if result.attempts and not result.failures else 1
+
+
 def require_write_confirmation(args):
     if not args.yes:
         raise RuntimeError("refusing configuration write without --yes")
@@ -209,6 +292,17 @@ def main() -> int:
     )
     scan_parser.set_defaults(func=command_scan)
 
+    stress_parser = subparsers.add_parser("stress")
+    add_common(stress_parser)
+    stress_parser.add_argument("--duration-sec", type=float, default=10.0)
+    stress_parser.add_argument(
+        "--delay-sec",
+        type=float,
+        default=0.0,
+        help="pause between reads; 0 reads as fast as the bus allows",
+    )
+    stress_parser.set_defaults(func=command_stress)
+
     slave_parser = subparsers.add_parser("set-slave")
     add_common(slave_parser)
     slave_parser.add_argument("--new-slave", type=int, required=True)
@@ -233,6 +327,10 @@ def main() -> int:
         )
     if hasattr(args, "new_slave") and not 1 <= args.new_slave <= 247:
         parser.error("--new-slave must be in 1..247")
+    if hasattr(args, "duration_sec") and args.duration_sec <= 0:
+        parser.error("--duration-sec must be greater than 0")
+    if hasattr(args, "delay_sec") and args.delay_sec < 0:
+        parser.error("--delay-sec must not be negative")
 
     print(
         "WARNING: direct serial ownership enabled; do not run ROS mks_bus_node "
