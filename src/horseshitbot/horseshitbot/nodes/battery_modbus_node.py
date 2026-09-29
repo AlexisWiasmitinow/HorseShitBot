@@ -503,7 +503,10 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # Ctrl-C already shuts the context down via rclpy's signal handler;
+        # calling shutdown again raises RCLError and exits 1.
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

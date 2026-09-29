@@ -7,6 +7,7 @@
 #   ./scripts/start.sh --no-camera      # skip RealSense (recorders stay available)
 #   ./scripts/start.sh --no-mks         # use ODrive; skip MKS bus and actuators
 #   ./scripts/start.sh --no-lidar       # skip lidar node
+#   ./scripts/start.sh --no-battery     # skip the shared-bus battery monitor
 #   ./scripts/start.sh --drive-only     # just wheel driver + gamepad (no launch file)
 #   ./scripts/start.sh --rebuild        # force colcon build before launching
 #
@@ -57,6 +58,7 @@ fi
 ENABLE_CAMERA=true
 ENABLE_MKS=true
 ENABLE_LIDAR=true
+ENABLE_BATTERY=true
 DRIVE_ONLY=false
 FORCE_REBUILD=false
 for arg in "$@"; do
@@ -64,6 +66,7 @@ for arg in "$@"; do
     --no-camera)   ENABLE_CAMERA=false ;;
     --no-mks)      ENABLE_MKS=false ;;
     --no-lidar)    ENABLE_LIDAR=false ;;
+    --no-battery)  ENABLE_BATTERY=false ;;
     --drive-only)  DRIVE_ONLY=true ;;
     --rebuild)     FORCE_REBUILD=true ;;
     *)
@@ -131,16 +134,21 @@ else
   [ "$ENABLE_CAMERA" = false ] && echo "  (camera disabled)"
   [ "$ENABLE_MKS" = false ]    && echo "  (MKS disabled; ODrive wheel backend selected)"
   [ "$ENABLE_LIDAR" = false ]  && echo "  (lidar disabled)"
+  [ "$ENABLE_BATTERY" = false ] && echo "  (battery monitor disabled)"
   echo "  Ctrl+C to stop"
   echo ""
 
   WHEEL_BACKEND="mks"
   [ "$ENABLE_MKS" = false ] && WHEEL_BACKEND="odrive"
+  # The battery monitor reads the ADC through mks_bus_node's shared service,
+  # so it cannot run when the MKS bus is disabled.
+  [ "$ENABLE_MKS" = false ] && ENABLE_BATTERY=false
 
   ros2 launch horseshitbot robot_launch.py \
     enable_camera:="$ENABLE_CAMERA" \
     enable_mks:="$ENABLE_MKS" \
     enable_lidar:="$ENABLE_LIDAR" \
+    enable_battery:="$ENABLE_BATTERY" \
     wheel_backend:="$WHEEL_BACKEND" \
     params_file:="$PARAMS"
 fi

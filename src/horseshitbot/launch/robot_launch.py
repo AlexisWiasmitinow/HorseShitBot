@@ -4,7 +4,8 @@ Launch file for the complete HorseShitBot ROS 2 system.
 Arguments:
   enable_camera:=true/false   — enable/disable RealSense (recorders are independent)
   enable_mks:=true/false      — enable/disable MKS bus and MKS actuators (default true)
-  enable_battery:=true/false  — enable shared-bus battery/ADC monitor (default false)
+  enable_battery:=true/false  — enable shared-bus battery/ADC monitor (default false;
+                                scripts/start.sh enables it, requires enable_mks)
   enable_lidar:=true/false    — enable/disable lidar node (default true)
   enable_imu:=true/false      — enable/disable ICM-20948 IMU node (default true)
   wheel_backend:=mks/odrive   — optional wheel backend override
@@ -86,6 +87,16 @@ def _launch_setup(context):
                 output="screen",
             ),
         ]
+
+    # The monitor has no serial device of its own; it reads the ADC through
+    # mks_bus_node's /modbus/read_holding_register. Without that owner every
+    # poll would just log an unavailable service.
+    if enable_battery and not enable_mks:
+        raise RuntimeError(
+            "enable_battery:=true requires enable_mks:=true; the battery "
+            "monitor reads the ADC through mks_bus_node's shared Modbus "
+            "service. Pass enable_battery:=false to run without it."
+        )
 
     if enable_battery:
         nodes.append(Node(
@@ -203,8 +214,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("enable_camera", default_value="true"),
         DeclareLaunchArgument("enable_mks", default_value="true"),
-        # Keep disabled until N43IC04 raw-current scaling is verified.
-        # Hardware is commissioned as ID 33 at 19200 baud.
+        # Off unless asked for; scripts/start.sh passes enable_battery:=true
+        # for the deployed configuration.
         DeclareLaunchArgument("enable_battery", default_value="false"),
         DeclareLaunchArgument("enable_lidar", default_value="true"),
         DeclareLaunchArgument("enable_imu", default_value="true"),
