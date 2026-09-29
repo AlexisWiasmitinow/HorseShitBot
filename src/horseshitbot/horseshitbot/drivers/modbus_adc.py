@@ -2,10 +2,17 @@
 
 ROS serial ownership deliberately does not live here. The bus node reads one
 raw register and battery_modbus_node uses this module only for conversion.
+
+State of charge is an estimate derived from voltage alone; see
+DEFAULT_SOC_VOLTAGE_POINTS. It is display telemetry. Low-voltage and shutdown
+decisions are made by LowVoltageMonitor from the instantaneous calibrated
+voltage and never from the smoothed value or the percentage.
 """
 
 from __future__ import annotations
 
+import math
+from collections import deque
 from dataclasses import dataclass
 
 
@@ -159,3 +166,131 @@ class LowVoltageMonitor:
             critical_for_sec=critical_for,
             shutdown_due=shutdown_due,
         )
+
+
+# Empirical HorseShitBot discharge calibration, 2026-09-25: a single 21.4 h
+# run down to the BMS cutoff, sampled at 1 Hz. Percentages are the share of
+# that run still remaining, so they assume a comparable load. Ordered from the
+# top of the usable range downwards. Above the first voltage the pack is still
+# shedding surface charge, which lasted only ~16 minutes, so that reads 100%;
+# at or below the last voltage it reads 0%.
+#
+# No battery current or coulomb counting is available, so this cannot be
+# corrected for load. The curve is very flat through its middle, where one ADC
+# count is worth roughly two percentage points, which is why callers should
+# smooth the voltage before looking it up.
+DEFAULT_SOC_VOLTAGE_POINTS = (
+    26.40, 26.20, 26.05, 25.95, 25.85, 25.70, 25.55,
+    25.40, 25.20, 24.80, 24.00, 23.00, 22.00, 20.00,
+)
+DEFAULT_SOC_PERCENT_POINTS = (
+    100.0, 70.8, 52.1, 39.8, 32.2, 24.4, 20.2,
+    15.5, 7.9, 5.3, 3.0, 1.5, 0.6, 0.0,
+)
+
+
+def validate_soc_curve(voltage_points, percent_points):
+    """Return the curve normalised to descending voltage order.
+
+    Raises ValueError if the pair cannot describe a monotonic curve, so a
+    caller can fall back to the defaults rather than display nonsense.
+    """
+    voltages = [float(v) for v in voltage_points]
+    percents = [float(p) for p in percent_points]
+
+    if len(voltages) != len(percents):
+        raise ValueError(
+            f"soc curve needs matching lengths, got {len(voltages)} voltages "
+            f"and {len(percents)} percentages"
+        )
+    if len(voltages) < 2:
+        raise ValueError("soc curve needs at least two points")
+    if not all(math.isfinite(v) for v in voltages):
+        raise ValueError("soc curve voltages must all be finite")
+    if not all(math.isfinite(p) for p in percents):
+        raise ValueError("soc curve percentages must all be finite")
+    if any(p < 0.0 or p > 100.0 for p in percents):
+        raise ValueError("soc curve percentages must lie within 0..100")
+
+    ascending = all(a < b for a, b in zip(voltages, voltages[1:]))
+    if ascending:
+        voltages.reverse()
+        percents.reverse()
+    elif not all(a > b for a, b in zip(voltages, voltages[1:])):
+        raise ValueError("soc curve voltages must be strictly monotonic")
+
+    if not all(a >= b for a, b in zip(percents, percents[1:])):
+        raise ValueError(
+            "soc curve percentages must not rise as voltage falls"
+        )
+    return tuple(voltages), tuple(percents)
+
+
+def state_of_charge_percent(voltage, voltage_points=None, percent_points=None):
+    """Interpolate state of charge in percent (0..100) from pack voltage.
+
+    Points are expected in descending voltage order, as produced by
+    validate_soc_curve.
+    """
+    voltages = (
+        DEFAULT_SOC_VOLTAGE_POINTS if voltage_points is None else voltage_points
+    )
+    percents = (
+        DEFAULT_SOC_PERCENT_POINTS if percent_points is None else percent_points
+    )
+    value = float(voltage)
+    if not math.isfinite(value):
+        raise ValueError("voltage must be finite")
+
+    if value >= voltages[0]:
+        result = percents[0]
+    elif value <= voltages[-1]:
+        result = percents[-1]
+    else:
+        result = percents[-1]
+        for i in range(len(voltages) - 1):
+            hi_v, lo_v = voltages[i], voltages[i + 1]
+            if lo_v <= value <= hi_v:
+                span = hi_v - lo_v
+                frac = 1.0 if span == 0 else (value - lo_v) / span
+                result = percents[i + 1] + frac * (percents[i] - percents[i + 1])
+                break
+    return max(0.0, min(100.0, float(result)))
+
+
+class MedianVoltageFilter:
+    """Rolling median over the last ``window`` samples.
+
+    Display smoothing only. Feeding this to LowVoltageMonitor would delay a
+    genuine collapse by most of the window, so the node keeps the two paths
+    apart. Reports a median from the first sample onwards rather than waiting
+    for a full window, so the percentage appears immediately after startup.
+    """
+
+    def __init__(self, window: int = 30):
+        size = int(window)
+        if size < 1:
+            raise ValueError("median window must be at least 1")
+        self._samples: deque[float] = deque(maxlen=size)
+
+    @property
+    def window(self) -> int:
+        return self._samples.maxlen
+
+    @property
+    def count(self) -> int:
+        return len(self._samples)
+
+    def reset(self) -> None:
+        self._samples.clear()
+
+    def update(self, value: float) -> float:
+        sample = float(value)
+        if not math.isfinite(sample):
+            raise ValueError("median filter needs a finite sample")
+        self._samples.append(sample)
+        ordered = sorted(self._samples)
+        mid = len(ordered) // 2
+        if len(ordered) % 2:
+            return ordered[mid]
+        return (ordered[mid - 1] + ordered[mid]) / 2.0

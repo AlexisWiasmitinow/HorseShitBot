@@ -176,6 +176,36 @@ stops — waits `safe_stop_grace_sec` for the stop frames to reach the motors,
 and then runs `shutdown_command`, which defaults to
 `sudo -n /usr/sbin/shutdown -h now`.
 
+### Displayed state of charge
+
+The dashboard percentage is an **empirical voltage-based estimate**, not a
+measurement. It comes from a single discharge test on 2026-09-25: one 21.4 h
+run from full down to the BMS cutoff, logged at 1 Hz. The resulting
+voltage-to-percentage points live in `soc_voltage_points` and
+`soc_percent_points`, and values between them are interpolated linearly and
+clamped to 0–100%.
+
+Treat it as indicative only:
+
+- There is **no battery current sensing and no coulomb counting**, so the
+  estimate cannot be corrected for how hard the robot is working. The
+  calibration assumes a load comparable to that one test.
+- Load, temperature, battery ageing and battery-to-battery variation all shift
+  the curve.
+- The pack spends most of its life on a very flat part of the curve, where one
+  ADC count is worth roughly two percentage points. The displayed voltage is
+  therefore median-filtered over `soc_median_window` samples (30 s at the
+  default 1 Hz poll) before the lookup, so the percentage will lag a real
+  change by up to that window.
+- A freshly charged pack reads 100% for its first few minutes while it sheds
+  surface charge, which represents almost no usable capacity.
+
+**The safety path does not use any of this.** Low-voltage warning, the critical
+hold timer and the shutdown decision are all driven by the instantaneous
+calibrated voltage, never by the filtered value or the displayed percentage.
+Recalibrating the curve cannot weaken the shutdown behaviour, and a wrong
+percentage cannot delay it.
+
 ### Deployment prerequisite: passwordless shutdown
 
 The stack does not run as root, so powering off must be the one command it may

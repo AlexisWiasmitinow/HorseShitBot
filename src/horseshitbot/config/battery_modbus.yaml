@@ -34,3 +34,22 @@ battery_modbus_node:
     # Absolute path so the /etc/sudoers.d/horseshitbot-shutdown rule matches a
     # fixed command rather than whatever PATH resolves to. See the README.
     shutdown_command: ["sudo", "-n", "/usr/sbin/shutdown", "-h", "now"]
+
+    # Displayed state of charge only. Derived from the 2026-09-25 discharge
+    # test: one 21.4 h run to the BMS cutoff, voltage only, no coulomb
+    # counting, so the percentage assumes a comparable load and will drift
+    # with load, temperature, ageing and battery-to-battery variation.
+    # Both arrays must be the same length, at least two entries, ordered by
+    # voltage and non-rising in percentage; invalid values fall back to the
+    # built-in defaults in drivers/modbus_adc.py.
+    soc_voltage_points: [26.40, 26.20, 26.05, 25.95, 25.85, 25.70, 25.55,
+                         25.40, 25.20, 24.80, 24.00, 23.00, 22.00, 20.00]
+    soc_percent_points: [100.0, 70.8, 52.1, 39.8, 32.2, 24.4, 20.2,
+                         15.5, 7.9, 5.3, 3.0, 1.5, 0.6, 0.0]
+
+    # Median window applied before the SoC lookup, and nowhere else. At
+    # read_period_sec 1.0 this is a 30 s window, which absorbs the ~2-count
+    # ADC noise that would otherwise swing the displayed percentage by
+    # several points. The low/critical/shutdown path keeps using the
+    # instantaneous calibrated voltage.
+    soc_median_window: 30
