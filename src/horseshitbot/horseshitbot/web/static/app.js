@@ -27,6 +27,7 @@ function updateCurrent(side, amps, limit) {
 }
 
 let ws = null;
+let wsReconnectTimer = null;  // at most one pending reconnect at a time
 let ctrlConfig = null;   // fetched from server
 let activeInputs = [];    // live from WebSocket
 let lastGamepad = {};     // last gamepad status from WS
@@ -157,30 +158,49 @@ function applyOptimisticRecorderState(profile, recording) {
 // ─── WebSocket ───────────────────────────────────────────────────
 
 function connectWs() {
+  // A socket that is already connecting or open still owns the badge, so
+  // opening a second one would leave two sets of handlers fighting over it.
+  if (wsReconnectTimer !== null) {
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
+  }
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  // Keep a local handle: `ws` may point at a newer socket by the time these
+  // handlers fire, and only the current socket may touch shared state.
+  const sock = new WebSocket(`${proto}//${location.host}/ws`);
+  ws = sock;
 
   const badge = document.getElementById("ws-status");
   const badgeText = badge?.querySelector(".connection-text");
 
-  ws.onopen = () => {
+  sock.onopen = () => {
+    if (sock !== ws) return;
     if (badgeText) badgeText.textContent = "Connected";
     else if (badge) badge.textContent = "Connected";
     badge?.classList.add("connected");
     updateDashboardConnection(true);
   };
 
-  ws.onclose = () => {
+  sock.onclose = () => {
+    if (sock !== ws) return;
     if (badgeText) badgeText.textContent = "Disconnected";
     else if (badge) badge.textContent = "Disconnected";
     badge?.classList.remove("connected");
     updateDashboardConnection(false);
-    setTimeout(connectWs, 2000);
+    if (wsReconnectTimer === null) {
+      wsReconnectTimer = setTimeout(() => {
+        wsReconnectTimer = null;
+        connectWs();
+      }, 2000);
+    }
   };
 
-  ws.onerror = () => ws.close();
+  sock.onerror = () => sock.close();
 
-  ws.onmessage = (evt) => {
+  sock.onmessage = (evt) => {
+    if (sock !== ws) return;
     try {
       const data = JSON.parse(evt.data);
       dashboardRuntime.telemetryLastSeenAt = Date.now();
