@@ -346,7 +346,7 @@ class MksBusNode(Node):
     def _srv_init_servo(self, request, response):
         failed = []
         with self._motor_operation():
-            for mid in range(1, 7):
+            for mid in self._motor_ids:
                 try:
                     self._bus.init_servo(
                         mid,
