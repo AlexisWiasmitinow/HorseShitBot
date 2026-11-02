@@ -1,0 +1,282 @@
+# Ground-Truth Physical Room Measurements — October 1, 2026 Recording Session
+#
+# Transcribed from handwritten physical room measurements for the room recorded in
+# `mapping_2026-10-01_14-36-31`.
+#
+# IMPORTANT GEOMETRY NOTES:
+# 1. All confirmed dimensions below are provisionally interpreted in METERS (`m`).
+# 2. The room is long and narrow with a straight left wall (`L1 = 10.600 m`) and a
+#    stepped right-hand wall with three width sections (`W1`, `W2`, `W3`) and three
+#    longitudinal right-wall sections (`R1`, `R2`, `R3`).
+# 3. Longitudinal discrepancy (preserved, NOT auto-corrected):
+#      R1 + R2 + R3 = 4.750 + 4.400 + 1.172 = 10.322 m
+#      L1 - (R1 + R2 + R3) = 10.600 - 10.322 = +0.278 m
+#    Because of this 0.278 m longitudinal gap, the floor-plan polygon is not closed
+#    along the vertical/longitudinal axis unless the missing 0.278 m is explicitly
+#    left open as an unresolved longitudinal interval.
+# 4. Unassigned / uncertain sketch annotations (`0.7 m` circled and `327.3` with
+#    unclear units/correspondence) are stored separately under
+#    `unassigned_or_uncertain_measurements` and are NOT incorporated into the room
+#    polygon geometry.
+
+room_metadata:
+  recording_date: "2026-10-01"
+  primary_bag: "/home/hsb/rosbags/mapping_2026-10-01_14-36-31"
+  slam_map_yaml: "/home/hsb/hsb_analysis/lidar_validation/slam_toolbox/corrected_icp_odom/oct1_corrected_icp_odom.yaml"
+  units: "meters"
+  provisional_units: true
+  coordinate_convention:
+    origin_description: "Lower-left corner of left wall L1 at (x=0.0 m, y=0.0 m)"
+    x_axis: "Horizontal room width from left wall L1 (x=0) toward stepped right wall (+X)"
+    y_axis: "Longitudinal axis along left wall L1 from lower end (y=0) to upper end (y=10.600 m)"
+    right_wall_vertical_anchor_note: >
+      Right-wall sections R1 (upper, 4.750 m), R2 (middle, 4.400 m), and R3 (lower, 1.172 m)
+      sum to 10.322 m against L1 = 10.600 m. By default the reference layout anchors R1 at the
+      upper boundary y = 10.600 m and leaves the unresolved 0.278 m longitudinal discrepancy
+      explicitly highlighted at y = [0.000, 0.278] m rather than stretching any measured section.
+
+discrepancies:
+  - id: "longitudinal_length_mismatch"
+    severity: "warning"
+    left_wall_id: "L1"
+    left_wall_length_m: 10.600
+    right_wall_section_ids: ["R1", "R2", "R3"]
+    right_wall_sum_m: 10.322
+    difference_m: 0.278
+    signed_right_minus_left_m: -0.278
+    percentage_of_left_wall: -2.6226
+    explanation: >
+      Right-hand wall sections R1 (4.750 m) + R2 (4.400 m) + R3 (1.172 m) total 10.322 m,
+      which is 0.278 m shorter than the recorded overall left wall length L1 (10.600 m).
+      This discrepancy is preserved without modification and flagged in the visualization.
+
+walls:
+  - id: "L1"
+    name: "Overall left wall"
+    side: "left"
+    section: "full"
+    orientation: "longitudinal"
+    length_m: 10.600
+    x_start_m: 0.000
+    y_start_m: 0.000
+    x_end_m: 0.000
+    y_end_m: 10.600
+    status: "confirmed_provisional_m"
+    notes: "Primary straight longitudinal reference wall."
+
+  - id: "R1"
+    name: "Right wall — upper section"
+    side: "right"
+    section: "upper"
+    orientation: "longitudinal"
+    length_m: 4.750
+    width_from_left_wall_m: 3.117
+    width_id: "W1"
+    x_start_m: 3.117
+    y_start_m: 10.600
+    x_end_m: 3.117
+    y_end_m: 5.850
+    status: "confirmed_provisional_m"
+    notes: "Upper right-hand wall section at width W1 = 3.117 m from L1 (anchored from top y=10.600 m)."
+
+  - id: "S12"
+    name: "Right wall step — upper to middle (W1 to W2)"
+    side: "right_step"
+    section: "upper_to_middle"
+    orientation: "transverse"
+    length_m: 0.155
+    x_start_m: 3.117
+    y_start_m: 5.850
+    x_end_m: 3.272
+    y_end_m: 5.850
+    status: "derived_from_W2_minus_W1"
+    notes: "Step outward of +0.155 m where room width increases from W1 (3.117 m) to W2 (3.272 m)."
+
+  - id: "R2"
+    name: "Right wall — middle section"
+    side: "right"
+    section: "middle"
+    orientation: "longitudinal"
+    length_m: 4.400
+    width_from_left_wall_m: 3.272
+    width_id: "W2"
+    x_start_m: 3.272
+    y_start_m: 5.850
+    x_end_m: 3.272
+    y_end_m: 1.450
+    status: "confirmed_provisional_m"
+    notes: "Middle right-hand wall section at width W2 = 3.272 m from L1."
+
+  - id: "S23"
+    name: "Right wall step — middle to lower (W2 to W3)"
+    side: "right_step"
+    section: "middle_to_lower"
+    orientation: "transverse"
+    length_m: 0.135
+    x_start_m: 3.272
+    y_start_m: 1.450
+    x_end_m: 3.137
+    y_end_m: 1.450
+    status: "derived_from_W2_minus_W3"
+    notes: "Step inward of -0.135 m where room width narrows from W2 (3.272 m) to W3 (3.137 m)."
+
+  - id: "R3"
+    name: "Right wall — lower section"
+    side: "right"
+    section: "lower"
+    orientation: "longitudinal"
+    length_m: 1.172
+    width_from_left_wall_m: 3.137
+    width_id: "W3"
+    x_start_m: 3.137
+    y_start_m: 1.450
+    x_end_m: 3.137
+    y_end_m: 0.278
+    status: "confirmed_provisional_m"
+    notes: "Lower right-hand wall section at width W3 = 3.137 m from L1; ends 0.278 m above y=0 when R1 is top-anchored."
+
+  - id: "GAP_R"
+    name: "Unresolved longitudinal gap (L1 vs R1+R2+R3)"
+    side: "right_unresolved"
+    section: "unresolved_gap"
+    orientation: "longitudinal"
+    length_m: 0.278
+    x_start_m: 3.137
+    y_start_m: 0.278
+    x_end_m: 3.137
+    y_end_m: 0.000
+    status: "unresolved_discrepancy"
+    notes: "0.278 m difference between L1 (10.600 m) and R1+R2+R3 (10.322 m); location along longitudinal axis is not constrained."
+
+widths:
+  - id: "W1"
+    name: "Upper section width"
+    section: "upper"
+    left_wall_id: "L1"
+    right_wall_id: "R1"
+    measured_m: 3.117
+    y_range_top_anchored_m: [5.850, 10.600]
+    y_display_m: 8.225
+    status: "confirmed_provisional_m"
+    description: "Horizontal distance from left wall L1 to upper right wall section R1."
+
+  - id: "W2"
+    name: "Middle section width"
+    section: "middle"
+    left_wall_id: "L1"
+    right_wall_id: "R2"
+    measured_m: 3.272
+    y_range_top_anchored_m: [1.450, 5.850]
+    y_display_m: 3.650
+    status: "confirmed_provisional_m"
+    description: "Horizontal distance from left wall L1 to middle right wall section R2."
+
+  - id: "W3"
+    name: "Lower section width"
+    section: "lower"
+    left_wall_id: "L1"
+    right_wall_id: "R3"
+    measured_m: 3.137
+    y_range_top_anchored_m: [0.278, 1.450]
+    y_display_m: 0.864
+    status: "confirmed_provisional_m"
+    description: "Horizontal distance from left wall L1 to lower right wall section R3."
+
+measurements:
+  - id: "upper_width"
+    wall_id: "W1"
+    category: "room_width"
+    name: "Upper width (W1)"
+    description: "Horizontal room width from left wall L1 to upper right wall R1"
+    reference_key: "room_width_upper_W1"
+    reference_start: "Left wall L1 (upper section)"
+    reference_end: "Right wall R1 (upper section, length 4.750 m)"
+    measured_m: 3.117
+    uncertainty_m: null
+
+  - id: "middle_width"
+    wall_id: "W2"
+    category: "room_width"
+    name: "Middle width (W2)"
+    description: "Horizontal room width from left wall L1 to middle right wall R2"
+    reference_key: "room_width_middle_W2"
+    reference_start: "Left wall L1 (middle section)"
+    reference_end: "Right wall R2 (middle section, length 4.400 m)"
+    measured_m: 3.272
+    uncertainty_m: null
+
+  - id: "lower_width"
+    wall_id: "W3"
+    category: "room_width"
+    name: "Lower width (W3)"
+    description: "Horizontal room width from left wall L1 to lower right wall R3"
+    reference_key: "room_width_lower_W3"
+    reference_start: "Left wall L1 (lower section)"
+    reference_end: "Right wall R3 (lower section, length 1.172 m)"
+    measured_m: 3.137
+    uncertainty_m: null
+
+  - id: "overall_length"
+    wall_id: "L1"
+    category: "room_length"
+    name: "Overall length (L1)"
+    description: "Overall longitudinal room length along left wall L1"
+    reference_key: "room_length_left_wall_L1"
+    reference_start: "Lower end of left wall L1"
+    reference_end: "Upper end of left wall L1"
+    measured_m: 10.600
+    uncertainty_m: null
+
+  - id: "right_upper_length"
+    wall_id: "R1"
+    category: "wall_section_length"
+    name: "Right wall upper section (R1)"
+    description: "Longitudinal length of upper right wall section R1"
+    reference_key: "right_wall_upper_R1"
+    reference_start: "Upper corner of R1"
+    reference_end: "Upper-to-middle step S12"
+    measured_m: 4.750
+    uncertainty_m: null
+
+  - id: "right_middle_length"
+    wall_id: "R2"
+    category: "wall_section_length"
+    name: "Right wall middle section (R2)"
+    description: "Longitudinal length of middle right wall section R2"
+    reference_key: "right_wall_middle_R2"
+    reference_start: "Upper-to-middle step S12"
+    reference_end: "Middle-to-lower step S23"
+    measured_m: 4.400
+    uncertainty_m: null
+
+  - id: "right_lower_length"
+    wall_id: "R3"
+    category: "wall_section_length"
+    name: "Right wall lower section (R3)"
+    description: "Longitudinal length of lower right wall section R3"
+    reference_key: "right_wall_lower_R3"
+    reference_start: "Middle-to-lower step S23"
+    reference_end: "Lower end of R3"
+    measured_m: 1.172
+    uncertainty_m: null
+
+unassigned_or_uncertain_measurements:
+  - id: "circled_0_7"
+    raw_value: 0.7
+    provisional_unit: "m"
+    notation: "circled 0.7 m on handwritten sketch"
+    status: "unassigned"
+    used_in_geometry: false
+    notes: >
+      Meaning is not yet established. Stored as an unassigned measurement and NOT treated
+      as a confirmed LiDAR position, obstacle dimension, or wall distance.
+
+  - id: "sketch_327_3"
+    raw_value: 327.3
+    provisional_unit: "unknown (possibly cm = 3.273 m, unconfirmed)"
+    notation: "327.3 on separate small sketch"
+    status: "unclear_units_and_correspondence"
+    used_in_geometry: false
+    notes: >
+      Units and physical correspondence are unconfirmed. Excluded from main room geometry
+      until confirmed.

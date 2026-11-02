@@ -1,0 +1,14 @@
+id,category,reference_key,measured_m,uncertainty_m,reference_start,reference_end,description
+room_width_main,room_dimension,room_width_parallel_walls,,,,,Main corridor/room width between the two long parallel side walls
+room_length_main,room_dimension,room_length_end_walls,,,,,Main room length between the two opposing end walls along the primary longitudinal axis
+inner_bay_span,wall_to_wall,inner_longitudinal_span,,,,,Longitudinal distance between internal partition/bay walls along the room axis
+bag143631_front_wall,sensor_to_wall,bag_14-36-31_front_m,,,,,LiDAR distance to wall directly in front of robot (+X_base) at start of 14-36-31
+bag143631_rear_wall,sensor_to_wall,bag_14-36-31_rear_m,,,,,LiDAR distance to wall directly behind robot (-X_base) at start of 14-36-31
+bag143631_left_wall,sensor_to_wall,bag_14-36-31_left_m,,,,,LiDAR distance to wall on robot left (+Y_base) at start of 14-36-31
+bag143631_right_wall,sensor_to_wall,bag_14-36-31_right_m,,,,,LiDAR distance to wall on robot right (-Y_base) at start of 14-36-31
+bag143631_perp_near_wall,sensor_to_wall_perpendicular,bag_14-36-31_perp_wall_pos_x,,,,,Perpendicular distance from LiDAR to nearest side wall at start of 14-36-31
+bag143631_perp_far_wall,sensor_to_wall_perpendicular,bag_14-36-31_perp_wall_neg_x,,,,,Perpendicular distance from LiDAR to opposite parallel side wall at start of 14-36-31
+bag125841_front_wall,sensor_to_wall,bag_12-58-41_front_m,,,,,LiDAR distance to wall in front of robot (+X_base) at start of 12-58-41
+bag125841_rear_wall,sensor_to_wall,bag_12-58-41_rear_m,,,,,LiDAR distance to wall behind robot (-X_base) at start of 12-58-41
+bag125841_left_wall,sensor_to_wall,bag_12-58-41_left_m,,,,,LiDAR distance to wall on robot left (+Y_base) at start of 12-58-41
+bag125841_right_wall,sensor_to_wall,bag_12-58-41_right_m,,,,,LiDAR distance to wall on robot right (-Y_base) at start of 12-58-41
