@@ -12,8 +12,8 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        ("share/" + package_name + "/launch", ["launch/robot_launch.py", "launch/mapping_bag_launch.py", "launch/nav2_bringup_launch.py", "launch/autonomy_launch.py", "launch/battery_modbus_launch.py"]),
-        ("share/" + package_name + "/config", ["config/params.yaml", "config/camera_config.yaml", "config/nav2_params.yaml", "config/slam_toolbox_config.yaml", "config/battery_modbus.yaml"]),
+        ("share/" + package_name + "/launch", ["launch/robot_launch.py", "launch/mapping_bag_launch.py", "launch/nav2_bringup_launch.py", "launch/autonomy_launch.py", "launch/battery_modbus_launch.py", "launch/visualize_oct1_mapping_launch.py"]),
+        ("share/" + package_name + "/config", ["config/params.yaml", "config/camera_config.yaml", "config/nav2_params.yaml", "config/slam_toolbox_config.yaml", "config/battery_modbus.yaml", "config/lidar_mapping_validation.rviz", "config/room_measurements_oct1.yaml", "config/room_measurements_oct1_template.yaml", "config/room_measurements_oct1_template.csv"]),
         ("share/" + package_name + "/maps", ["maps/README.md"]),
     ],
     install_requires=[
