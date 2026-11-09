@@ -1,8 +1,10 @@
 const STATE_NAMES = ["IDLE", "REFERENCING", "REFERENCED", "MOVING_OPEN", "MOVING_CLOSE", "ERROR"];
 const STATE_CLASSES = ["state-idle", "state-ref", "state-ref", "state-moving", "state-moving", "state-error"];
-const METERS_PER_TURN = 0.093333;
-const MAX_SPEED_MS = 3.0;
-function rpmToMs(rpm) { return rpm * METERS_PER_TURN / 60.0; }
+const DEFAULT_METERS_PER_MOTOR_TURN = (16 / 52) * 0.420;
+const DEFAULT_MAX_SPEED_MS = 1.5;
+function rpmToMs(rpm, metersPerMotorTurn = DEFAULT_METERS_PER_MOTOR_TURN) {
+  return rpm * metersPerMotorTurn / 60.0;
+}
 
 function updateCurrent(side, amps, limit) {
   const el = document.getElementById("w-current-" + side);
@@ -198,12 +200,14 @@ function connectWs() {
 function updateDashboard(data) {
   const w = data.wheel_status || {};
   setText("w-backend", w.backend || "--");
-  const leftMs = rpmToMs(w.left_rpm || 0);
-  const rightMs = rpmToMs(w.right_rpm || 0);
+  const metersPerMotorTurn = w.meters_per_motor_turn ?? DEFAULT_METERS_PER_MOTOR_TURN;
+  const maxSpeedMs = w.max_speed_ms ?? DEFAULT_MAX_SPEED_MS;
+  const leftMs = rpmToMs(w.left_rpm || 0, metersPerMotorTurn);
+  const rightMs = rpmToMs(w.right_rpm || 0, metersPerMotorTurn);
   setText("w-left", leftMs.toFixed(2));
   setText("w-right", rightMs.toFixed(2));
-  setBar("bar-left", Math.abs(leftMs), MAX_SPEED_MS);
-  setBar("bar-right", Math.abs(rightMs), MAX_SPEED_MS);
+  setBar("bar-left", Math.abs(leftMs), maxSpeedMs);
+  setBar("bar-right", Math.abs(rightMs), maxSpeedMs);
 
   // Motor currents
   const currentLim = (w.diag && w.diag.current_lim) ? w.diag.current_lim : 20;
@@ -523,8 +527,10 @@ function _quaternionToRollPitch(q) {
 
 function updateMotionTelemetry(data) {
   const wheel = data.wheel_status || {};
-  const left = rpmToMs(wheel.left_rpm || 0);
-  const right = rpmToMs(wheel.right_rpm || 0);
+  const metersPerMotorTurn =
+    wheel.meters_per_motor_turn ?? DEFAULT_METERS_PER_MOTOR_TURN;
+  const left = rpmToMs(wheel.left_rpm || 0, metersPerMotorTurn);
+  const right = rpmToMs(wheel.right_rpm || 0, metersPerMotorTurn);
   const linearSpeed = (left + right) / 2;
 
   const imu = data.imu || data.imu_data || data.imu_status || {};
@@ -2651,8 +2657,10 @@ function updateDashboardOverview(data) {
   dashboardRuntime.lastMessageAt = now;
 
   const wheel = data.wheel_status || {};
-  const left = rpmToMs(wheel.left_rpm || 0);
-  const right = rpmToMs(wheel.right_rpm || 0);
+  const metersPerMotorTurn =
+    wheel.meters_per_motor_turn ?? DEFAULT_METERS_PER_MOTOR_TURN;
+  const left = rpmToMs(wheel.left_rpm || 0, metersPerMotorTurn);
+  const right = rpmToMs(wheel.right_rpm || 0, metersPerMotorTurn);
   const speed = Math.abs((left + right) / 2);
   if (speed > 0.03) {
     dashboardRuntime.runtimeSeconds += dt;

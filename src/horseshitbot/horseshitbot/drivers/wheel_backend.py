@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 class WheelBackend(ABC):
     """
     Interface that both MKS-stepper and ODrive wheel backends implement.
-    Velocities are in RPM (positive = forward).
+    Velocities are motor-shaft RPM (positive = forward).
     """
 
     @abstractmethod
@@ -21,7 +21,7 @@ class WheelBackend(ABC):
 
     @abstractmethod
     def send_velocity(self, left_rpm: float, right_rpm: float) -> None:
-        """Command instantaneous wheel velocities (RPM, signed)."""
+        """Command instantaneous motor-shaft velocities (RPM, signed)."""
 
     @abstractmethod
     def stop(self) -> None:
