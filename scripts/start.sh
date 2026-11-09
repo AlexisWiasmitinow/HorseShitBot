@@ -4,9 +4,10 @@
 #
 # Usage:
 #   ./scripts/start.sh                  # launch everything
-#   ./scripts/start.sh --no-camera      # skip RealSense + bag recorder
-#   ./scripts/start.sh --no-mks         # skip MKS bus node (ODrive-only setup)
+#   ./scripts/start.sh --no-camera      # skip RealSense (recorders remain)
+#   ./scripts/start.sh --no-mks         # skip shared MKS bus (diagnostic mode)
 #   ./scripts/start.sh --no-lidar       # skip lidar node
+#   ./scripts/start.sh --no-battery     # skip shared-bus battery monitoring
 #   ./scripts/start.sh --drive-only     # just wheel driver + gamepad (no launch file)
 #   ./scripts/start.sh --rebuild        # force colcon build before launching
 #
@@ -53,6 +54,7 @@ fi
 ENABLE_CAMERA=true
 ENABLE_MKS=true
 ENABLE_LIDAR=true
+ENABLE_BATTERY=true
 DRIVE_ONLY=false
 FORCE_REBUILD=false
 for arg in "$@"; do
@@ -60,6 +62,7 @@ for arg in "$@"; do
     --no-camera)   ENABLE_CAMERA=false ;;
     --no-mks)      ENABLE_MKS=false ;;
     --no-lidar)    ENABLE_LIDAR=false ;;
+    --no-battery)  ENABLE_BATTERY=false ;;
     --drive-only)  DRIVE_ONLY=true ;;
     --rebuild)     FORCE_REBUILD=true ;;
   esac
@@ -108,12 +111,18 @@ else
   [ "$ENABLE_CAMERA" = false ] && echo "  (camera disabled)"
   [ "$ENABLE_MKS" = false ]    && echo "  (MKS bus disabled)"
   [ "$ENABLE_LIDAR" = false ]  && echo "  (lidar disabled)"
+  [ "$ENABLE_BATTERY" = false ] && echo "  (battery monitor disabled)"
   echo "  Ctrl+C to stop"
   echo ""
+
+  # Battery polling goes through mks_bus_node; never start a second serial
+  # owner when the shared bus is disabled.
+  [ "$ENABLE_MKS" = false ] && ENABLE_BATTERY=false
 
   ros2 launch horseshitbot robot_launch.py \
     enable_camera:="$ENABLE_CAMERA" \
     enable_mks:="$ENABLE_MKS" \
     enable_lidar:="$ENABLE_LIDAR" \
+    enable_battery:="$ENABLE_BATTERY" \
     params_file:="$PARAMS"
 fi
