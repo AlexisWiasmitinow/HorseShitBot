@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import threading
 import time
 
@@ -15,7 +14,14 @@ from std_srvs.srv import Trigger
 
 from horseshitbot_interfaces.srv import ModbusReadHoldingRegister
 
-from ..drivers.modbus_adc import AdcRegisterMap
+from ..drivers.modbus_adc import (
+    DEFAULT_SOC_PERCENT_POINTS,
+    DEFAULT_SOC_VOLTAGE_POINTS,
+    AdcRegisterMap,
+    MedianVoltageFilter,
+    state_of_charge_percent,
+    validate_soc_curve,
+)
 
 
 class BatteryModbusNode(Node):
@@ -37,6 +43,13 @@ class BatteryModbusNode(Node):
         self.declare_parameter("critical_voltage", 21.0)
         self.declare_parameter("critical_confirmations", 3)
         self.declare_parameter("shutdown_enabled", False)
+        self.declare_parameter(
+            "soc_voltage_points", list(DEFAULT_SOC_VOLTAGE_POINTS)
+        )
+        self.declare_parameter(
+            "soc_percent_points", list(DEFAULT_SOC_PERCENT_POINTS)
+        )
+        self.declare_parameter("soc_median_window", 30)
 
         self._slave_id = int(self.get_parameter("slave_id").value)
         self._channel = int(self.get_parameter("channel").value)
@@ -70,6 +83,29 @@ class BatteryModbusNode(Node):
             self.get_logger().warning(
                 "shutdown_enabled is ignored; OS shutdown is not implemented"
             )
+
+        try:
+            self._soc_voltages, self._soc_percents = validate_soc_curve(
+                self.get_parameter("soc_voltage_points").value,
+                self.get_parameter("soc_percent_points").value,
+            )
+        except Exception as exc:
+            self.get_logger().warning(
+                f"invalid soc curve ({exc}); using built-in 2026-09-25 defaults"
+            )
+            self._soc_voltages = DEFAULT_SOC_VOLTAGE_POINTS
+            self._soc_percents = DEFAULT_SOC_PERCENT_POINTS
+
+        window = int(self.get_parameter("soc_median_window").value)
+        if window < 1:
+            self.get_logger().warning(
+                f"soc_median_window={window} is invalid; using 1 (unfiltered)"
+            )
+            window = 1
+        # Smoothing is deliberately confined to the displayed percentage. The
+        # low/critical thresholds below keep reading the instantaneous
+        # voltage, so a genuine collapse is never delayed by the window.
+        self._soc_filter = MedianVoltageFilter(window)
 
         self._lock = threading.Lock()
         self._pending = None
@@ -168,6 +204,14 @@ class BatteryModbusNode(Node):
             self._critical_counter = 0
         critical = self._critical_counter >= self._critical_confirmations
 
+        # Thresholds above used the instantaneous voltage; only the reported
+        # state of charge is taken from the smoothed value.
+        smoothed = self._soc_filter.update(voltage)
+        reading["battery_voltage_filtered"] = smoothed
+        reading["percentage"] = state_of_charge_percent(
+            smoothed, self._soc_voltages, self._soc_percents
+        ) / 100.0
+
         with self._lock:
             self._last_reading = reading
             self._last_error = None
@@ -193,7 +237,8 @@ class BatteryModbusNode(Node):
         state = BatteryState()
         state.header.stamp = self.get_clock().now().to_msg()
         state.voltage = voltage
-        state.percentage = math.nan
+        # BatteryState.percentage is a 0..1 fraction, not 0..100.
+        state.percentage = float(reading["percentage"])
         state.present = True
         state.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_DISCHARGING
         if critical:
@@ -227,6 +272,8 @@ class BatteryModbusNode(Node):
         response.success = True
         response.message = (
             f"battery_voltage={reading['battery_voltage']:.3f} V, "
+            f"filtered={reading['battery_voltage_filtered']:.3f} V, "
+            f"soc={reading['percentage'] * 100.0:.1f} %, "
             f"adc_voltage={reading['adc_voltage']:.3f} V, "
             f"raw={reading['raw']}"
         )

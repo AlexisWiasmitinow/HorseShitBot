@@ -1,12 +1,14 @@
 """
-Bag Recorder Node -- programmatic rosbag2 recording of RealSense camera topics.
+Bag Recorder Node -- programmatic rosbag2 recording of RealSense camera and mapping topics.
 
-Subscribes to configured camera topics and writes them to timestamped bag files
+Subscribes to configured topics and writes them to timestamped bag files
 on demand.  Start / stop recording via Trigger services or the web dashboard.
 """
 
 from __future__ import annotations
 
+import errno
+import fcntl
 import json
 import os
 import time
@@ -100,13 +102,16 @@ _FALLBACK_TOPICS = [
     "/camera/aligned_depth_to_color/camera_info",
 ]
 
+# Topics that publish latched data with TRANSIENT_LOCAL durability
+_TRANSIENT_LOCAL_TOPICS = {"/tf_static"}
+
 
 _CONFIG_DIR = Path.home() / ".config" / "horseshitbot"
 
 
 class BagRecorderNode(Node):
-    def __init__(self):
-        super().__init__("bag_recorder_node")
+    def __init__(self, *, node_name: str = "bag_recorder_node", **kwargs):
+        super().__init__(node_name, **kwargs)
 
         self.declare_parameter("output_dir", "~/rosbags")
         self.declare_parameter("bag_prefix", "horseshitbot")
@@ -129,17 +134,21 @@ class BagRecorderNode(Node):
         self._recording = False
         self._writer: rosbag2_py.SequentialWriter | None = None if _HAS_ROSBAG2 else None
         self._bag_path = ""
+        self._lock_files: list = []
         self._start_time = 0.0
         self._frame_count = 0
         self._msg_counts: dict[str, int] = {}
         self._topic_first_logged: set[str] = set()
+        self._latched_tf_static_by_pair: dict[tuple[str, str], object] = {}
+        self._latched_messages: dict[str, list] = {}
 
         self.create_service(Trigger, "~/start_recording", self._srv_start)
         self.create_service(Trigger, "~/stop_recording", self._srv_stop)
 
         self._status_pub = self.create_publisher(String, "~/status", 10)
 
-        self._subscriptions: list = []
+        self._topic_subscriptions: list = []
+        self._subscriptions_by_topic: dict[str, object] = {}
         self._create_topic_subscriptions()
 
         self.create_timer(0.5, self._publish_status)
@@ -155,16 +164,26 @@ class BagRecorderNode(Node):
         )
 
     def _load_topics_from_file(self) -> list[str]:
-        """Load selected topics from the config file, or return defaults."""
+        """Load selected topics from the config file, or return deduplicated defaults."""
+        raw_topics: list[str] = []
         try:
             if self._bag_topics_file.is_file():
                 data = json.loads(self._bag_topics_file.read_text())
-                topics = [t for t in data if t in _TOPIC_TYPE_MAP]
-                if topics:
-                    return topics
+                raw_topics = [t for t in data if t in _TOPIC_TYPE_MAP]
         except Exception:
             pass
-        return [t for t in self._default_topics if t in _TOPIC_TYPE_MAP] or list(_FALLBACK_TOPICS)
+        if not raw_topics:
+            raw_topics = [
+                t for t in self._default_topics if t in _TOPIC_TYPE_MAP
+            ] or list(_FALLBACK_TOPICS)
+        return list(dict.fromkeys(raw_topics))
+
+    def _destroy_topic_subscriptions(self):
+        """Destroy all active topic subscriptions."""
+        for sub in list(self._topic_subscriptions):
+            self.destroy_subscription(sub)
+        self._topic_subscriptions.clear()
+        self._subscriptions_by_topic.clear()
 
     def _reload_topics_if_changed(self):
         """Periodically check config file and update topics if changed."""
@@ -173,36 +192,44 @@ class BagRecorderNode(Node):
         new_topics = self._load_topics_from_file()
         if set(new_topics) != set(self._topics):
             self._topics = new_topics
-            for sub in self._subscriptions:
-                self.destroy_subscription(sub)
-            self._subscriptions.clear()
+            self._destroy_topic_subscriptions()
             self._msg_counts.clear()
             self._topic_first_logged.clear()
+            self._latched_tf_static_by_pair.clear()
+            self._latched_messages.clear()
             self._create_topic_subscriptions()
             self.get_logger().info(f"Topics updated from config: {self._topics}")
 
-    def _create_topic_subscriptions(self):
-        """Create subscriptions for each configured topic.
+    def _build_subscription_qos(self, topic: str) -> QoSProfile:
+        """Return a single QoSProfile for `topic` compatible with its publishers.
 
-        Tries two QoS profiles per topic: BEST_EFFORT (for sensor-data
-        publishers) and RELIABLE (for system-default publishers).  At least
-        one will match the camera node regardless of its QoS setting.
+        - `/tf_static` uses RELIABLE + TRANSIENT_LOCAL to receive latched static
+          transforms from `tf2_ros/static_transform_publisher`.
+        - All other topics use a single BEST_EFFORT + VOLATILE subscription, which
+          is RMW-compatible with both BEST_EFFORT (e.g. `qos_profile_sensor_data`
+          on `/imu/*`) and RELIABLE publishers (`/odom`, `/scan`, `/tf`, `/cmd_vel`,
+          camera topics) without duplicating messages.
         """
-        qos_best_effort = QoSProfile(
+        if topic in _TRANSIENT_LOCAL_TOPICS:
+            return QoSProfile(
+                reliability=QoSReliabilityPolicy.RELIABLE,
+                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                history=QoSHistoryPolicy.KEEP_LAST,
+                depth=10,
+            )
+        return QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
             durability=QoSDurabilityPolicy.VOLATILE,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=10,
         )
-        qos_reliable = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            durability=QoSDurabilityPolicy.VOLATILE,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=10,
-        )
+
+    def _create_topic_subscriptions(self):
+        """Create exactly one subscription for each configured topic."""
+        self._destroy_topic_subscriptions()
 
         created = 0
-        for topic in self._topics:
+        for topic in dict.fromkeys(self._topics):
             type_str = _TOPIC_TYPE_MAP.get(topic)
             if type_str is None:
                 self.get_logger().warn(f"Unknown topic type for {topic}, skipping")
@@ -213,16 +240,16 @@ class BagRecorderNode(Node):
                 continue
 
             self._msg_counts[topic] = 0
-            for label, qos in [("best_effort", qos_best_effort),
-                                ("reliable", qos_reliable)]:
-                sub = self.create_subscription(
-                    msg_cls,
-                    topic,
-                    lambda msg, t=topic: self._on_message(t, msg),
-                    qos,
-                )
-                self._subscriptions.append(sub)
-                created += 1
+            qos = self._build_subscription_qos(topic)
+            sub = self.create_subscription(
+                msg_cls,
+                topic,
+                lambda msg, t=topic: self._on_message(t, msg),
+                qos,
+            )
+            self._topic_subscriptions.append(sub)
+            self._subscriptions_by_topic[topic] = sub
+            created += 1
 
         self.get_logger().info(
             f"Created {created} subscriptions for {len(self._msg_counts)} topics"
@@ -235,7 +262,7 @@ class BagRecorderNode(Node):
             parts = type_str.split("/")
             mod = __import__(f"{parts[0]}.{parts[1]}", fromlist=[parts[2]])
             return getattr(mod, parts[2])
-        except Exception as exc:
+        except Exception:
             return None
 
     def _diag_topic_check(self):
@@ -260,8 +287,37 @@ class BagRecorderNode(Node):
         elif found and not self._topic_first_logged:
             self.get_logger().info(f"Publishers found: {found}")
 
+    def _cache_transient_local_message(self, topic: str, msg):
+        """Cache latest latched messages without bounding or duplicating static transforms."""
+        if topic == "/tf_static" and hasattr(msg, "transforms"):
+            for transform in msg.transforms:
+                parent = getattr(getattr(transform, "header", None), "frame_id", "")
+                child = getattr(transform, "child_frame_id", "")
+                self._latched_tf_static_by_pair[(parent, child)] = transform
+            return
+        latched = self._latched_messages.setdefault(topic, [])
+        latched.append(msg)
+        if len(latched) > 64:
+            del latched[:-64]
+
+    def _get_latched_messages_for_topic(self, topic: str) -> list:
+        """Return deduplicated latched messages to write at the start of a recording."""
+        if topic == "/tf_static":
+            if not self._latched_tf_static_by_pair:
+                return []
+            tf_cls = self._import_msg_type(_TOPIC_TYPE_MAP["/tf_static"])
+            if tf_cls is None:
+                return []
+            consolidated = tf_cls()
+            consolidated.transforms = list(self._latched_tf_static_by_pair.values())
+            return [consolidated]
+        return list(self._latched_messages.get(topic, []))
+
     def _on_message(self, topic: str, msg):
         self._msg_counts[topic] = self._msg_counts.get(topic, 0) + 1
+        if topic in _TRANSIENT_LOCAL_TOPICS:
+            self._cache_transient_local_message(topic, msg)
+
         if topic not in self._topic_first_logged:
             self._topic_first_logged.add(topic)
             self.get_logger().info(
@@ -270,6 +326,11 @@ class BagRecorderNode(Node):
             )
 
         if not self._recording or self._writer is None:
+            return
+        self._write_serialized_message(topic, msg)
+
+    def _write_serialized_message(self, topic: str, msg):
+        if self._writer is None:
             return
         try:
             serialized = serialize_message(msg)
@@ -317,44 +378,153 @@ class BagRecorderNode(Node):
         self.get_logger().info(response.message)
         return response
 
-    def _open_bag(self):
+    @staticmethod
+    def _try_acquire_lockfile(lock_path: str):
+        """Acquire a non-blocking exclusive flock on `lock_path`."""
+        lock_file = open(lock_path, "a+")
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_file.seek(0)
+            lock_file.truncate()
+            lock_file.write(f"{os.getpid()}\n")
+            lock_file.flush()
+            return lock_file
+        except OSError as exc:
+            lock_file.close()
+            if exc.errno in (errno.EACCES, errno.EAGAIN):
+                raise RuntimeError(f"Lock already held: {lock_path}") from exc
+            raise
+
+    def _release_locks(self):
+        """Release all held lockfiles."""
+        while self._lock_files:
+            lock_file = self._lock_files.pop()
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            try:
+                lock_file.close()
+            except Exception:
+                pass
+
+    def _reserve_bag_path(self, out_dir: str, explicit_bag_path: str | None = None) -> str:
+        """Reserve an exclusive target bag path and prevent concurrent writes.
+
+        1. Acquires an exclusive per-prefix lock in `out_dir` so two recorders
+           with the same `bag_prefix` cannot simultaneously record in `out_dir`.
+        2. Acquires an exclusive per-bag lock and verifies the target bag path
+           does not already exist on disk (preventing overwrites or concurrent
+           writes to the same MCAP file).
+        """
+        prefix_lock_path = os.path.join(out_dir, f".{self._bag_prefix}.recording.lock")
+        try:
+            prefix_lock = self._try_acquire_lockfile(prefix_lock_path)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"Another '{self._bag_prefix}' recorder is already active in {out_dir}"
+            ) from exc
+        self._lock_files.append(prefix_lock)
+
+        if explicit_bag_path is not None:
+            target_path = os.path.abspath(os.path.expanduser(explicit_bag_path))
+            bag_lock_path = f"{target_path}.lock"
+            try:
+                bag_lock = self._try_acquire_lockfile(bag_lock_path)
+            except RuntimeError as exc:
+                self._release_locks()
+                raise RuntimeError(
+                    f"Target bag path is already locked by another recorder: {target_path}"
+                ) from exc
+            self._lock_files.append(bag_lock)
+            if os.path.exists(target_path):
+                self._release_locks()
+                raise FileExistsError(
+                    f"Target bag path already exists, refusing to overwrite: {target_path}"
+                )
+            return target_path
+
+        stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        base_name = f"{self._bag_prefix}_{stamp}"
+        for suffix in range(0, 1000):
+            bag_name = base_name if suffix == 0 else f"{base_name}_{suffix}"
+            candidate = os.path.join(out_dir, bag_name)
+            if os.path.exists(candidate):
+                continue
+            bag_lock_path = f"{candidate}.lock"
+            try:
+                bag_lock = self._try_acquire_lockfile(bag_lock_path)
+            except RuntimeError:
+                continue
+            if os.path.exists(candidate):
+                try:
+                    fcntl.flock(bag_lock.fileno(), fcntl.LOCK_UN)
+                    bag_lock.close()
+                except Exception:
+                    pass
+                continue
+            self._lock_files.append(bag_lock)
+            return candidate
+
+        self._release_locks()
+        raise RuntimeError(f"Could not reserve a unique bag path in {out_dir}")
+
+    def _open_bag(self, explicit_bag_path: str | None = None):
         out_dir = os.path.expanduser(self._output_dir)
         os.makedirs(out_dir, exist_ok=True)
 
-        stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        bag_name = f"{self._bag_prefix}_{stamp}"
-        self._bag_path = os.path.join(out_dir, bag_name)
+        self._bag_path = self._reserve_bag_path(out_dir, explicit_bag_path=explicit_bag_path)
 
-        storage_options = rosbag2_py.StorageOptions(
-            uri=self._bag_path,
-            storage_id=self._storage_id,
-        )
-        converter_options = rosbag2_py.ConverterOptions(
-            input_serialization_format="cdr",
-            output_serialization_format="cdr",
-        )
-
-        self._writer = rosbag2_py.SequentialWriter()
-        self._writer.open(storage_options, converter_options)
-
-        for topic in self._topics:
-            type_str = _TOPIC_TYPE_MAP.get(topic, "std_msgs/msg/String")
-            topic_meta = rosbag2_py.TopicMetadata(
-                name=topic,
-                type=type_str,
-                serialization_format="cdr",
+        try:
+            storage_options = rosbag2_py.StorageOptions(
+                uri=self._bag_path,
+                storage_id=self._storage_id,
             )
-            self._writer.create_topic(topic_meta)
+            converter_options = rosbag2_py.ConverterOptions(
+                input_serialization_format="cdr",
+                output_serialization_format="cdr",
+            )
 
-        self._recording = True
-        self._start_time = time.monotonic()
-        self._frame_count = 0
+            self._writer = rosbag2_py.SequentialWriter()
+            self._writer.open(storage_options, converter_options)
+
+            for topic in self._topics:
+                type_str = _TOPIC_TYPE_MAP.get(topic, "std_msgs/msg/String")
+                topic_meta = rosbag2_py.TopicMetadata(
+                    name=topic,
+                    type=type_str,
+                    serialization_format="cdr",
+                )
+                self._writer.create_topic(topic_meta)
+
+            self._recording = True
+            self._start_time = time.monotonic()
+            self._frame_count = 0
+
+            # Write any latched TRANSIENT_LOCAL messages (e.g. /tf_static) received prior to start
+            for topic in self._topics:
+                if topic in _TRANSIENT_LOCAL_TOPICS:
+                    for latched_msg in self._get_latched_messages_for_topic(topic):
+                        self._write_serialized_message(topic, latched_msg)
+        except Exception:
+            self._recording = False
+            if self._writer is not None:
+                del self._writer
+                self._writer = None
+            self._release_locks()
+            raise
 
     def _close_bag(self):
         self._recording = False
         if self._writer is not None:
             del self._writer
             self._writer = None
+        self._release_locks()
+
+    def destroy_node(self):
+        if self._recording or self._writer is not None or self._lock_files:
+            self._close_bag()
+        return super().destroy_node()
 
     def _publish_status(self):
         duration = time.monotonic() - self._start_time if self._recording else 0.0

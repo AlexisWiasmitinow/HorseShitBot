@@ -212,6 +212,7 @@ class GamepadTeleopNode(Node):
         # Service clients
         self._stop_fast_cli = self.create_client(Trigger, "/wheel_driver_node/stop_fast")
         self._stop_cli = self.create_client(Trigger, "/wheel_driver_node/stop")
+        self._resume_cli = self.create_client(Trigger, "/wheel_driver_node/resume")
         self._switch_cli = self.create_client(SwitchBackend, "/wheel_driver_node/switch_backend")
         self._percep_start_cli = self.create_client(Trigger, "/perception_recorder/start_recording")
         self._percep_stop_cli = self.create_client(Trigger, "/perception_recorder/stop_recording")
@@ -227,6 +228,7 @@ class GamepadTeleopNode(Node):
         self._connected = False
         self._is_percep_recording = False
         self._is_map_recording = False
+        self._wheel_estopped = False
         self._active_inputs: set[str] = set()
         self._button_map: dict[str, str] = _load_config_file()
         self._lock = threading.Lock()
@@ -247,6 +249,9 @@ class GamepadTeleopNode(Node):
         self._bt_poller.start()
 
         self.create_subscription(String, "/gamepad/config", self._cb_config, 10)
+        self.create_subscription(
+            String, "/wheel_status", self._cb_wheel_status, 10
+        )
 
         if not _HAS_EVDEV:
             self.get_logger().error("evdev not installed — gamepad disabled")
@@ -514,7 +519,9 @@ class GamepadTeleopNode(Node):
         if action == "e_stop":
             self._call_trigger(self._stop_fast_cli)
         elif action == "stop_wheels":
-            self._call_trigger(self._stop_cli)
+            with self._lock:
+                estopped = self._wheel_estopped
+            self._call_trigger(self._resume_cli if estopped else self._stop_cli)
         elif action == "stop_actuators":
             for pub in (self._lift_pub, self._brush_pub, self._bin_door_pub):
                 msg = String()
@@ -565,6 +572,15 @@ class GamepadTeleopNode(Node):
             self._lift_pub.publish(msg)
 
     # ── helpers ───────────────────────────────────────────────────────
+
+    def _cb_wheel_status(self, msg: String):
+        try:
+            status = json.loads(msg.data)
+            estopped = bool(status.get("estopped", False))
+        except (TypeError, json.JSONDecodeError):
+            return
+        with self._lock:
+            self._wheel_estopped = estopped
 
     def _apply_deadzone(self, val: float) -> float:
         if abs(val) < self._deadzone:

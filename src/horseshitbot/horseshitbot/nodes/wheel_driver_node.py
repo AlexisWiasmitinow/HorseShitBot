@@ -23,6 +23,11 @@ from tf2_ros import TransformBroadcaster
 from horseshitbot_interfaces.srv import MksSetSpeed, SwitchBackend
 
 from ..drivers.drive_transmission import DriveTransmission
+from ..drivers.emergency_stop_state import (
+    EmergencyStopPhase,
+    EmergencyStopState,
+    resolve_trigger_future,
+)
 from ..drivers.wheel_backend import WheelBackend
 from ..drivers.mks_command_state import (
     MksCommandDispatcher,
@@ -31,6 +36,7 @@ from ..drivers.mks_command_state import (
 )
 from ..drivers.mks_wheel_backend import MksWheelBackend
 from ..drivers.odrive_wheel_backend import ODriveWheelBackend
+from ..drivers.wheel_kinematics import twist_to_wheel_speeds
 
 
 def _clamp(v, lo, hi):
@@ -76,6 +82,7 @@ class WheelDriverNode(Node):
         self.declare_parameter("stop_decel_rpm_s", 500.0)
         self.declare_parameter("watchdog_sec", 0.2)
         self.declare_parameter("mks_request_timeout_sec", 1.5)
+        self.declare_parameter("estop_release_timeout_sec", 2.0)
         self.declare_parameter("odrive_port", "/dev/odrive")
         self.declare_parameter("odrive_baud", 115200)
         self.declare_parameter("odrive_vel_limit", 100.0)
@@ -97,9 +104,6 @@ class WheelDriverNode(Node):
             meters_per_wheel_turn=self._p_float("meters_per_wheel_turn"),
         )
         self._max_speed_ms = self._p_float("max_speed_ms")
-        self._max_rpm = self._transmission.linear_velocity_to_motor_rpm(
-            self._max_speed_ms
-        )
         self._update_hz = self._p_float("update_hz")
         self._accel = self._p_float("accel_rpm_s")
         self._decel = self._p_float("decel_rpm_s")
@@ -113,7 +117,10 @@ class WheelDriverNode(Node):
         self._actual_right = 0.0
         self._last_cmd_ts = 0.0
         self._stop_fast = False
-        self._estopped = False
+        self._estop = EmergencyStopState()
+        self._estop_release_timeout = self._p_float("estop_release_timeout_sec")
+        self._estop_release_future = None
+        self._estop_release_token: int | None = None
         self._shutting_down = False
 
         # Odometry state (integrated from commanded RPM)
@@ -157,6 +164,7 @@ class WheelDriverNode(Node):
         self.create_service(SwitchBackend, "~/switch_backend", self._srv_switch)
         self.create_service(Trigger, "~/stop", self._srv_stop)
         self.create_service(Trigger, "~/stop_fast", self._srv_stop_fast)
+        self.create_service(Trigger, "~/resume", self._srv_resume)
 
         # Status publisher
         self._status_pub = self.create_publisher(String, "/wheel_status", 10)
@@ -288,63 +296,155 @@ class WheelDriverNode(Node):
     # ── callbacks ────────────────────────────────────────────────
 
     def _cb_cmd_vel(self, msg: Twist):
-        linear = _clamp(msg.linear.x, -1.0, 1.0)
-        angular = _clamp(msg.angular.z, -1.0, 1.0)
+        command = twist_to_wheel_speeds(
+            linear_m_s=msg.linear.x,
+            angular_rad_s=msg.angular.z,
+            wheel_separation_m=self._wheel_sep,
+            meters_per_motor_turn=self._transmission.meters_per_motor_turn,
+            max_wheel_speed_m_s=self._max_speed_ms,
+        )
 
-        dl = _clamp((linear - angular) * self._max_rpm, -self._max_rpm, self._max_rpm)
-        dr = _clamp((linear + angular) * self._max_rpm, -self._max_rpm, self._max_rpm)
-
+        velocity_allowed = self._estop.allows_velocity(
+            command.left_rpm, command.right_rpm
+        )
         with self._lock:
-            if not self._shutting_down and not self._stop_fast and not self._estopped:
-                self._desired_left = dl
-                self._desired_right = dr
+            if (
+                not self._shutting_down
+                and not self._stop_fast
+                and velocity_allowed
+            ):
+                self._desired_left = command.left_rpm
+                self._desired_right = command.right_rpm
                 self._last_cmd_ts = time.monotonic()
 
     def _srv_switch(self, request, response):
+        if self._estop.inhibited:
+            response.success = False
+            response.message = "backend switch inhibited while e-stop is active"
+            return response
         ok, msg = self._activate_backend(request.backend)
         response.success = ok
         response.message = msg
         return response
 
     def _srv_stop(self, request, response):
-        self.get_logger().info(f"Stop service called (estopped={self._estopped})")
+        estop = self._estop.snapshot()
+        self.get_logger().info(f"Stop service called (estop={estop.phase.value})")
         with self._lock:
             self._desired_left = 0.0
             self._desired_right = 0.0
             self._last_cmd_ts = time.monotonic()
             self._stop_fast = False
-            was_estopped = self._estopped
+        response.success = not estop.inhibited
+        response.message = (
+            "stopped"
+            if not estop.inhibited
+            else "e-stop remains active; use the resume service"
+        )
+        return response
 
-        if was_estopped:
-            # Clear the MKS controller's hardware e-stop latch FIRST. The F7
-            # register left over from _srv_stop_fast keeps the motors deaf
-            # to set_speed even though set_speed itself returns success.
-            # Fire-and-forget — must not block the executor here.
-            if self._mks_release_estop_cli.service_is_ready():
-                self._mks_release_estop_cli.call_async(Trigger.Request())
-            # Forget the last sent RPM so the first post-resume set_speed is
-            # guaranteed to go out (otherwise dedup might swallow it if the
-            # value happens to match the pre-estop cruise value).
+    def _srv_resume(self, request, response):
+        """Begin an asynchronous, acknowledged e-stop release."""
+        snapshot = self._estop.snapshot()
+        if snapshot.phase is EmergencyStopPhase.CLEAR:
+            response.success = True
+            response.message = "e-stop release confirmed"
+            return response
+        if snapshot.phase is EmergencyStopPhase.RELEASING:
+            response.success = False
+            response.message = "e-stop release pending hardware acknowledgement"
+            return response
+
+        with self._lock:
+            self._desired_left = 0.0
+            self._desired_right = 0.0
+            self._actual_left = 0.0
+            self._actual_right = 0.0
+            self._last_cmd_ts = time.monotonic()
             self._mks_commands.clear_success()
 
-            if self._backend:
-                ok = self._backend.resume()
-                if ok:
-                    self.get_logger().info("E-stop cleared, motors re-enabled")
-                else:
-                    self.get_logger().error("Failed to resume motors after e-stop")
-                    response.success = False
-                    response.message = "resume failed"
-                    return response
-            else:
-                self.get_logger().warn("No backend connected — clearing e-stop flag only")
+        token = self._estop.begin_release(
+            time.monotonic(), self._estop_release_timeout
+        )
+        self._estop_release_token = token
+        if token is None:
+            response.success = True
+            response.message = "e-stop release confirmed"
+            return response
 
-            with self._lock:
-                self._estopped = False
+        if self._backend_name == "mks":
+            if not self._mks_release_estop_cli.service_is_ready():
+                self._estop.fail_release(
+                    token, "hardware release service unavailable"
+                )
+                response.success = False
+                response.message = "hardware release service unavailable"
+                return response
+            future = self._mks_release_estop_cli.call_async(Trigger.Request())
+            self._estop_release_future = future
+            future.add_done_callback(
+                lambda completed, release_token=token: self._on_release_done(
+                    release_token, completed
+                )
+            )
+        else:
+            self._finish_backend_release(token, hardware_confirmed=True)
 
-        response.success = True
-        response.message = "stopped" if not was_estopped else "e-stop cleared"
+        response.success = False
+        response.message = "e-stop release pending hardware acknowledgement"
         return response
+
+    def _on_release_done(self, token: int, future) -> None:
+        if token != self._estop_release_token:
+            return
+        self._estop_release_future = None
+        hardware_confirmed, reason = resolve_trigger_future(future)
+        if not hardware_confirmed:
+            if self._estop.fail_release(token, reason):
+                self.get_logger().error(
+                    f"E-stop release failed; motion remains inhibited: {reason}"
+                )
+                self._reinforce_hardware_estop()
+            return
+        self._finish_backend_release(token, hardware_confirmed=True)
+
+    def _finish_backend_release(
+        self, token: int, hardware_confirmed: bool
+    ) -> None:
+        if not hardware_confirmed:
+            self._estop.fail_release(token, "hardware release not confirmed")
+            return
+        snapshot = self._estop.snapshot()
+        if (
+            snapshot.phase is not EmergencyStopPhase.RELEASING
+            or snapshot.release_token != token
+        ):
+            return
+        backend_ok = self._backend is not None and self._backend.resume()
+        if not backend_ok:
+            self._estop.fail_release(token, "backend resume failed")
+            self._reinforce_hardware_estop()
+            return
+        if not self._estop.confirm_release(token):
+            # A concurrent e-stop invalidated this release while the backend
+            # was resuming. Reassert the stop before returning.
+            self._backend.emergency_stop()
+            return
+        with self._lock:
+            self._desired_left = 0.0
+            self._desired_right = 0.0
+            self._actual_left = 0.0
+            self._actual_right = 0.0
+            self._last_cmd_ts = time.monotonic()
+            self._mks_commands.clear_success()
+        self._estop_release_token = None
+        self.get_logger().info("E-stop release confirmed; zero command retained")
+
+    def _reinforce_hardware_estop(self) -> None:
+        if self._mks_estop_cli.service_is_ready():
+            self._mks_estop_cli.call_async(Trigger.Request())
+        if self._backend:
+            self._backend.emergency_stop()
 
     def _srv_stop_fast(self, request, response):
         # Hard e-stop sequence:
@@ -355,8 +455,16 @@ class WheelDriverNode(Node):
         #     can't ramp from the old value and overwrite the 0.
         #  3. Have the backend re-send 0 via the normal path as a belt-and-
         #     suspenders measure.
-        if self._mks_estop_cli.service_is_ready():
-            self._mks_estop_cli.call_async(Trigger.Request())
+        self._estop.activate()
+        self._estop_release_token = None
+        release_future = self._estop_release_future
+        self._estop_release_future = None
+        if release_future is not None:
+            try:
+                self._mks_release_estop_cli.remove_pending_request(release_future)
+                release_future.cancel()
+            except Exception:
+                pass
         with self._lock:
             self._desired_left = 0.0
             self._desired_right = 0.0
@@ -364,12 +472,10 @@ class WheelDriverNode(Node):
             self._actual_right = 0.0
             self._last_cmd_ts = time.monotonic()
             self._stop_fast = True
-            self._estopped = True
             # Force the next steady-state 0 to be transmitted (avoid dedup
             # swallowing it on the next control-loop tick).
             self._mks_commands.clear_success()
-        if self._backend:
-            self._backend.emergency_stop()
+        self._reinforce_hardware_estop()
         resume_btn = self._resume_button_hint()
         self.get_logger().warn(
             f"E-STOP activated. Press '{resume_btn}' on gamepad or click Resume in the web UI."
@@ -418,11 +524,28 @@ class WheelDriverNode(Node):
     def _control_loop(self):
         now = time.monotonic()
         self._mks_commands.expire_timeouts(now)
+        if self._estop.expire(now):
+            self._estop_release_token = None
+            future = self._estop_release_future
+            self._estop_release_future = None
+            if future is not None:
+                try:
+                    self._mks_release_estop_cli.remove_pending_request(future)
+                    future.cancel()
+                except Exception:
+                    pass
+            self.get_logger().error(
+                "E-stop release timed out; motion remains inhibited"
+            )
+            self._reinforce_hardware_estop()
         dt = now - self._last_tick
         self._last_tick = now
 
+        estop = self._estop.snapshot()
         with self._lock:
-            stop_fast = self._stop_fast or self._shutting_down
+            stop_fast = (
+                self._stop_fast or self._shutting_down or estop.inhibited
+            )
             age = now - self._last_cmd_ts
             desired_left, desired_right, expired = apply_velocity_watchdog(
                 self._desired_left,
@@ -440,7 +563,7 @@ class WheelDriverNode(Node):
         if stop_fast:
             # E-stop: bypass the ramp entirely so we don't gradually decelerate.
             # _actual was already zeroed in _srv_stop_fast; keep it pinned at 0
-            # until the e-stop is cleared via _srv_stop.
+            # until the e-stop is cleared by acknowledged release.
             self._actual_left = 0.0
             self._actual_right = 0.0
         elif dl == 0.0 and dr == 0.0:
@@ -471,8 +594,6 @@ class WheelDriverNode(Node):
                 self._stop_fast = False
 
         import json
-        with self._lock:
-            estopped = self._estopped
         payload = {
             "backend": self._backend_name,
             "left_rpm": round(self._actual_left, 1),
@@ -480,7 +601,12 @@ class WheelDriverNode(Node):
             "meters_per_motor_turn": self._transmission.meters_per_motor_turn,
             "max_speed_ms": self._max_speed_ms,
             "stopping": stop_fast,
-            "estopped": estopped,
+            "estopped": estop.inhibited,
+            "estop_state": estop.phase.value,
+            "estop_release_pending": (
+                estop.phase is EmergencyStopPhase.RELEASING
+            ),
+            "estop_release_error": estop.error,
             "error": self._backend_error,
         }
         if self._current_left is not None:

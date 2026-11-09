@@ -2,7 +2,8 @@
 ILI9341 / ST7789 SPI display driver (luma.lcd).
 
 Wraps luma.lcd + Pillow to provide a simple blit-frame API for the
-2.8" 240x320 TFT.  Used by the ROS 2 status_screen_node.
+2.8" TFT, driven as 320x240 landscape (luma's ili9341 default at
+rotation 0).  Used by the ROS 2 status_screen_node.
 
 Pin arguments on the CLI / params.yaml follow the same convention as
 before: **physical** 40-pin header pins on Jetson, **BCM** GPIO on Pi.
@@ -112,8 +113,10 @@ class ILI9341Display:
     to no-ops and ``draw_frame()`` returns the PIL image for inspection.
     """
 
-    WIDTH = 240
-    HEIGHT = 320
+    # Must match luma.lcd's ili9341 defaults so the no-hardware fallback
+    # reports the same geometry the panel really has.
+    WIDTH = 320
+    HEIGHT = 240
 
     def __init__(
         self,

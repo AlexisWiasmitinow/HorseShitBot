@@ -1,0 +1,2076 @@
+{
+  "method": {
+    "deduplication": "topic + source header stamp",
+    "wheel_reference": "open-loop commanded-RPM odometry (not encoder feedback)",
+    "imu_yaw": "trapezoidal integration after stationary robust gyro-z bias removal",
+    "lidar": "historical clockwise scan reflected in-memory; point-to-plane SE(2) ICP with zero yaw seed; overlap-weighted composition",
+    "correlation_warning": "Adjacent scans within one segment are temporally correlated. LiDAR registration is independent of IMU yaw."
+  },
+  "summary": {
+    "architecture": {
+      "sensor_fusion_implemented": false,
+      "wheel_odometry": "open-loop integration of commanded motor RPM",
+      "imu": "raw accel/gyro only; orientation covariance[0] = -1; not fused",
+      "lidar": "Nav2 obstacle/AMCL input or offline scan matching; not fused into /odom",
+      "navigation_odom_input": "/odom from wheel_driver_node"
+    },
+    "turn_classification_counts": {
+      "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND": 7,
+      "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND": 1,
+      "OBSERVED_LOW_ROTATION_UNDER_COMMAND": 4
+    },
+    "straight_segment_count": 8,
+    "consistent_straight_count": 1,
+    "straight_lidar_to_odom_ratio_range": [
+      0.0526,
+      1.1538
+    ],
+    "thresholds": {
+      "immobility_yaw_rate_rad_s": 0.08,
+      "continuous_turn_yaw_rate_rad_s": 0.25,
+      "minimum_command_yaw_rate_rad_s": 0.8,
+      "lidar_rmse_max_m": 0.25,
+      "lidar_min_inliers": 20
+    },
+    "belt_slip_conclusion": "IMU and LiDAR can corroborate low or reduced physical motion under command, but existing bags cannot isolate belt slip from track-ground skid, MKS motor stall/protection, or historical RS485 command-queue loss because no motor encoder feedback is recorded."
+  },
+  "bags": {
+    "mapping_2026-07-10_17-38-11": {
+      "role": "structured indoor healthy baseline",
+      "duration_s": 45.045,
+      "topic_types": {
+        "/tf_static": "tf2_msgs/msg/TFMessage",
+        "/tf": "tf2_msgs/msg/TFMessage",
+        "/imu/temperature": "sensor_msgs/msg/Temperature",
+        "/imu/mag": "sensor_msgs/msg/MagneticField",
+        "/imu/data_raw": "sensor_msgs/msg/Imu",
+        "/odom": "nav_msgs/msg/Odometry",
+        "/scan": "sensor_msgs/msg/LaserScan"
+      },
+      "raw_counts": {
+        "/imu/data_raw": 2253,
+        "/imu/mag": 2253,
+        "/imu/temperature": 2253,
+        "/odom": 4506,
+        "/tf": 4506,
+        "/scan": 452,
+        "/cmd_vel": 0
+      },
+      "unique_counts": {
+        "/imu/data_raw": 2253,
+        "/imu/mag": 2253,
+        "/imu/temperature": 2253,
+        "/odom": 2253,
+        "/tf": 4506,
+        "/scan": 226
+      },
+      "frequencies_hz": {
+        "/odom": 50.039,
+        "/imu/data_raw": 50.033,
+        "/scan": 5.001
+      },
+      "frames": {
+        "/odom.header": "odom",
+        "/odom.child": "base_link",
+        "/imu/data_raw": "imu_link",
+        "/scan": "laser"
+      },
+      "gyro_bias_z_rad_s": -0.000563,
+      "gyro_bias_diagnostics": {
+        "stationary_sample_count": 947,
+        "stationary_span_s": 45.04,
+        "stationary_gyro_z_std_rad_s": 0.062407,
+        "stationary_gyro_z_mad_rad_s": 0.002798,
+        "selection_limitation": "stationary samples are selected from open-loop odom near-zero commands, not independently observed chassis stillness"
+      },
+      "icp_primary_seed": "zero",
+      "icp_alternate_seed": "imu",
+      "timing": {
+        "clock_basis": "header and rosbag record stamps are ROS/system-clock epoch values; cmd_vel has no header stamp",
+        "first_source_stamp_offset_from_bag_start_s": {
+          "/odom": 0.008886,
+          "/imu/data_raw": 0.0,
+          "/scan": 0.022409,
+          "/cmd_vel": null
+        },
+        "source_intervals_s": {
+          "/odom": {
+            "count": 2252,
+            "median": 0.019984,
+            "p95": 0.021823,
+            "minimum": 0.012924,
+            "maximum": 0.028147,
+            "absolute_p95": 0.021823,
+            "absolute_maximum": 0.028147
+          },
+          "/imu/data_raw": {
+            "count": 2252,
+            "median": 0.019987,
+            "p95": 0.020789,
+            "minimum": 0.012272,
+            "maximum": 0.027789,
+            "absolute_p95": 0.020789,
+            "absolute_maximum": 0.027789
+          },
+          "/scan": {
+            "count": 225,
+            "median": 0.199973,
+            "p95": 0.200943,
+            "minimum": 0.197548,
+            "maximum": 0.202642,
+            "absolute_p95": 0.200943,
+            "absolute_maximum": 0.202642
+          },
+          "/cmd_vel": {
+            "count": 0,
+            "median": null,
+            "p95": null,
+            "minimum": null,
+            "maximum": null,
+            "absolute_p95": null,
+            "absolute_maximum": null
+          }
+        },
+        "record_time_minus_source_stamp_s": {
+          "/imu/data_raw": {
+            "count": 2253,
+            "median": 0.001856,
+            "p95": 0.005093,
+            "minimum": 0.001006,
+            "maximum": 0.015867,
+            "absolute_p95": 0.005093,
+            "absolute_maximum": 0.015867
+          },
+          "/odom": {
+            "count": 4506,
+            "median": 0.002667,
+            "p95": 0.007227,
+            "minimum": 0.001284,
+            "maximum": 0.01911,
+            "absolute_p95": 0.007227,
+            "absolute_maximum": 0.01911
+          },
+          "/scan": {
+            "count": 452,
+            "median": 0.003378,
+            "p95": 0.007846,
+            "minimum": 0.001554,
+            "maximum": 0.012703,
+            "absolute_p95": 0.007846,
+            "absolute_maximum": 0.012703
+          }
+        },
+        "nearest_scan_to_imu_offset_s": {
+          "count": 226,
+          "median": -0.001113,
+          "p95": 0.000706,
+          "minimum": -0.004229,
+          "maximum": 0.006506,
+          "absolute_p95": 0.002213,
+          "absolute_maximum": 0.006506
+        },
+        "nearest_scan_to_odom_offset_s": {
+          "count": 226,
+          "median": 0.003917,
+          "p95": 0.006601,
+          "minimum": 0.00059,
+          "maximum": 0.012202,
+          "absolute_p95": 0.006601,
+          "absolute_maximum": 0.012202
+        },
+        "imu_lidar_yaw_lag": {
+          "pair_count": 121,
+          "best_imu_sample_offset_s": -0.13,
+          "minimum_rmse_rad_s": 0.08454,
+          "near_minimum_lag_range_s": [
+            -0.195,
+            -0.025
+          ],
+          "lag_definition": "compare IMU(t_lidar_midpoint + lag) with LiDAR",
+          "search_range_s": [
+            -0.3,
+            0.3
+          ],
+          "step_s": 0.005
+        },
+        "lidar_scan_timing_uncertainty_s": 0.1,
+        "lidar_scan_timing_note": "LaserScan time_increment is zero; at 5 Hz, an individual beam's acquisition time is unknown within roughly half a 0.2 s scan.",
+        "cmd_vel_limitation": "not recorded"
+      },
+      "read_error": null,
+      "straight_segments": [
+        {
+          "index": 1,
+          "start_s": 6.87,
+          "end_s": 14.88,
+          "duration_s": 8.01,
+          "odom_distance_m": 2.8979,
+          "odom_pose_chord_m": 2.8943,
+          "odom_yaw_deg": 0.0,
+          "imu_yaw_deg": -0.55,
+          "lidar_distance_m": 2.9859,
+          "lidar_lateral_m": 0.0309,
+          "lidar_yaw_deg": -0.61,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 41,
+          "lidar_quality": {
+            "accepted_pairs": 41,
+            "final_rmse_median_m": 0.01931,
+            "final_rmse_p95_m": 0.02389,
+            "inliers_minimum": 182,
+            "inliers_median": 209.0
+          },
+          "mean_odom_linear_m_s": 0.3621,
+          "mean_odom_yaw_rad_s": 0.0,
+          "mean_imu_yaw_rad_s": -0.0012,
+          "mean_lidar_yaw_rad_s": -0.0013,
+          "imu_vibration_rms_m_s2": 4.1874,
+          "lidar_to_odom_distance_ratio": 1.0303,
+          "classification": "OBSERVED_ODOM_LIDAR_DISTANCE_AGREEMENT",
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_ODOM_LIDAR_DISTANCE_AGREEMENT",
+              "OBSERVED_ODOM_LIDAR_DISTANCE_AGREEMENT",
+              "OBSERVED_ODOM_LIDAR_DISTANCE_AGREEMENT",
+              "OBSERVED_ODOM_LIDAR_DISTANCE_AGREEMENT"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              2.5359,
+              2.798
+            ],
+            "imu_yaw_range_deg": [
+              -0.9,
+              -0.46
+            ],
+            "lidar_distance_range_m": [
+              2.6007,
+              3.0158
+            ],
+            "lidar_yaw_range_deg": [
+              -0.86,
+              -0.27
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 2.9845,
+            "alternate_lidar_yaw_deg": -0.63,
+            "distance_delta_m": 0.0014,
+            "yaw_delta_deg": 0.02,
+            "alternate_classification": "OBSERVED_ODOM_LIDAR_DISTANCE_AGREEMENT"
+          }
+        }
+      ],
+      "turn_segments": [
+        {
+          "index": 1,
+          "start_s": 4.14,
+          "end_s": 5.48,
+          "duration_s": 1.34,
+          "odom_distance_m": -0.0141,
+          "odom_pose_chord_m": -0.0134,
+          "odom_yaw_deg": 121.32,
+          "imu_yaw_deg": 30.01,
+          "lidar_distance_m": -0.093,
+          "lidar_lateral_m": 0.0841,
+          "lidar_yaw_deg": 25.77,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 8,
+          "lidar_quality": {
+            "accepted_pairs": 8,
+            "final_rmse_median_m": 0.01935,
+            "final_rmse_p95_m": 0.041,
+            "inliers_minimum": 194,
+            "inliers_median": 207.5
+          },
+          "mean_odom_linear_m_s": -0.0104,
+          "mean_odom_yaw_rad_s": 1.579,
+          "mean_imu_yaw_rad_s": 0.3908,
+          "mean_lidar_yaw_rad_s": 0.3357,
+          "imu_vibration_rms_m_s2": 3.9222,
+          "classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.2473,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND",
+              "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": false,
+            "odom_distance_range_m": [
+              -0.0145,
+              0.0146
+            ],
+            "imu_yaw_range_deg": [
+              -1.88,
+              22.91
+            ],
+            "lidar_distance_range_m": [
+              -0.1103,
+              0.043
+            ],
+            "lidar_yaw_range_deg": [
+              -7.12,
+              28.12
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": -0.0933,
+            "alternate_lidar_yaw_deg": 25.81,
+            "distance_delta_m": 0.0003,
+            "yaw_delta_deg": -0.04,
+            "alternate_classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+          }
+        },
+        {
+          "index": 2,
+          "start_s": 16.8,
+          "end_s": 21.0,
+          "duration_s": 4.2,
+          "odom_distance_m": -0.8326,
+          "odom_pose_chord_m": -0.1148,
+          "odom_yaw_deg": -413.56,
+          "imu_yaw_deg": -89.61,
+          "lidar_distance_m": -0.575,
+          "lidar_lateral_m": 0.1598,
+          "lidar_yaw_deg": -87.36,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 22,
+          "lidar_quality": {
+            "accepted_pairs": 22,
+            "final_rmse_median_m": 0.01949,
+            "final_rmse_p95_m": 0.02528,
+            "inliers_minimum": 173,
+            "inliers_median": 187.0
+          },
+          "mean_odom_linear_m_s": -0.1982,
+          "mean_odom_yaw_rad_s": -1.718,
+          "mean_imu_yaw_rad_s": -0.3724,
+          "mean_lidar_yaw_rad_s": -0.363,
+          "imu_vibration_rms_m_s2": 6.0999,
+          "classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.2167,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              -0.7853,
+              -0.658
+            ],
+            "imu_yaw_range_deg": [
+              -89.19,
+              -63.8
+            ],
+            "lidar_distance_range_m": [
+              -0.5744,
+              -0.5172
+            ],
+            "lidar_yaw_range_deg": [
+              -93.44,
+              -62.89
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": -0.5689,
+            "alternate_lidar_yaw_deg": -87.66,
+            "distance_delta_m": -0.0061,
+            "yaw_delta_deg": 0.3,
+            "alternate_classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+          }
+        },
+        {
+          "index": 3,
+          "start_s": 24.35,
+          "end_s": 26.2,
+          "duration_s": 1.85,
+          "odom_distance_m": 0.0,
+          "odom_pose_chord_m": 0.0,
+          "odom_yaw_deg": -134.71,
+          "imu_yaw_deg": -37.24,
+          "lidar_distance_m": -0.0978,
+          "lidar_lateral_m": -0.0812,
+          "lidar_yaw_deg": -35.47,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 10,
+          "lidar_quality": {
+            "accepted_pairs": 10,
+            "final_rmse_median_m": 0.01971,
+            "final_rmse_p95_m": 0.02785,
+            "inliers_minimum": 187,
+            "inliers_median": 208.0
+          },
+          "mean_odom_linear_m_s": 0.0,
+          "mean_odom_yaw_rad_s": -1.2729,
+          "mean_imu_yaw_rad_s": -0.3514,
+          "mean_lidar_yaw_rad_s": -0.3346,
+          "imu_vibration_rms_m_s2": 4.693,
+          "classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.2765,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": false,
+            "odom_distance_range_m": [
+              0.0,
+              0.0485
+            ],
+            "imu_yaw_range_deg": [
+              -30.38,
+              -15.83
+            ],
+            "lidar_distance_range_m": [
+              -0.0971,
+              0.0233
+            ],
+            "lidar_yaw_range_deg": [
+              -33.48,
+              -13.57
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": -0.1064,
+            "alternate_lidar_yaw_deg": -36.13,
+            "distance_delta_m": 0.0086,
+            "yaw_delta_deg": 0.66,
+            "alternate_classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+          }
+        }
+      ]
+    },
+    "mapping_2026-07-13_10-54-00": {
+      "role": "outdoor drive/traction-loss case",
+      "duration_s": 110.641,
+      "topic_types": {
+        "/tf_static": "tf2_msgs/msg/TFMessage",
+        "/tf": "tf2_msgs/msg/TFMessage",
+        "/imu/temperature": "sensor_msgs/msg/Temperature",
+        "/imu/mag": "sensor_msgs/msg/MagneticField",
+        "/imu/data_raw": "sensor_msgs/msg/Imu",
+        "/odom": "nav_msgs/msg/Odometry",
+        "/scan": "sensor_msgs/msg/LaserScan"
+      },
+      "raw_counts": {
+        "/odom": 11066,
+        "/imu/data_raw": 5533,
+        "/imu/mag": 5533,
+        "/imu/temperature": 5533,
+        "/tf": 11066,
+        "/scan": 1106,
+        "/cmd_vel": 0
+      },
+      "unique_counts": {
+        "/odom": 5533,
+        "/imu/data_raw": 5533,
+        "/imu/mag": 5533,
+        "/imu/temperature": 5533,
+        "/tf": 11066,
+        "/scan": 553
+      },
+      "frequencies_hz": {
+        "/odom": 50.028,
+        "/imu/data_raw": 50.042,
+        "/scan": 5.0
+      },
+      "frames": {
+        "/odom.header": "odom",
+        "/odom.child": "base_link",
+        "/imu/data_raw": "imu_link",
+        "/scan": "laser"
+      },
+      "gyro_bias_z_rad_s": -0.002382,
+      "gyro_bias_diagnostics": {
+        "stationary_sample_count": 2331,
+        "stationary_span_s": 108.6,
+        "stationary_gyro_z_std_rad_s": 0.080178,
+        "stationary_gyro_z_mad_rad_s": 0.005329,
+        "selection_limitation": "stationary samples are selected from open-loop odom near-zero commands, not independently observed chassis stillness"
+      },
+      "icp_primary_seed": "zero",
+      "icp_alternate_seed": "imu",
+      "timing": {
+        "clock_basis": "header and rosbag record stamps are ROS/system-clock epoch values; cmd_vel has no header stamp",
+        "first_source_stamp_offset_from_bag_start_s": {
+          "/odom": 0.002004,
+          "/imu/data_raw": 0.0,
+          "/scan": 0.17952,
+          "/cmd_vel": null
+        },
+        "source_intervals_s": {
+          "/odom": {
+            "count": 5532,
+            "median": 0.019989,
+            "p95": 0.022883,
+            "minimum": 0.008934,
+            "maximum": 0.033326,
+            "absolute_p95": 0.022883,
+            "absolute_maximum": 0.033326
+          },
+          "/imu/data_raw": {
+            "count": 5532,
+            "median": 0.019983,
+            "p95": 0.020953,
+            "minimum": 0.00779,
+            "maximum": 0.033057,
+            "absolute_p95": 0.020953,
+            "absolute_maximum": 0.033057
+          },
+          "/scan": {
+            "count": 552,
+            "median": 0.199999,
+            "p95": 0.200578,
+            "minimum": 0.194622,
+            "maximum": 0.204813,
+            "absolute_p95": 0.200578,
+            "absolute_maximum": 0.204813
+          },
+          "/cmd_vel": {
+            "count": 0,
+            "median": null,
+            "p95": null,
+            "minimum": null,
+            "maximum": null,
+            "absolute_p95": null,
+            "absolute_maximum": null
+          }
+        },
+        "record_time_minus_source_stamp_s": {
+          "/odom": {
+            "count": 11066,
+            "median": 0.003486,
+            "p95": 0.00774,
+            "minimum": 0.001323,
+            "maximum": 0.0195,
+            "absolute_p95": 0.00774,
+            "absolute_maximum": 0.0195
+          },
+          "/imu/data_raw": {
+            "count": 5533,
+            "median": 0.00195,
+            "p95": 0.006591,
+            "minimum": 0.001028,
+            "maximum": 0.018848,
+            "absolute_p95": 0.006591,
+            "absolute_maximum": 0.018848
+          },
+          "/scan": {
+            "count": 1106,
+            "median": 0.003584,
+            "p95": 0.007673,
+            "minimum": 0.001482,
+            "maximum": 0.013905,
+            "absolute_p95": 0.007673,
+            "absolute_maximum": 0.013905
+          }
+        },
+        "nearest_scan_to_imu_offset_s": {
+          "count": 553,
+          "median": 0.000143,
+          "p95": 0.001128,
+          "minimum": -0.005648,
+          "maximum": 0.007772,
+          "absolute_p95": 0.001377,
+          "absolute_maximum": 0.007772
+        },
+        "nearest_scan_to_odom_offset_s": {
+          "count": 553,
+          "median": 0.002271,
+          "p95": 0.004735,
+          "minimum": -0.003445,
+          "maximum": 0.009654,
+          "absolute_p95": 0.004735,
+          "absolute_maximum": 0.009654
+        },
+        "imu_lidar_yaw_lag": {
+          "pair_count": 166,
+          "best_imu_sample_offset_s": -0.15,
+          "minimum_rmse_rad_s": 0.06315,
+          "near_minimum_lag_range_s": [
+            -0.225,
+            -0.07
+          ],
+          "lag_definition": "compare IMU(t_lidar_midpoint + lag) with LiDAR",
+          "search_range_s": [
+            -0.3,
+            0.3
+          ],
+          "step_s": 0.005
+        },
+        "lidar_scan_timing_uncertainty_s": 0.1,
+        "lidar_scan_timing_note": "LaserScan time_increment is zero; at 5 Hz, an individual beam's acquisition time is unknown within roughly half a 0.2 s scan.",
+        "cmd_vel_limitation": "not recorded"
+      },
+      "read_error": null,
+      "straight_segments": [
+        {
+          "index": 1,
+          "start_s": 0.0,
+          "end_s": 1.95,
+          "duration_s": 1.95,
+          "odom_distance_m": -0.4993,
+          "odom_pose_chord_m": -0.494,
+          "odom_yaw_deg": 0.0,
+          "imu_yaw_deg": -0.06,
+          "lidar_distance_m": -0.0263,
+          "lidar_lateral_m": 0.015,
+          "lidar_yaw_deg": 0.64,
+          "lidar_coverage": 0.908,
+          "lidar_pair_count": 9,
+          "lidar_quality": {
+            "accepted_pairs": 9,
+            "final_rmse_median_m": 0.01584,
+            "final_rmse_p95_m": 0.02924,
+            "inliers_minimum": 32,
+            "inliers_median": 43.0
+          },
+          "mean_odom_linear_m_s": -0.2575,
+          "mean_odom_yaw_rad_s": 0.0,
+          "mean_imu_yaw_rad_s": -0.0006,
+          "mean_lidar_yaw_rad_s": 0.0057,
+          "imu_vibration_rms_m_s2": 1.7318,
+          "lidar_to_odom_distance_ratio": 0.0526,
+          "classification": "OBSERVED_NEAR_ZERO_LIDAR_TRANSLATION",
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "INSUFFICIENT_LIDAR_EVIDENCE",
+              "OBSERVED_NEAR_ZERO_LIDAR_TRANSLATION",
+              "OBSERVED_NEAR_ZERO_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION"
+            ],
+            "classification_stable": false,
+            "odom_distance_range_m": [
+              -0.3831,
+              -0.2159
+            ],
+            "imu_yaw_range_deg": [
+              -0.04,
+              0.2
+            ],
+            "lidar_distance_range_m": [
+              0.0135,
+              0.0881
+            ],
+            "lidar_yaw_range_deg": [
+              -0.1,
+              0.93
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": -0.03,
+            "alternate_lidar_yaw_deg": 0.73,
+            "distance_delta_m": 0.0037,
+            "yaw_delta_deg": -0.09,
+            "alternate_classification": "OBSERVED_NEAR_ZERO_LIDAR_TRANSLATION"
+          }
+        },
+        {
+          "index": 2,
+          "start_s": 12.86,
+          "end_s": 15.48,
+          "duration_s": 2.62,
+          "odom_distance_m": 0.7167,
+          "odom_pose_chord_m": 0.7134,
+          "odom_yaw_deg": 0.0,
+          "imu_yaw_deg": 5.41,
+          "lidar_distance_m": 0.4568,
+          "lidar_lateral_m": 0.0493,
+          "lidar_yaw_deg": 4.55,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 14,
+          "lidar_quality": {
+            "accepted_pairs": 14,
+            "final_rmse_median_m": 0.02721,
+            "final_rmse_p95_m": 0.04666,
+            "inliers_minimum": 35,
+            "inliers_median": 43.5
+          },
+          "mean_odom_linear_m_s": 0.2738,
+          "mean_odom_yaw_rad_s": 0.0,
+          "mean_imu_yaw_rad_s": 0.036,
+          "mean_lidar_yaw_rad_s": 0.0303,
+          "imu_vibration_rms_m_s2": 1.8182,
+          "lidar_to_odom_distance_ratio": 0.6374,
+          "classification": "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              0.4274,
+              0.796
+            ],
+            "imu_yaw_range_deg": [
+              4.07,
+              11.17
+            ],
+            "lidar_distance_range_m": [
+              0.3056,
+              0.5749
+            ],
+            "lidar_yaw_range_deg": [
+              3.17,
+              9.22
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 0.4526,
+            "alternate_lidar_yaw_deg": 4.53,
+            "distance_delta_m": 0.0042,
+            "yaw_delta_deg": 0.02,
+            "alternate_classification": "OBSERVED_REDUCED_LIDAR_TRANSLATION"
+          }
+        },
+        {
+          "index": 3,
+          "start_s": 61.46,
+          "end_s": 63.64,
+          "duration_s": 2.18,
+          "odom_distance_m": -1.7387,
+          "odom_pose_chord_m": -1.729,
+          "odom_yaw_deg": 0.0,
+          "imu_yaw_deg": 1.49,
+          "lidar_distance_m": -0.9106,
+          "lidar_lateral_m": -0.0876,
+          "lidar_yaw_deg": 0.01,
+          "lidar_coverage": 0.908,
+          "lidar_pair_count": 11,
+          "lidar_quality": {
+            "accepted_pairs": 11,
+            "final_rmse_median_m": 0.04652,
+            "final_rmse_p95_m": 0.09374,
+            "inliers_minimum": 24,
+            "inliers_median": 34.0
+          },
+          "mean_odom_linear_m_s": -0.7944,
+          "mean_odom_yaw_rad_s": 0.0,
+          "mean_imu_yaw_rad_s": 0.012,
+          "mean_lidar_yaw_rad_s": 0.0001,
+          "imu_vibration_rms_m_s2": 3.1101,
+          "lidar_to_odom_distance_ratio": 0.5237,
+          "classification": "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              -1.7598,
+              -0.9567
+            ],
+            "imu_yaw_range_deg": [
+              -0.36,
+              11.45
+            ],
+            "lidar_distance_range_m": [
+              -1.0538,
+              -0.4013
+            ],
+            "lidar_yaw_range_deg": [
+              -0.84,
+              6.11
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": -0.9104,
+            "alternate_lidar_yaw_deg": 0.01,
+            "distance_delta_m": -0.0002,
+            "yaw_delta_deg": 0.0,
+            "alternate_classification": "OBSERVED_REDUCED_LIDAR_TRANSLATION"
+          }
+        }
+      ],
+      "turn_segments": [
+        {
+          "index": 1,
+          "start_s": 21.24,
+          "end_s": 24.32,
+          "duration_s": 3.08,
+          "odom_distance_m": 1.5071,
+          "odom_pose_chord_m": 0.1416,
+          "odom_yaw_deg": -832.66,
+          "imu_yaw_deg": -22.15,
+          "lidar_distance_m": 0.3334,
+          "lidar_lateral_m": -0.0734,
+          "lidar_yaw_deg": -17.67,
+          "lidar_coverage": 0.935,
+          "lidar_pair_count": 15,
+          "lidar_quality": {
+            "accepted_pairs": 15,
+            "final_rmse_median_m": 0.04969,
+            "final_rmse_p95_m": 0.08908,
+            "inliers_minimum": 24,
+            "inliers_median": 32.0
+          },
+          "mean_odom_linear_m_s": 0.4888,
+          "mean_odom_yaw_rad_s": -4.7138,
+          "mean_imu_yaw_rad_s": -0.1255,
+          "mean_lidar_yaw_rad_s": -0.1001,
+          "imu_vibration_rms_m_s2": 4.3953,
+          "classification": "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.0266,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND",
+              "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND",
+              "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": false,
+            "odom_distance_range_m": [
+              1.0421,
+              1.5987
+            ],
+            "imu_yaw_range_deg": [
+              -17.45,
+              -12.73
+            ],
+            "lidar_distance_range_m": [
+              0.1965,
+              0.8061
+            ],
+            "lidar_yaw_range_deg": [
+              -16.3,
+              -11.54
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 0.4095,
+            "alternate_lidar_yaw_deg": -21.72,
+            "distance_delta_m": -0.0761,
+            "yaw_delta_deg": 4.05,
+            "alternate_classification": "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND"
+          }
+        },
+        {
+          "index": 2,
+          "start_s": 77.22,
+          "end_s": 86.08,
+          "duration_s": 8.86,
+          "odom_distance_m": -2.8214,
+          "odom_pose_chord_m": -1.0294,
+          "odom_yaw_deg": -2084.41,
+          "imu_yaw_deg": -35.07,
+          "lidar_distance_m": 0.1182,
+          "lidar_lateral_m": -0.1172,
+          "lidar_yaw_deg": -28.65,
+          "lidar_coverage": 0.977,
+          "lidar_pair_count": 44,
+          "lidar_quality": {
+            "accepted_pairs": 44,
+            "final_rmse_median_m": 0.01919,
+            "final_rmse_p95_m": 0.05399,
+            "inliers_minimum": 25,
+            "inliers_median": 40.0
+          },
+          "mean_odom_linear_m_s": -0.3172,
+          "mean_odom_yaw_rad_s": -4.1084,
+          "mean_imu_yaw_rad_s": -0.0691,
+          "mean_lidar_yaw_rad_s": -0.0564,
+          "imu_vibration_rms_m_s2": 2.7993,
+          "classification": "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.0168,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              -3.4511,
+              -2.6962
+            ],
+            "imu_yaw_range_deg": [
+              -30.74,
+              -21.54
+            ],
+            "lidar_distance_range_m": [
+              -0.3301,
+              0.0589
+            ],
+            "lidar_yaw_range_deg": [
+              -27.56,
+              -15.86
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 0.1189,
+            "alternate_lidar_yaw_deg": -33.49,
+            "distance_delta_m": -0.0007,
+            "yaw_delta_deg": 4.84,
+            "alternate_classification": "OBSERVED_LOW_ROTATION_UNDER_COMMAND"
+          }
+        },
+        {
+          "index": 3,
+          "start_s": 86.36,
+          "end_s": 88.78,
+          "duration_s": 2.42,
+          "odom_distance_m": 0.8013,
+          "odom_pose_chord_m": 0.5957,
+          "odom_yaw_deg": -615.58,
+          "imu_yaw_deg": -5.98,
+          "lidar_distance_m": -0.2714,
+          "lidar_lateral_m": -0.0373,
+          "lidar_yaw_deg": -5.24,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 14,
+          "lidar_quality": {
+            "accepted_pairs": 14,
+            "final_rmse_median_m": 0.01428,
+            "final_rmse_p95_m": 0.05066,
+            "inliers_minimum": 32,
+            "inliers_median": 42.0
+          },
+          "mean_odom_linear_m_s": 0.3249,
+          "mean_odom_yaw_rad_s": -4.4311,
+          "mean_imu_yaw_rad_s": -0.0431,
+          "mean_lidar_yaw_rad_s": -0.0378,
+          "imu_vibration_rms_m_s2": 4.4653,
+          "classification": "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.0097,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_INTERMEDIATE_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": false,
+            "odom_distance_range_m": [
+              -0.5269,
+              1.1377
+            ],
+            "imu_yaw_range_deg": [
+              -9.02,
+              -1.31
+            ],
+            "lidar_distance_range_m": [
+              -0.3338,
+              0.0534
+            ],
+            "lidar_yaw_range_deg": [
+              -11.34,
+              -1.26
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": -0.2723,
+            "alternate_lidar_yaw_deg": -5.26,
+            "distance_delta_m": 0.0009,
+            "yaw_delta_deg": 0.02,
+            "alternate_classification": "OBSERVED_LOW_ROTATION_UNDER_COMMAND"
+          }
+        }
+      ]
+    },
+    "mapping_2026-07-13_10-57-59": {
+      "role": "outdoor long straight and turn-loss case",
+      "duration_s": 168.463,
+      "topic_types": {
+        "/tf_static": "tf2_msgs/msg/TFMessage",
+        "/tf": "tf2_msgs/msg/TFMessage",
+        "/imu/temperature": "sensor_msgs/msg/Temperature",
+        "/imu/mag": "sensor_msgs/msg/MagneticField",
+        "/imu/data_raw": "sensor_msgs/msg/Imu",
+        "/odom": "nav_msgs/msg/Odometry",
+        "/scan": "sensor_msgs/msg/LaserScan"
+      },
+      "raw_counts": {
+        "/odom": 16848,
+        "/imu/data_raw": 8424,
+        "/imu/mag": 8424,
+        "/imu/temperature": 8424,
+        "/tf": 16848,
+        "/scan": 1684,
+        "/cmd_vel": 0
+      },
+      "unique_counts": {
+        "/odom": 8424,
+        "/imu/data_raw": 8424,
+        "/imu/mag": 8424,
+        "/imu/temperature": 8424,
+        "/tf": 16848,
+        "/scan": 842
+      },
+      "frequencies_hz": {
+        "/odom": 50.04,
+        "/imu/data_raw": 50.045,
+        "/scan": 5.0
+      },
+      "frames": {
+        "/odom.header": "odom",
+        "/odom.child": "base_link",
+        "/imu/data_raw": "imu_link",
+        "/scan": "laser"
+      },
+      "gyro_bias_z_rad_s": -0.001709,
+      "gyro_bias_diagnostics": {
+        "stationary_sample_count": 5613,
+        "stationary_span_s": 168.46,
+        "stationary_gyro_z_std_rad_s": 0.034432,
+        "stationary_gyro_z_mad_rad_s": 0.002398,
+        "selection_limitation": "stationary samples are selected from open-loop odom near-zero commands, not independently observed chassis stillness"
+      },
+      "icp_primary_seed": "zero",
+      "icp_alternate_seed": "imu",
+      "timing": {
+        "clock_basis": "header and rosbag record stamps are ROS/system-clock epoch values; cmd_vel has no header stamp",
+        "first_source_stamp_offset_from_bag_start_s": {
+          "/odom": 0.003071,
+          "/imu/data_raw": 0.0,
+          "/scan": 0.099996,
+          "/cmd_vel": null
+        },
+        "source_intervals_s": {
+          "/odom": {
+            "count": 8423,
+            "median": 0.019984,
+            "p95": 0.022626,
+            "minimum": 0.006822,
+            "maximum": 0.033347,
+            "absolute_p95": 0.022626,
+            "absolute_maximum": 0.033347
+          },
+          "/imu/data_raw": {
+            "count": 8423,
+            "median": 0.019982,
+            "p95": 0.020928,
+            "minimum": 0.008828,
+            "maximum": 0.033962,
+            "absolute_p95": 0.020928,
+            "absolute_maximum": 0.033962
+          },
+          "/scan": {
+            "count": 841,
+            "median": 0.2,
+            "p95": 0.200641,
+            "minimum": 0.192252,
+            "maximum": 0.206623,
+            "absolute_p95": 0.200641,
+            "absolute_maximum": 0.206623
+          },
+          "/cmd_vel": {
+            "count": 0,
+            "median": null,
+            "p95": null,
+            "minimum": null,
+            "maximum": null,
+            "absolute_p95": null,
+            "absolute_maximum": null
+          }
+        },
+        "record_time_minus_source_stamp_s": {
+          "/odom": {
+            "count": 16848,
+            "median": 0.003433,
+            "p95": 0.007634,
+            "minimum": 0.001315,
+            "maximum": 0.034415,
+            "absolute_p95": 0.007634,
+            "absolute_maximum": 0.034415
+          },
+          "/imu/data_raw": {
+            "count": 8424,
+            "median": 0.001938,
+            "p95": 0.006601,
+            "minimum": 0.001018,
+            "maximum": 0.02847,
+            "absolute_p95": 0.006601,
+            "absolute_maximum": 0.02847
+          },
+          "/scan": {
+            "count": 1684,
+            "median": 0.003466,
+            "p95": 0.007529,
+            "minimum": 0.001408,
+            "maximum": 0.025522,
+            "absolute_p95": 0.007529,
+            "absolute_maximum": 0.025522
+          }
+        },
+        "nearest_scan_to_imu_offset_s": {
+          "count": 842,
+          "median": 0.000176,
+          "p95": 0.001314,
+          "minimum": -0.005919,
+          "maximum": 0.006629,
+          "absolute_p95": 0.001647,
+          "absolute_maximum": 0.006629
+        },
+        "nearest_scan_to_odom_offset_s": {
+          "count": 842,
+          "median": 0.002266,
+          "p95": 0.005058,
+          "minimum": -0.003389,
+          "maximum": 0.011888,
+          "absolute_p95": 0.005058,
+          "absolute_maximum": 0.011888
+        },
+        "imu_lidar_yaw_lag": {
+          "pair_count": 168,
+          "best_imu_sample_offset_s": -0.15,
+          "minimum_rmse_rad_s": 0.06298,
+          "near_minimum_lag_range_s": [
+            -0.235,
+            -0.11
+          ],
+          "lag_definition": "compare IMU(t_lidar_midpoint + lag) with LiDAR",
+          "search_range_s": [
+            -0.3,
+            0.3
+          ],
+          "step_s": 0.005
+        },
+        "lidar_scan_timing_uncertainty_s": 0.1,
+        "lidar_scan_timing_note": "LaserScan time_increment is zero; at 5 Hz, an individual beam's acquisition time is unknown within roughly half a 0.2 s scan.",
+        "cmd_vel_limitation": "not recorded"
+      },
+      "read_error": null,
+      "straight_segments": [
+        {
+          "index": 1,
+          "start_s": 22.38,
+          "end_s": 31.24,
+          "duration_s": 8.86,
+          "odom_distance_m": 3.2082,
+          "odom_pose_chord_m": 3.2064,
+          "odom_yaw_deg": 0.0,
+          "imu_yaw_deg": -2.31,
+          "lidar_distance_m": 2.3874,
+          "lidar_lateral_m": -0.4364,
+          "lidar_yaw_deg": 2.78,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 45,
+          "lidar_quality": {
+            "accepted_pairs": 45,
+            "final_rmse_median_m": 0.02663,
+            "final_rmse_p95_m": 0.06028,
+            "inliers_minimum": 24,
+            "inliers_median": 38.0
+          },
+          "mean_odom_linear_m_s": 0.3621,
+          "mean_odom_yaw_rad_s": 0.0,
+          "mean_imu_yaw_rad_s": -0.0045,
+          "mean_lidar_yaw_rad_s": 0.0055,
+          "imu_vibration_rms_m_s2": 1.5072,
+          "lidar_to_odom_distance_ratio": 0.7442,
+          "classification": "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              3.0407,
+              3.2213
+            ],
+            "imu_yaw_range_deg": [
+              -2.39,
+              7.48
+            ],
+            "lidar_distance_range_m": [
+              2.2163,
+              2.3924
+            ],
+            "lidar_yaw_range_deg": [
+              0.53,
+              13.71
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 2.3652,
+            "alternate_lidar_yaw_deg": 1.75,
+            "distance_delta_m": 0.0222,
+            "yaw_delta_deg": 1.03,
+            "alternate_classification": "OBSERVED_REDUCED_LIDAR_TRANSLATION"
+          }
+        },
+        {
+          "index": 2,
+          "start_s": 57.8,
+          "end_s": 59.58,
+          "duration_s": 1.78,
+          "odom_distance_m": 0.9823,
+          "odom_pose_chord_m": 0.9768,
+          "odom_yaw_deg": 0.0,
+          "imu_yaw_deg": -3.25,
+          "lidar_distance_m": 0.2329,
+          "lidar_lateral_m": 0.0373,
+          "lidar_yaw_deg": -2.87,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 10,
+          "lidar_quality": {
+            "accepted_pairs": 10,
+            "final_rmse_median_m": 0.01793,
+            "final_rmse_p95_m": 0.05502,
+            "inliers_minimum": 29,
+            "inliers_median": 35.0
+          },
+          "mean_odom_linear_m_s": 0.55,
+          "mean_odom_yaw_rad_s": 0.0,
+          "mean_imu_yaw_rad_s": -0.0318,
+          "mean_lidar_yaw_rad_s": -0.0282,
+          "imu_vibration_rms_m_s2": 1.095,
+          "lidar_to_odom_distance_ratio": 0.2371,
+          "classification": "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_NEAR_ZERO_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION"
+            ],
+            "classification_stable": false,
+            "odom_distance_range_m": [
+              0.5817,
+              1.0853
+            ],
+            "imu_yaw_range_deg": [
+              -4.43,
+              -2.49
+            ],
+            "lidar_distance_range_m": [
+              0.1043,
+              0.2459
+            ],
+            "lidar_yaw_range_deg": [
+              -3.48,
+              -2.2
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 0.2541,
+            "alternate_lidar_yaw_deg": -4.19,
+            "distance_delta_m": -0.0212,
+            "yaw_delta_deg": 1.32,
+            "alternate_classification": "OBSERVED_REDUCED_LIDAR_TRANSLATION"
+          }
+        }
+      ],
+      "turn_segments": [
+        {
+          "index": 1,
+          "start_s": 59.6,
+          "end_s": 66.66,
+          "duration_s": 7.06,
+          "odom_distance_m": 6.139,
+          "odom_pose_chord_m": 1.316,
+          "odom_yaw_deg": 1180.84,
+          "imu_yaw_deg": 19.44,
+          "lidar_distance_m": 1.7718,
+          "lidar_lateral_m": -0.4787,
+          "lidar_yaw_deg": 6.2,
+          "lidar_coverage": 0.972,
+          "lidar_pair_count": 35,
+          "lidar_quality": {
+            "accepted_pairs": 35,
+            "final_rmse_median_m": 0.03257,
+            "final_rmse_p95_m": 0.10405,
+            "inliers_minimum": 23,
+            "inliers_median": 41.0
+          },
+          "mean_odom_linear_m_s": 0.8696,
+          "mean_odom_yaw_rad_s": 2.9189,
+          "mean_imu_yaw_rad_s": 0.0481,
+          "mean_lidar_yaw_rad_s": 0.0153,
+          "imu_vibration_rms_m_s2": 2.9146,
+          "classification": "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.0165,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              5.5476,
+              5.8893
+            ],
+            "imu_yaw_range_deg": [
+              17.33,
+              22.56
+            ],
+            "lidar_distance_range_m": [
+              1.7296,
+              1.8582
+            ],
+            "lidar_yaw_range_deg": [
+              4.64,
+              9.01
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 1.7792,
+            "alternate_lidar_yaw_deg": 16.57,
+            "distance_delta_m": -0.0074,
+            "yaw_delta_deg": -10.37,
+            "alternate_classification": "OBSERVED_LOW_ROTATION_UNDER_COMMAND"
+          }
+        },
+        {
+          "index": 2,
+          "start_s": 69.64,
+          "end_s": 78.64,
+          "duration_s": 9.0,
+          "odom_distance_m": -10.0341,
+          "odom_pose_chord_m": -1.9837,
+          "odom_yaw_deg": -980.69,
+          "imu_yaw_deg": -2.76,
+          "lidar_distance_m": -2.9326,
+          "lidar_lateral_m": -0.145,
+          "lidar_yaw_deg": 3.75,
+          "lidar_coverage": 0.822,
+          "lidar_pair_count": 38,
+          "lidar_quality": {
+            "accepted_pairs": 38,
+            "final_rmse_median_m": 0.04942,
+            "final_rmse_p95_m": 0.10327,
+            "inliers_minimum": 21,
+            "inliers_median": 27.5
+          },
+          "mean_odom_linear_m_s": -1.1152,
+          "mean_odom_yaw_rad_s": -1.9015,
+          "mean_imu_yaw_rad_s": -0.0054,
+          "mean_lidar_yaw_rad_s": 0.0073,
+          "imu_vibration_rms_m_s2": 3.523,
+          "classification": "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.0028,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND",
+              "OBSERVED_LOW_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              -9.5807,
+              -8.7464
+            ],
+            "imu_yaw_range_deg": [
+              -7.99,
+              -0.91
+            ],
+            "lidar_distance_range_m": [
+              -2.9207,
+              -2.3998
+            ],
+            "lidar_yaw_range_deg": [
+              0.06,
+              2.05
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": -2.9494,
+            "alternate_lidar_yaw_deg": 3.54,
+            "distance_delta_m": 0.0168,
+            "yaw_delta_deg": 0.21,
+            "alternate_classification": "OBSERVED_LOW_ROTATION_UNDER_COMMAND"
+          }
+        }
+      ]
+    },
+    "mapping_2026-10-01_14-36-31": {
+      "role": "dense indoor high-command saturation baseline",
+      "duration_s": 160.349,
+      "topic_types": {
+        "/tf_static": "tf2_msgs/msg/TFMessage",
+        "/tf": "tf2_msgs/msg/TFMessage",
+        "/imu/temperature": "sensor_msgs/msg/Temperature",
+        "/imu/mag": "sensor_msgs/msg/MagneticField",
+        "/imu/data_raw": "sensor_msgs/msg/Imu",
+        "/odom": "nav_msgs/msg/Odometry",
+        "/scan": "sensor_msgs/msg/LaserScan"
+      },
+      "raw_counts": {
+        "/odom": 16036,
+        "/imu/data_raw": 8018,
+        "/imu/mag": 8018,
+        "/imu/temperature": 8018,
+        "/tf": 16036,
+        "/scan": 1604,
+        "/cmd_vel": 0
+      },
+      "unique_counts": {
+        "/odom": 8018,
+        "/imu/data_raw": 8018,
+        "/imu/mag": 8018,
+        "/imu/temperature": 8018,
+        "/tf": 16036,
+        "/scan": 802
+      },
+      "frequencies_hz": {
+        "/odom": 50.041,
+        "/imu/data_raw": 50.03,
+        "/scan": 4.999
+      },
+      "frames": {
+        "/odom.header": "odom",
+        "/odom.child": "base_link",
+        "/imu/data_raw": "imu_link",
+        "/scan": "laser"
+      },
+      "gyro_bias_z_rad_s": -0.001204,
+      "gyro_bias_diagnostics": {
+        "stationary_sample_count": 6087,
+        "stationary_span_s": 160.34,
+        "stationary_gyro_z_std_rad_s": 0.11357,
+        "stationary_gyro_z_mad_rad_s": 0.002798,
+        "selection_limitation": "stationary samples are selected from open-loop odom near-zero commands, not independently observed chassis stillness"
+      },
+      "icp_primary_seed": "zero",
+      "icp_alternate_seed": "imu",
+      "timing": {
+        "clock_basis": "header and rosbag record stamps are ROS/system-clock epoch values; cmd_vel has no header stamp",
+        "first_source_stamp_offset_from_bag_start_s": {
+          "/odom": 0.004614,
+          "/imu/data_raw": 0.0,
+          "/scan": 0.061467,
+          "/cmd_vel": null
+        },
+        "source_intervals_s": {
+          "/odom": {
+            "count": 8017,
+            "median": 0.019984,
+            "p95": 0.021236,
+            "minimum": 0.003195,
+            "maximum": 0.035785,
+            "absolute_p95": 0.021236,
+            "absolute_maximum": 0.035785
+          },
+          "/imu/data_raw": {
+            "count": 8017,
+            "median": 0.019988,
+            "p95": 0.020622,
+            "minimum": 0.008552,
+            "maximum": 0.031378,
+            "absolute_p95": 0.020622,
+            "absolute_maximum": 0.031378
+          },
+          "/scan": {
+            "count": 801,
+            "median": 0.200034,
+            "p95": 0.201878,
+            "minimum": 0.190689,
+            "maximum": 0.208399,
+            "absolute_p95": 0.201878,
+            "absolute_maximum": 0.208399
+          },
+          "/cmd_vel": {
+            "count": 0,
+            "median": null,
+            "p95": null,
+            "minimum": null,
+            "maximum": null,
+            "absolute_p95": null,
+            "absolute_maximum": null
+          }
+        },
+        "record_time_minus_source_stamp_s": {
+          "/odom": {
+            "count": 16036,
+            "median": 0.002521,
+            "p95": 0.005247,
+            "minimum": 0.001199,
+            "maximum": 0.029832,
+            "absolute_p95": 0.005247,
+            "absolute_maximum": 0.029832
+          },
+          "/imu/data_raw": {
+            "count": 8018,
+            "median": 0.001815,
+            "p95": 0.003736,
+            "minimum": 0.001043,
+            "maximum": 0.029562,
+            "absolute_p95": 0.003736,
+            "absolute_maximum": 0.029562
+          },
+          "/scan": {
+            "count": 1604,
+            "median": 0.002891,
+            "p95": 0.005465,
+            "minimum": 0.00133,
+            "maximum": 0.014533,
+            "absolute_p95": 0.005465,
+            "absolute_maximum": 0.014533
+          }
+        },
+        "nearest_scan_to_imu_offset_s": {
+          "count": 802,
+          "median": -0.001422,
+          "p95": -0.000532,
+          "minimum": -0.008419,
+          "maximum": 0.008574,
+          "absolute_p95": 0.003263,
+          "absolute_maximum": 0.008574
+        },
+        "nearest_scan_to_odom_offset_s": {
+          "count": 802,
+          "median": 0.003122,
+          "p95": 0.004057,
+          "minimum": -0.004649,
+          "maximum": 0.010011,
+          "absolute_p95": 0.004068,
+          "absolute_maximum": 0.010011
+        },
+        "imu_lidar_yaw_lag": {
+          "pair_count": 174,
+          "best_imu_sample_offset_s": -0.13,
+          "minimum_rmse_rad_s": 0.13778,
+          "near_minimum_lag_range_s": [
+            -0.25,
+            -0.11
+          ],
+          "lag_definition": "compare IMU(t_lidar_midpoint + lag) with LiDAR",
+          "search_range_s": [
+            -0.3,
+            0.3
+          ],
+          "step_s": 0.005
+        },
+        "lidar_scan_timing_uncertainty_s": 0.1,
+        "lidar_scan_timing_note": "LaserScan time_increment is zero; at 5 Hz, an individual beam's acquisition time is unknown within roughly half a 0.2 s scan.",
+        "cmd_vel_limitation": "not recorded"
+      },
+      "read_error": null,
+      "straight_segments": [
+        {
+          "index": 1,
+          "start_s": 122.06,
+          "end_s": 123.06,
+          "duration_s": 1.0,
+          "odom_distance_m": 0.205,
+          "odom_pose_chord_m": 0.2021,
+          "odom_yaw_deg": 0.0,
+          "imu_yaw_deg": -4.45,
+          "lidar_distance_m": 0.2365,
+          "lidar_lateral_m": -0.0142,
+          "lidar_yaw_deg": -3.3,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 6,
+          "lidar_quality": {
+            "accepted_pairs": 6,
+            "final_rmse_median_m": 0.01063,
+            "final_rmse_p95_m": 0.01134,
+            "inliers_minimum": 251,
+            "inliers_median": 263.0
+          },
+          "mean_odom_linear_m_s": 0.2046,
+          "mean_odom_yaw_rad_s": 0.0,
+          "mean_imu_yaw_rad_s": -0.0777,
+          "mean_lidar_yaw_rad_s": -0.0576,
+          "imu_vibration_rms_m_s2": 3.879,
+          "lidar_to_odom_distance_ratio": 1.1538,
+          "classification": "INSUFFICIENT_OR_DISAGREEING_EVIDENCE",
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "INSUFFICIENT_OR_DISAGREEING_EVIDENCE",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "INSUFFICIENT_OR_DISAGREEING_EVIDENCE",
+              "INSUFFICIENT_OR_DISAGREEING_EVIDENCE"
+            ],
+            "classification_stable": false,
+            "odom_distance_range_m": [
+              0.0026,
+              0.1816
+            ],
+            "imu_yaw_range_deg": [
+              -1.4,
+              24.61
+            ],
+            "lidar_distance_range_m": [
+              0.0036,
+              0.3258
+            ],
+            "lidar_yaw_range_deg": [
+              -0.54,
+              19.52
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 0.2366,
+            "alternate_lidar_yaw_deg": -3.36,
+            "distance_delta_m": -0.0001,
+            "yaw_delta_deg": 0.06,
+            "alternate_classification": "INSUFFICIENT_OR_DISAGREEING_EVIDENCE"
+          }
+        },
+        {
+          "index": 2,
+          "start_s": 124.52,
+          "end_s": 125.61,
+          "duration_s": 1.09,
+          "odom_distance_m": 1.3295,
+          "odom_pose_chord_m": 1.3253,
+          "odom_yaw_deg": 0.0,
+          "imu_yaw_deg": -0.93,
+          "lidar_distance_m": 0.7171,
+          "lidar_lateral_m": 0.0698,
+          "lidar_yaw_deg": 3.24,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 6,
+          "lidar_quality": {
+            "accepted_pairs": 6,
+            "final_rmse_median_m": 0.01222,
+            "final_rmse_p95_m": 0.016,
+            "inliers_minimum": 239,
+            "inliers_median": 253.0
+          },
+          "mean_odom_linear_m_s": 1.211,
+          "mean_odom_yaw_rad_s": 0.0,
+          "mean_imu_yaw_rad_s": -0.0149,
+          "mean_lidar_yaw_rad_s": 0.0519,
+          "imu_vibration_rms_m_s2": 9.3276,
+          "lidar_to_odom_distance_ratio": 0.5394,
+          "classification": "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "OBSERVED_REDUCED_LIDAR_TRANSLATION",
+              "INSUFFICIENT_OR_DISAGREEING_EVIDENCE",
+              "INSUFFICIENT_OR_DISAGREEING_EVIDENCE"
+            ],
+            "classification_stable": false,
+            "odom_distance_range_m": [
+              0.0668,
+              0.7839
+            ],
+            "imu_yaw_range_deg": [
+              -0.77,
+              27.25
+            ],
+            "lidar_distance_range_m": [
+              -0.097,
+              0.9884
+            ],
+            "lidar_yaw_range_deg": [
+              -1.44,
+              29.53
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 0.7171,
+            "alternate_lidar_yaw_deg": 3.24,
+            "distance_delta_m": 0.0,
+            "yaw_delta_deg": 0.0,
+            "alternate_classification": "OBSERVED_REDUCED_LIDAR_TRANSLATION"
+          }
+        }
+      ],
+      "turn_segments": [
+        {
+          "index": 1,
+          "start_s": 20.58,
+          "end_s": 23.19,
+          "duration_s": 2.61,
+          "odom_distance_m": 0.567,
+          "odom_pose_chord_m": 0.1077,
+          "odom_yaw_deg": 954.76,
+          "imu_yaw_deg": 55.93,
+          "lidar_distance_m": 0.6127,
+          "lidar_lateral_m": 0.2424,
+          "lidar_yaw_deg": 54.34,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 14,
+          "lidar_quality": {
+            "accepted_pairs": 14,
+            "final_rmse_median_m": 0.01204,
+            "final_rmse_p95_m": 0.01886,
+            "inliers_minimum": 245,
+            "inliers_median": 265.0
+          },
+          "mean_odom_linear_m_s": 0.219,
+          "mean_odom_yaw_rad_s": 6.3661,
+          "mean_imu_yaw_rad_s": 0.374,
+          "mean_lidar_yaw_rad_s": 0.3634,
+          "imu_vibration_rms_m_s2": 7.6814,
+          "classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.0586,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              0.2674,
+              1.6647
+            ],
+            "imu_yaw_range_deg": [
+              39.49,
+              57.87
+            ],
+            "lidar_distance_range_m": [
+              -0.2339,
+              1.0825
+            ],
+            "lidar_yaw_range_deg": [
+              40.73,
+              61.16
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 0.6136,
+            "alternate_lidar_yaw_deg": 54.44,
+            "distance_delta_m": -0.0009,
+            "yaw_delta_deg": -0.1,
+            "alternate_classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+          }
+        },
+        {
+          "index": 2,
+          "start_s": 50.14,
+          "end_s": 52.64,
+          "duration_s": 2.5,
+          "odom_distance_m": -0.1236,
+          "odom_pose_chord_m": -0.053,
+          "odom_yaw_deg": -990.02,
+          "imu_yaw_deg": -67.1,
+          "lidar_distance_m": -0.4948,
+          "lidar_lateral_m": -0.0969,
+          "lidar_yaw_deg": -64.93,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 13,
+          "lidar_quality": {
+            "accepted_pairs": 13,
+            "final_rmse_median_m": 0.01154,
+            "final_rmse_p95_m": 0.01707,
+            "inliers_minimum": 253,
+            "inliers_median": 264.0
+          },
+          "mean_odom_linear_m_s": -0.051,
+          "mean_odom_yaw_rad_s": -6.912,
+          "mean_imu_yaw_rad_s": -0.4685,
+          "mean_lidar_yaw_rad_s": -0.4533,
+          "imu_vibration_rms_m_s2": 7.3517,
+          "classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.0678,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              -1.2855,
+              0.054
+            ],
+            "imu_yaw_range_deg": [
+              -64.95,
+              -39.61
+            ],
+            "lidar_distance_range_m": [
+              -1.1725,
+              -0.1934
+            ],
+            "lidar_yaw_range_deg": [
+              -74.37,
+              -36.31
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": -0.4938,
+            "alternate_lidar_yaw_deg": -65.05,
+            "distance_delta_m": -0.001,
+            "yaw_delta_deg": 0.12,
+            "alternate_classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+          }
+        },
+        {
+          "index": 3,
+          "start_s": 127.05,
+          "end_s": 132.64,
+          "duration_s": 5.59,
+          "odom_distance_m": -0.4429,
+          "odom_pose_chord_m": -0.0098,
+          "odom_yaw_deg": 2234.98,
+          "imu_yaw_deg": 141.45,
+          "lidar_distance_m": -0.262,
+          "lidar_lateral_m": 0.1677,
+          "lidar_yaw_deg": 146.52,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 29,
+          "lidar_quality": {
+            "accepted_pairs": 29,
+            "final_rmse_median_m": 0.01102,
+            "final_rmse_p95_m": 0.01604,
+            "inliers_minimum": 229,
+            "inliers_median": 266.0
+          },
+          "mean_odom_linear_m_s": -0.0794,
+          "mean_odom_yaw_rad_s": 6.9883,
+          "mean_imu_yaw_rad_s": 0.4416,
+          "mean_lidar_yaw_rad_s": 0.4575,
+          "imu_vibration_rms_m_s2": 6.6323,
+          "classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.0633,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              -0.4031,
+              0.436
+            ],
+            "imu_yaw_range_deg": [
+              119.51,
+              138.4
+            ],
+            "lidar_distance_range_m": [
+              -0.4112,
+              0.2958
+            ],
+            "lidar_yaw_range_deg": [
+              125.21,
+              150.84
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": -0.263,
+            "alternate_lidar_yaw_deg": 146.56,
+            "distance_delta_m": 0.001,
+            "yaw_delta_deg": -0.04,
+            "alternate_classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+          }
+        },
+        {
+          "index": 4,
+          "start_s": 136.62,
+          "end_s": 144.43,
+          "duration_s": 7.81,
+          "odom_distance_m": -0.2406,
+          "odom_pose_chord_m": -0.4132,
+          "odom_yaw_deg": -2588.46,
+          "imu_yaw_deg": -160.83,
+          "lidar_distance_m": 0.5086,
+          "lidar_lateral_m": 0.4824,
+          "lidar_yaw_deg": -163.99,
+          "lidar_coverage": 1.0,
+          "lidar_pair_count": 40,
+          "lidar_quality": {
+            "accepted_pairs": 40,
+            "final_rmse_median_m": 0.01124,
+            "final_rmse_p95_m": 0.01619,
+            "inliers_minimum": 246,
+            "inliers_median": 268.0
+          },
+          "mean_odom_linear_m_s": -0.0301,
+          "mean_odom_yaw_rad_s": -5.781,
+          "mean_imu_yaw_rad_s": -0.3594,
+          "mean_lidar_yaw_rad_s": -0.3665,
+          "imu_vibration_rms_m_s2": 7.654,
+          "classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+          "imu_to_odom_yaw_ratio": 0.0621,
+          "boundary_shift_sensitivity": {
+            "shifts_s": [
+              -1.0,
+              -0.5,
+              0.5,
+              1.0
+            ],
+            "classifications": [
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND",
+              "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+            ],
+            "classification_stable": true,
+            "odom_distance_range_m": [
+              -1.0923,
+              1.1883
+            ],
+            "imu_yaw_range_deg": [
+              -157.14,
+              -125.46
+            ],
+            "lidar_distance_range_m": [
+              -0.7191,
+              0.9266
+            ],
+            "lidar_yaw_range_deg": [
+              -169.09,
+              -120.41
+            ]
+          },
+          "icp_seed_sensitivity": {
+            "alternate_seed": "imu",
+            "alternate_lidar_distance_m": 0.5078,
+            "alternate_lidar_yaw_deg": -164.21,
+            "distance_delta_m": 0.0008,
+            "yaw_delta_deg": 0.22,
+            "alternate_classification": "OBSERVED_CONTINUOUS_ROTATION_UNDER_COMMAND"
+          }
+        }
+      ]
+    }
+  },
+  "plots": [
+    "docs/analysis/generated/issue23/straight_line_consistency.png",
+    "docs/analysis/generated/issue23/turning_consistency.png",
+    "docs/analysis/generated/issue23/july13_drive_loss_timeline.png"
+  ]
+}

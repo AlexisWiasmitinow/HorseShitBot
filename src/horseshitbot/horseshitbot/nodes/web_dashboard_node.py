@@ -36,7 +36,8 @@ from horseshitbot_interfaces.srv import MksMoveTurns, MksSetCurrent, ActuatorCom
 from std_srvs.srv import Trigger
 
 try:
-    from sensor_msgs.msg import Image as RosImage
+    from nav_msgs.msg import Odometry as RosOdometry
+    from sensor_msgs.msg import Image as RosImage, Imu as RosImu
     _HAS_SENSOR_MSGS = True
 except ImportError:
     _HAS_SENSOR_MSGS = False
@@ -56,7 +57,7 @@ except ImportError:
 try:
     import uvicorn
     from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-    from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
 
@@ -66,6 +67,25 @@ except ImportError:
 
 from ..drivers import network_manager as netmgr
 from ..drivers import bluetooth_helper as bth
+from ..web.assets import AssetVersions
+from ..web.telemetry import (
+    battery_percent_from_fraction,
+    battery_percent_from_json,
+    battery_view,
+    camera_status,
+    telemetry_health as telemetry_health_for_value,
+)
+
+# Browsers would otherwise keep running a cached app.js after a rebuild;
+# "no-cache" still lets them revalidate cheaply with the ETag.
+_REVALIDATE_HEADERS = {"Cache-Control": "no-cache"}
+
+if _HAS_FASTAPI:
+    class _RevalidatingStaticFiles(StaticFiles):
+        def file_response(self, *args, **kwargs):
+            response = super().file_response(*args, **kwargs)
+            response.headers.update(_REVALIDATE_HEADERS)
+            return response
 
 
 def _read_thermal_zones() -> list[dict]:
@@ -397,12 +417,17 @@ class _RosBridge:
             "battery": {},
             "lidar": {},
             "lidar_points": [],
+            "imu": {},
+            "odom": {},
         }
         self._ws_clients: list[WebSocket] = []
 
         self._frame_lock = threading.Lock()
         self._color_frame: np.ndarray | None = None
         self._depth_frame: np.ndarray | None = None
+        # time.monotonic() of the last successfully decoded frame per stream.
+        self._color_received_at: float | None = None
+        self._depth_received_at: float | None = None
 
         self._start_network_poller()
         self._start_thermal_poller()
@@ -444,6 +469,12 @@ class _RosBridge:
                 reliability=QoSReliabilityPolicy.RELIABLE,
                 durability=QoSDurabilityPolicy.VOLATILE,
                 history=QoSHistoryPolicy.KEEP_LAST, depth=1,
+            )
+            ros_node.create_subscription(
+                RosImu, "/imu/data_raw", self._cb_imu, qos_be
+            )
+            ros_node.create_subscription(
+                RosOdometry, "/odom", self._cb_odom, qos_rel
             )
             for qos in (qos_be, qos_rel):
                 ros_node.create_subscription(RosImage, "/camera/color/image_raw", self._cb_color, qos)
@@ -503,6 +534,7 @@ class _RosBridge:
             data = json.loads(msg.data)
         except Exception:
             data = {"raw": msg.data}
+        data["_received_at"] = time.time()
         with self._lock:
             self._state["wheel_status"] = data
 
@@ -511,6 +543,7 @@ class _RosBridge:
             data = json.loads(msg.data)
         except Exception:
             data = {"raw": msg.data}
+        data["_received_at"] = time.time()
         with self._lock:
             self._state["mks_bus"] = data
 
@@ -563,32 +596,13 @@ class _RosBridge:
         except Exception:
             data = {"raw": msg.data}
 
-        percentage = data.get("percentage", data.get("percent"))
-        try:
-            if percentage is not None:
-                percentage = float(percentage)
-                if 0.0 <= percentage <= 1.0:
-                    percentage *= 100.0
-                data["percent"] = round(percentage, 1)
-        except Exception:
-            pass
+        if isinstance(data, dict) and ("percentage" in data or "percent" in data):
+            data["percent"] = battery_percent_from_json(data)
 
         data.setdefault("source", "/battery/status_json")
         self._merge_battery(data)
 
     def _cb_battery_state(self, msg):
-        percentage = None
-        try:
-            raw_percentage = float(msg.percentage)
-            if np.isfinite(raw_percentage) and raw_percentage >= 0:
-                percentage = (
-                    raw_percentage * 100.0
-                    if raw_percentage <= 1.0
-                    else raw_percentage
-                )
-        except Exception:
-            pass
-
         data = {
             "source": "/battery/status",
             "voltage": (
@@ -606,11 +620,7 @@ class _RosBridge:
                 if np.isfinite(float(msg.temperature))
                 else None
             ),
-            "percent": (
-                round(percentage, 1)
-                if percentage is not None
-                else None
-            ),
+            "percent": battery_percent_from_fraction(msg.percentage),
             "present": bool(msg.present),
             "power_supply_status": int(msg.power_supply_status),
             "power_supply_health": int(msg.power_supply_health),
@@ -622,6 +632,7 @@ class _RosBridge:
             data = json.loads(msg.data)
         except Exception:
             data = {"raw": msg.data}
+        data["_received_at"] = time.time()
         with self._lock:
             self._state["lidar"] = data
 
@@ -633,17 +644,64 @@ class _RosBridge:
         with self._lock:
             self._state["lidar_points"] = data
 
+    def _cb_imu(self, msg: RosImu):
+        data = {
+            "frame_id": msg.header.frame_id,
+            "angular_velocity": {
+                "x": float(msg.angular_velocity.x),
+                "y": float(msg.angular_velocity.y),
+                "z": float(msg.angular_velocity.z),
+            },
+            "linear_acceleration": {
+                "x": float(msg.linear_acceleration.x),
+                "y": float(msg.linear_acceleration.y),
+                "z": float(msg.linear_acceleration.z),
+            },
+            "orientation_available": bool(
+                msg.orientation_covariance
+                and msg.orientation_covariance[0] >= 0.0
+            ),
+            "_received_at": time.time(),
+        }
+        if data["orientation_available"]:
+            data["orientation"] = {
+                "x": float(msg.orientation.x),
+                "y": float(msg.orientation.y),
+                "z": float(msg.orientation.z),
+                "w": float(msg.orientation.w),
+            }
+        with self._lock:
+            self._state["imu"] = data
+
+    def _cb_odom(self, msg: RosOdometry):
+        data = {
+            "frame_id": msg.header.frame_id,
+            "child_frame_id": msg.child_frame_id,
+            "position": {
+                "x": float(msg.pose.pose.position.x),
+                "y": float(msg.pose.pose.position.y),
+            },
+            "linear_velocity_m_s": float(msg.twist.twist.linear.x),
+            "angular_velocity_rad_s": float(msg.twist.twist.angular.z),
+            "_received_at": time.time(),
+        }
+        with self._lock:
+            self._state["odom"] = data
+
     def _cb_color(self, msg: RosImage):
         try:
             frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, 3)
             with self._frame_lock:
                 self._color_frame = frame
+                self._color_received_at = time.monotonic()
         except Exception:
             pass
 
     def _cb_depth(self, msg: RosImage):
         try:
             depth = np.frombuffer(msg.data, dtype=np.uint16).reshape(msg.height, msg.width)
+            with self._frame_lock:
+                self._depth_received_at = time.monotonic()
             invalid = depth == 0
             clamped = np.clip(depth.astype(np.float32), _DEPTH_MIN_MM, _DEPTH_MAX_MM)
             depth_8u = ((clamped - _DEPTH_MIN_MM) * (255.0 / (_DEPTH_MAX_MM - _DEPTH_MIN_MM))).astype(np.uint8)
@@ -667,9 +725,31 @@ class _RosBridge:
         with self._frame_lock:
             return self._depth_frame.copy() if self._depth_frame is not None else None
 
+    def camera_status(self) -> dict:
+        with self._frame_lock:
+            color_at, depth_at = self._color_received_at, self._depth_received_at
+        return camera_status(time.monotonic(), color_at, depth_at)
+
+    def battery_status(self) -> dict:
+        with self._lock:
+            battery = dict(self._state.get("battery", {}))
+        return battery_view(battery, time.time())
+
     def snapshot(self) -> dict:
         with self._lock:
-            return dict(self._state)
+            data = dict(self._state)
+        now = time.time()
+        telemetry_health = {}
+        for key in ("wheel_status", "mks_bus", "lidar", "imu", "odom"):
+            value = dict(data.get(key) or {})
+            health = telemetry_health_for_value(key, value, now)
+            value["_health"] = health
+            data[key] = value
+            telemetry_health[key] = health
+        data["telemetry_health"] = telemetry_health
+        data["camera"] = self.camera_status()
+        data["battery"] = self.battery_status()
+        return data
 
 
 
@@ -713,7 +793,11 @@ class WebDashboardNode(Node):
         self._action_clis: dict[str, object] = {}
         # Pre-create wheel_driver_node clients so the first Resume / E-Stop
         # click from the web UI doesn't lose the race with ROS discovery.
-        for _name in ("/wheel_driver_node/stop", "/wheel_driver_node/stop_fast"):
+        for _name in (
+            "/wheel_driver_node/stop",
+            "/wheel_driver_node/stop_fast",
+            "/wheel_driver_node/resume",
+        ):
             self._action_clis[_name] = self.create_client(Trigger, _name)
         self._config_pub = self.create_publisher(String, "/gamepad/config", 10)
 
@@ -729,7 +813,7 @@ class WebDashboardNode(Node):
         cached = self._action_clis.get(srv_name)
         if cached is not None:
             return cached
-        if action in ("stop", "stop_fast", "reference"):
+        if action in ("stop", "stop_fast", "resume", "reference"):
             srv_type = Trigger
         elif action in ("open", "close"):
             srv_type = ActuatorCommand
@@ -747,7 +831,7 @@ class WebDashboardNode(Node):
         app = FastAPI(title="HorseShitBot Dashboard")
 
         if STATIC_DIR.exists():
-            app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+            app.mount("/static", _RevalidatingStaticFiles(directory=str(STATIC_DIR)), name="static")
 
         bridge = self._bridge
         ros_node = self
@@ -759,12 +843,20 @@ class WebDashboardNode(Node):
                 status_code=500,
             )
 
+        assets = AssetVersions(STATIC_DIR)
+
         @app.get("/")
         async def index():
-            index_path = STATIC_DIR / "index.html"
-            if index_path.exists():
-                return FileResponse(str(index_path))
+            if (STATIC_DIR / "index.html").exists():
+                return HTMLResponse(assets.render_index(), headers=_REVALIDATE_HEADERS)
             return {"message": "HorseShitBot Dashboard — no index.html found"}
+
+        @app.get("/api/frontend-version")
+        async def frontend_version():
+            return {
+                "version": assets.frontend_version(),
+                "assets": assets.asset_versions(),
+            }
 
         @app.get("/api/status")
         async def status():
@@ -783,22 +875,22 @@ class WebDashboardNode(Node):
 
         @app.get("/api/power-status")
         async def power_status():
-            """Robot battery data when available, plus ODrive fallback values."""
+            """Battery state (percent is 0..100) plus drive-bus values the wheel backend reports."""
+            battery = bridge.battery_status()
             with bridge._lock:
-                battery = dict(bridge._state.get("battery", {}))
                 wheel = dict(bridge._state.get("wheel_status", {}))
 
             diag = wheel.get("diag") or {}
             return {
                 "battery": battery,
-                "battery_available": bool(battery),
+                "battery_available": battery["available"],
                 "drive_bus_voltage": diag.get("vbus"),
                 "left_motor_current": wheel.get("current_left"),
                 "right_motor_current": wheel.get("current_right"),
                 "note": (
-                    "Robot battery percentage requires a publisher on "
-                    "/battery/status or /battery/status_json. "
-                    "ODrive bus voltage is not the same as battery percentage."
+                    "Battery percentage comes from /battery/status and "
+                    "/battery/status_json. Drive-bus voltage and motor "
+                    "currents are only reported by the ODrive backend."
                 ),
             }
 
@@ -883,7 +975,7 @@ class WebDashboardNode(Node):
         @app.post("/api/command/{node_name}/{action}")
         async def command(node_name: str, action: str):
             # Trigger-style actions take no payload.
-            trigger_actions = {"stop", "stop_fast", "reference"}
+            trigger_actions = {"stop", "stop_fast", "resume", "reference"}
             # ActuatorCommand actions: open/close (speed_override=0 -> use node default).
             actuator_actions = {"open", "close"}
             if action not in trigger_actions and action not in actuator_actions:
@@ -897,7 +989,48 @@ class WebDashboardNode(Node):
                 return {"success": False, "message": f"{srv_name} not available"}
 
             if action in trigger_actions:
-                cli.call_async(Trigger.Request())
+                future = cli.call_async(Trigger.Request())
+                deadline = time.monotonic() + 3.0
+                while not future.done() and time.monotonic() < deadline:
+                    await asyncio.sleep(0.02)
+                if not future.done():
+                    return JSONResponse(
+                        {
+                            "success": False,
+                            "confirmed": False,
+                            "pending": action == "resume",
+                            "message": f"{srv_name} acknowledgement timed out",
+                        },
+                        status_code=504,
+                    )
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    return JSONResponse(
+                        {
+                            "success": False,
+                            "confirmed": False,
+                            "pending": False,
+                            "message": str(exc),
+                        },
+                        status_code=500,
+                    )
+                success = bool(getattr(result, "success", False))
+                message = getattr(result, "message", "")
+                pending = (
+                    action == "resume"
+                    and not success
+                    and "pending" in message.lower()
+                )
+                return JSONResponse(
+                    {
+                        "success": success,
+                        "confirmed": success and action == "resume",
+                        "pending": pending,
+                        "message": message,
+                    },
+                    status_code=202 if pending else 200 if success else 409,
+                )
             else:
                 req = ActuatorCommand.Request()
                 req.command = action

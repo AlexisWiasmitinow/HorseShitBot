@@ -424,18 +424,15 @@ class MksBus:
         self.write_reg(unit_id, REG_EMERGENCY_STOP, 1)
 
     def release_emergency_stop(self, unit_id: int):
-        """Clear the latch left behind by emergency_stop(). The MKS
-        controller doesn't react to a fresh REG_SPEED write after F7 was
-        triggered, so we explicitly toggle REG_ENABLE off → on. We also
-        opportunistically write 0 to F7 in case some firmware revisions
-        accept that as a release. The encoder zero is preserved (unlike
-        clear_error_state which also calls axis_zero)."""
-        try:
-            self.write_reg(unit_id, REG_EMERGENCY_STOP, 0)
-        except Exception:
-            pass
+        """Clear the latch without re-enabling a retained non-zero command.
+
+        Every write must acknowledge. Failure leaves the motor disabled and
+        propagates to the wheel driver's fail-closed release state.
+        """
         self.set_enable(unit_id, False)
         time.sleep(0.05)
+        self.write_reg(unit_id, REG_EMERGENCY_STOP, 0)
+        self.set_speed_signed(unit_id, 0.0, acc=0)
         self.set_enable(unit_id, True)
 
     def axis_zero(self, unit_id: int):

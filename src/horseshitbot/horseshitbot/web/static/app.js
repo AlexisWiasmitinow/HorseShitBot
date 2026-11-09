@@ -1,3 +1,9 @@
+// Injected by the server into index.html together with ?v= asset URLs.
+const FRONTEND_VERSION =
+  document.querySelector('meta[name="hsb-frontend-version"]')?.content || "unversioned";
+window.HSB_FRONTEND_VERSION = FRONTEND_VERSION;
+console.info(`HorseShitBot dashboard frontend ${FRONTEND_VERSION}`);
+
 const STATE_NAMES = ["IDLE", "REFERENCING", "REFERENCED", "MOVING_OPEN", "MOVING_CLOSE", "ERROR"];
 const STATE_CLASSES = ["state-idle", "state-ref", "state-ref", "state-moving", "state-moving", "state-error"];
 const DEFAULT_METERS_PER_MOTOR_TURN = (16 / 52) * 0.420;
@@ -183,16 +189,36 @@ function connectWs() {
   ws.onerror = () => ws.close();
 
   ws.onmessage = (evt) => {
+    let data;
     try {
-      const data = JSON.parse(evt.data);
-      dashboardRuntime.telemetryLastSeenAt = Date.now();
-      dashboardRuntime.telemetryConnected = true;
+      data = JSON.parse(evt.data);
+    } catch (e) {
+      reportTelemetryError("parse", e);
+      return;
+    }
+    dashboardRuntime.telemetryLastSeenAt = Date.now();
+    dashboardRuntime.telemetryConnected = true;
+    try {
       updateDashboard(data);
       lastGamepad = data.gamepad || {};
       activeInputs = lastGamepad.active_inputs || [];
       updateCtrlHighlights();
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      reportTelemetryError("update", e);
+    }
   };
+}
+
+// Telemetry arrives 10x per second, so log each distinct failure only once;
+// silently swallowing these previously hid a ReferenceError that stopped
+// every dashboard update.
+const _reportedTelemetryErrors = new Set();
+
+function reportTelemetryError(stage, error) {
+  const key = `${stage}: ${error && error.message ? error.message : error}`;
+  if (_reportedTelemetryErrors.has(key)) return;
+  _reportedTelemetryErrors.add(key);
+  console.error(`Dashboard telemetry ${stage} failed:`, error);
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────
@@ -216,12 +242,26 @@ function updateDashboard(data) {
 
   const estopBanner = document.getElementById("estop-banner");
   if (estopBanner) estopBanner.style.display = w.estopped ? "flex" : "none";
+  const estopText = document.getElementById("estop-banner-text");
+  const estopResume = document.getElementById("estop-resume-btn");
+  if (estopText) {
+    estopText.textContent = w.estop_release_pending
+      ? "E-STOP RELEASE REQUESTED — awaiting hardware acknowledgement"
+      : w.estop_release_error
+        ? `E-STOP ACTIVE — release failed: ${w.estop_release_error}`
+        : "E-STOP ACTIVE — release requires confirmed hardware acknowledgement";
+  }
+  if (estopResume) {
+    estopResume.disabled = !!w.estop_release_pending;
+    estopResume.textContent = w.estop_release_pending ? "Releasing…" : "Resume";
+  }
   const card = document.getElementById("card-wheels");
   if (card) card.classList.toggle("estopped", !!w.estopped);
   const wErr = document.getElementById("w-error");
   if (wErr) {
-    if (w.error) {
-      wErr.textContent = w.error;
+    const wheelError = w.estop_release_error || w.error;
+    if (wheelError) {
+      wErr.textContent = wheelError;
       wErr.style.color = "var(--err)";
     } else {
       wErr.textContent = "None";
@@ -2181,6 +2221,8 @@ const dashboardRuntime = {
   systemMetrics: {},
   systemHealthLastSuccess: 0,
   systemHealthError: "",
+  powerStatus: null,
+  powerStatusAt: 0,
   lastData: null,
   bagStatsLoadedAt: 0,
 };
@@ -2637,6 +2679,163 @@ async function pollSystemHealth() {
   }
 }
 
+// An open tab keeps running the code it loaded; tell the user when the robot
+// now serves a different frontend instead of failing silently.
+async function checkFrontendVersion() {
+  const label = document.getElementById("sidebar-frontend-version");
+  let served = null;
+  try {
+    const response = await fetch("/api/frontend-version", { cache: "no-store" });
+    if (response.ok) served = (await response.json()).version;
+  } catch (error) {
+    return;
+  }
+  const outdated = Boolean(served) && served !== FRONTEND_VERSION;
+  if (label) {
+    label.textContent = outdated
+      ? `${FRONTEND_VERSION} · outdated, reload (robot: ${served})`
+      : FRONTEND_VERSION;
+    label.style.color = outdated ? "var(--red)" : "";
+  }
+  let banner = document.getElementById("frontend-outdated-banner");
+  if (outdated && !banner) {
+    console.warn(`Dashboard frontend ${FRONTEND_VERSION} is outdated; robot serves ${served}.`);
+    banner = document.createElement("div");
+    banner.id = "frontend-outdated-banner";
+    banner.style.cssText =
+      "position:fixed;top:0;left:0;right:0;z-index:10000;padding:8px 16px;" +
+      "background:var(--red, #c62828);color:#fff;font-weight:600;text-align:center;cursor:pointer";
+    banner.textContent = "Dashboard code on the robot was updated. Click to reload this page.";
+    banner.onclick = () => location.reload();
+    document.body.appendChild(banner);
+  } else if (!outdated && banner) {
+    banner.remove();
+  }
+}
+
+const POWER_REST_MAX_AGE_MS = 6000;
+// /ws counts as live only while messages keep arriving, not merely while the
+// socket is open (an open socket can still be waiting for its first packet).
+const TELEMETRY_LIVE_MAX_AGE_MS = 3000;
+
+function telemetryIsLive() {
+  return (
+    ws?.readyState === WebSocket.OPEN &&
+    Date.now() - dashboardRuntime.telemetryLastSeenAt <= TELEMETRY_LIVE_MAX_AGE_MS
+  );
+}
+
+async function pollPowerStatus() {
+  try {
+    const response = await fetch("/api/power-status", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    dashboardRuntime.powerStatus = await response.json();
+    dashboardRuntime.powerStatusAt = Date.now();
+  } catch (error) {
+    return;
+  }
+  // Without live /ws messages nothing else re-renders the power card.
+  if (!telemetryIsLive()) {
+    renderPowerTelemetry(dashboardPower(dashboardRuntime.lastData || {}));
+  }
+}
+
+// The backend already converts BatteryState's 0..1 fraction to 0..100;
+// never rescale here.
+function freshBatteryPercent(battery, receivedAt) {
+  if (!battery || battery.available !== true || !receivedAt) return null;
+  const percent = dashboardNumber(battery.percent);
+  const age = dashboardNumber(battery.age_sec);
+  const staleAfter = dashboardNumber(battery.stale_after_sec);
+  if (percent == null || age == null || staleAfter == null) return null;
+  return age + (Date.now() - receivedAt) / 1000 <= staleAfter ? percent : null;
+}
+
+// Live WebSocket telemetry first; /api/power-status only while /ws is not
+// delivering. Drive-bus voltage and currents are shown only when reported.
+function dashboardPower(data) {
+  const wheel = data.wheel_status || {};
+  const live = telemetryIsLive();
+  const rest = dashboardRuntime.powerStatus;
+  const restFresh =
+    Boolean(rest) && Date.now() - dashboardRuntime.powerStatusAt <= POWER_REST_MAX_AGE_MS;
+
+  let battery = live
+    ? freshBatteryPercent(data.battery, dashboardRuntime.telemetryLastSeenAt)
+    : null;
+  let batterySource = battery != null ? (data.battery.source || "live telemetry") : "";
+  let batteryVia = battery != null ? "websocket" : "";
+  if (battery == null && restFresh) {
+    battery = freshBatteryPercent(rest.battery, dashboardRuntime.powerStatusAt);
+    if (battery != null) {
+      batterySource = rest.battery.source || "/api/power-status";
+      batteryVia = "rest";
+    }
+  }
+
+  const fromRest = !live && restFresh;
+  return {
+    battery,
+    batterySource,
+    batteryVia,
+    vbus: live ? dashboardNumber(wheel.diag?.vbus)
+      : fromRest ? dashboardNumber(rest.drive_bus_voltage) : null,
+    leftCurrent: live ? dashboardNumber(wheel.current_left)
+      : fromRest ? dashboardNumber(rest.left_motor_current) : null,
+    rightCurrent: live ? dashboardNumber(wheel.current_right)
+      : fromRest ? dashboardNumber(rest.right_motor_current) : null,
+  };
+}
+
+function renderPowerTelemetry(power) {
+  const { battery, vbus, leftCurrent, rightCurrent } = power;
+
+  if (battery != null) {
+    dashboardText("dash-battery-value", `${battery.toFixed(0)}%`);
+    dashboardProgress("dash-battery-bar", battery);
+  } else if (vbus != null) {
+    dashboardText("dash-battery-value", `${vbus.toFixed(1)} V bus`);
+    dashboardProgress("dash-battery-bar", vbus, 60);
+  } else {
+    dashboardText("dash-battery-value", "Not reported");
+    dashboardProgress("dash-battery-bar", null);
+  }
+
+  dashboardText(
+    "dash-power-diagnostics-summary",
+    battery != null
+      ? `${battery.toFixed(0)}% battery`
+      : vbus != null ? `${vbus.toFixed(1)} V drive bus` : "No power telemetry"
+  );
+  dashboardText(
+    "diag-power-battery",
+    battery != null ? `${battery.toFixed(0)}%` : "Not reported"
+  );
+  dashboardText(
+    "diag-power-vbus",
+    vbus == null ? "Not reported" : `${vbus.toFixed(1)} V`
+  );
+  dashboardText(
+    "diag-power-left-current",
+    leftCurrent == null ? "Not reported" : `${Math.abs(leftCurrent).toFixed(2)} A`
+  );
+  dashboardText(
+    "diag-power-right-current",
+    rightCurrent == null ? "Not reported" : `${Math.abs(rightCurrent).toFixed(2)} A`
+  );
+
+  let note =
+    power.batteryVia === "websocket"
+      ? `Battery from ${power.batterySource} via live telemetry.`
+      : power.batteryVia === "rest"
+        ? `Battery from ${power.batterySource} via /api/power-status; live telemetry is disconnected.`
+        : "No fresh battery telemetry from /battery/status or /battery/status_json.";
+  if (vbus == null && leftCurrent == null && rightCurrent == null) {
+    note += " Drive-bus voltage and motor currents are reported only by the ODrive backend.";
+  }
+  dashboardText("diag-power-note", note);
+}
+
 function dashboardMetricObject(data) {
   const fromSocket =
     data.system_metrics ||
@@ -2672,6 +2871,8 @@ function updateDashboardOverview(data) {
   const lidar = data.lidar || {};
   const camera = data.camera || data.camera_status || {};
   const imu = data.imu || data.imu_data || data.imu_status || {};
+  const odom = data.odom || {};
+  const telemetryHealth = data.telemetry_health || {};
   const gamepad = data.gamepad || {};
   const thermals = Array.isArray(data.thermals) ? data.thermals : [];
 
@@ -2681,8 +2882,7 @@ function updateDashboardOverview(data) {
   const memTotal = dashboardNumber(metrics.memory_total_gb, metrics.mem_total_gb, metrics.memory_total);
   const storageUsed = dashboardNumber(metrics.storage_used_gb, metrics.disk_used_gb);
   const storageTotal = dashboardNumber(metrics.storage_total_gb, metrics.disk_total_gb);
-  const battery = dashboardNumber(metrics.battery_percent, metrics.battery, data.battery?.percent);
-  const driveBusVoltage = dashboardNumber(wheel.diag?.vbus);
+  const power = dashboardPower(data);
   const latency = dashboardNumber(metrics.network_latency_ms, metrics.latency_ms);
   const uptime = dashboardNumber(metrics.uptime_sec, metrics.uptime_seconds, data.uptime_sec);
   if (uptime != null) dashboardRuntime.systemUptimeSeconds = uptime;
@@ -2720,16 +2920,7 @@ function updateDashboardOverview(data) {
     dashboardProgress("dash-storage-bar", null);
   }
 
-  if (battery != null) {
-    dashboardText("dash-battery-value", `${battery.toFixed(0)}%`);
-    dashboardProgress("dash-battery-bar", battery);
-  } else if (driveBusVoltage != null) {
-    dashboardText("dash-battery-value", `${driveBusVoltage.toFixed(1)} V bus`);
-    dashboardProgress("dash-battery-bar", driveBusVoltage, 60);
-  } else {
-    dashboardText("dash-battery-value", "Not reported");
-    dashboardProgress("dash-battery-bar", null);
-  }
+  renderPowerTelemetry(power);
 
   dashboardText(
     "dash-temperature-value",
@@ -2765,10 +2956,17 @@ function updateDashboardOverview(data) {
   }
 
   const wheelBackend = String(wheel.backend || "").toUpperCase();
-  const wheelError = Boolean(wheel.error || wheel.estopped);
-  const wheelReady = Boolean(wheel.backend && !wheelError);
+  const wheelHealth = telemetryHealth.wheel_status || wheel._health || {};
+  const wheelFresh = !wheelHealth.state || wheelHealth.state === "live";
+  const wheelError = Boolean(
+    wheel.error || wheel.estopped || wheelHealth.state === "stale"
+  );
+  const wheelReady = Boolean(wheel.backend && wheelFresh && !wheelError);
   dashboardBadge("dash-wheels-state", wheelError ? "err" : wheelReady ? "ok" : "", wheelError ? "ERROR" : wheelReady ? "READY" : "CHECKING");
-  dashboardText("dash-wheels-sub", `Drive: ${wheelBackend || "--"}`);
+  dashboardText(
+    "dash-wheels-sub",
+    wheelHealth.state === "stale" ? "Drive: stale telemetry" : `Drive: ${wheelBackend || "--"}`
+  );
   dashboardMarker("wheels", wheelError ? "err" : wheelReady ? "ok" : "", wheelError ? "Error" : wheelReady ? "Ready" : "Checking");
 
   const brushState = actuatorDashboardState(data.brush || {}, "Brush");
@@ -2787,17 +2985,10 @@ function updateDashboardOverview(data) {
 
   // Sensor availability and browser preview are intentionally separate.
   // "Online" describes the robot-side sensor. ON/OFF in the Sensors card
-  // describes only this browser's preview.
-  const cameraConnected =
-    camera.connected === true ||
-    camera.streaming === true ||
-    camera.active === true ||
-    camStreaming;
-  const cameraKnown =
-    camera.connected != null ||
-    camera.streaming != null ||
-    camera.active != null ||
-    camStreaming;
+  // describes only this browser's preview. Without live /ws data the
+  // camera state is unknown, not "Online" or "Unavailable".
+  const cameraKnown = camera.connected != null && ws?.readyState === WebSocket.OPEN;
+  const cameraConnected = cameraKnown && camera.connected === true;
   const cameraState = cameraKnown ? (cameraConnected ? "ok" : "err") : "";
   dashboardService("dash-service-camera", cameraState);
   dashboardServiceNote(
@@ -2819,14 +3010,18 @@ function updateDashboardOverview(data) {
       : cameraKnown ? "Unavailable" : "Status unknown"
   );
 
-  const lidarKnown = lidar.connected != null;
+  const lidarHealth = telemetryHealth.lidar || lidar._health || {};
+  const lidarFresh = !lidarHealth.state || ["live", "disabled"].includes(lidarHealth.state);
+  const lidarKnown = lidar.connected != null && lidarFresh;
   const lidarConnected = lidar.connected === true;
   const lidarState = lidarKnown ? (lidarConnected ? "ok" : "err") : "";
   const lidarRate = dashboardNumber(lidar.hz, lidar.frequency, lidar.scan_rate);
   dashboardService("dash-service-lidar", lidarState);
   dashboardServiceNote(
     "dash-service-lidar",
-    lidarKnown ? (lidarConnected ? "Online" : "Offline") : "Not reported"
+    lidarHealth.state === "stale"
+      ? "Stale data"
+      : lidarKnown ? (lidarConnected ? "Online" : "Offline") : "Not reported"
   );
   dashboardText(
     "dash-lidar-health",
@@ -2849,15 +3044,18 @@ function updateDashboardOverview(data) {
 
   const angular = imu.angular_velocity || imu.gyro || {};
   const accel = imu.linear_acceleration || imu.acceleration || imu.accel || {};
-  const imuAvailable = [
+  const imuHealth = telemetryHealth.imu || imu._health || {};
+  const imuMeasurementsAvailable = [
     angular.x, angular.y, angular.z,
     accel.x, accel.y, accel.z,
     imu.angular_velocity_z, imu.accel_x, imu.accel_y
   ].some(value => Number.isFinite(Number(value)));
+  const imuAvailable = imuMeasurementsAvailable &&
+    (!imuHealth.state || imuHealth.state === "live");
   dashboardService("dash-service-imu", imuAvailable ? "ok" : "");
   dashboardServiceNote(
     "dash-service-imu",
-    imuAvailable ? "Publishing" : "No data"
+    imuHealth.state === "stale" ? "Stale data" : imuAvailable ? "Publishing" : "No data"
   );
   dashboardSensor(
     "dash-imu-status",
@@ -2866,7 +3064,7 @@ function updateDashboardOverview(data) {
     imuAvailable ? "LIVE" : "--",
     imuAvailable
       ? `${dashboardNumber(imu.hz, imu.frequency) || 200} Hz · ROS managed`
-      : "Waiting for /imu/data_raw"
+      : imuHealth.state === "stale" ? "Stale /imu/data_raw" : "Waiting for /imu/data_raw"
   );
 
   const dashOrientation = imu.orientation || imu.quaternion || imu.q || null;
@@ -2881,13 +3079,23 @@ function updateDashboardOverview(data) {
   dashboardText("dash-imu-accel-y", dashAccelY == null ? "--" : dashAccelY.toFixed(2));
   dashboardText("dash-imu-roll", dashRoll == null ? "--" : dashRoll.toFixed(1));
   dashboardText("dash-imu-pitch", dashPitch == null ? "--" : dashPitch.toFixed(1));
+  const odomHealth = telemetryHealth.odom || odom._health || {};
+  const odomFresh = !odomHealth.state || odomHealth.state === "live";
+  const odomX = odomFresh ? dashboardNumber(odom.position?.x) : null;
+  const odomY = odomFresh ? dashboardNumber(odom.position?.y) : null;
+  dashboardText("dash-odom-x", odomX == null ? "--" : odomX.toFixed(2));
+  dashboardText("dash-odom-y", odomY == null ? "--" : odomY.toFixed(2));
 
-  const mksKnown = hw.bus_connected != null;
+  const mksHealth = telemetryHealth.mks_bus || hw._health || {};
+  const mksFresh = !mksHealth.state || mksHealth.state === "live";
+  const mksKnown = hw.bus_connected != null && mksFresh;
   const mksConnected = hw.bus_connected === true;
   dashboardService("dash-service-mks", mksKnown ? (mksConnected ? "ok" : "err") : "");
   dashboardServiceNote(
     "dash-service-mks",
-    mksKnown ? (mksConnected ? "Online" : "Offline") : "Not reported"
+    mksHealth.state === "stale"
+      ? "Stale data"
+      : mksKnown ? (mksConnected ? "Online" : "Offline") : "Not reported"
   );
   dashboardText(
     "sidebar-mks-state",
@@ -2944,38 +3152,6 @@ function updateDashboardOverview(data) {
   dashboardText(
     "diag-thermal-max",
     Number.isFinite(maxThermal) ? `${maxThermal.toFixed(1)}°C` : "--"
-  );
-
-  const batteryReported = battery != null;
-  const leftCurrent = dashboardNumber(w.current_left);
-  const rightCurrent = dashboardNumber(w.current_right);
-  dashboardText(
-    "dash-power-diagnostics-summary",
-    batteryReported
-      ? `${battery.toFixed(0)}% battery`
-      : vbus != null ? `${vbus.toFixed(1)} V drive bus` : "No power telemetry"
-  );
-  dashboardText(
-    "diag-power-battery",
-    batteryReported ? `${battery.toFixed(0)}%` : "Not reported"
-  );
-  dashboardText(
-    "diag-power-vbus",
-    vbus == null ? "Not reported" : `${vbus.toFixed(1)} V`
-  );
-  dashboardText(
-    "diag-power-left-current",
-    leftCurrent == null ? "Not reported" : `${Math.abs(leftCurrent).toFixed(2)} A`
-  );
-  dashboardText(
-    "diag-power-right-current",
-    rightCurrent == null ? "Not reported" : `${Math.abs(rightCurrent).toFixed(2)} A`
-  );
-  dashboardText(
-    "diag-power-note",
-    batteryReported
-      ? "Battery telemetry is available from the current WebSocket payload."
-      : "No dedicated battery percentage is present. ODrive voltage/current values are shown when available."
   );
 
   const diagnosticIssues = [];
@@ -3123,13 +3299,18 @@ function updateDashboardOverview(data) {
 
   const ready = document.getElementById("dashboard-readiness");
   const readinessButton = document.getElementById("readiness-diagnostics-button");
-  ready?.classList.remove("ready", "warning", "error");
+  // While /ws is down, the host-metrics poll still re-renders from the last
+  // payload; leave the disconnected banner from updateDashboardConnection alone.
+  const telemetryLive = ws?.readyState === WebSocket.OPEN;
+  if (telemetryLive) ready?.classList.remove("ready", "warning", "error");
 
   const criticalCount = diagnosticIssues.filter(issue => issue.severity === "critical").length;
   const warningCount = diagnosticIssues.filter(issue => issue.severity === "warning").length;
   const firstIssue = diagnosticIssues[0];
 
-  if (criticalCount) {
+  if (!telemetryLive) {
+    // keep the reconnecting / disconnected banner
+  } else if (criticalCount) {
     ready?.classList.add("error");
     dashboardText("dashboard-ready-title", "ATTENTION REQUIRED");
     dashboardText(
@@ -3143,7 +3324,7 @@ function updateDashboardOverview(data) {
       "dashboard-ready-subtitle",
       `${firstIssue.title} — ${firstIssue.impact}`
     );
-  } else if (ws?.readyState === WebSocket.OPEN) {
+  } else {
     ready?.classList.add("ready");
     dashboardText("dashboard-ready-title", "READY FOR OPERATION");
     dashboardText("dashboard-ready-subtitle", "All reported critical systems are online");
@@ -3373,6 +3554,10 @@ function initDashboardPage() {
   pollSystemHealth();
   setInterval(updateDashboardClock, 1000);
   setInterval(pollSystemHealth, 2000);
+  pollPowerStatus();
+  setInterval(pollPowerStatus, 2000);
+  checkFrontendVersion();
+  setInterval(checkFrontendVersion, 30000);
   setInterval(() => {
     if (document.body.classList.contains("dashboard-active")) loadDashboardBagStats();
   }, 60000);
@@ -3395,8 +3580,15 @@ function setBar(id, value, max) {
 }
 
 async function cmd(node, action) {
-  try { await fetch(`/api/command/${node}/${action}`, { method: "POST" }); }
-  catch (e) { console.error("Command failed:", e); }
+  const response = await fetch(
+    `/api/command/${node}/${action}`,
+    { method: "POST" }
+  );
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok && !result.pending) {
+    throw new Error(result.message || `HTTP ${response.status}`);
+  }
+  return result;
 }
 
 async function sidebarWheelCommand(action) {
@@ -3451,9 +3643,21 @@ async function sidebarWheelCommand(action) {
 }
 
 async function resumeEstop() {
-  // /wheel_driver_node/stop is the action that clears the e-stop flag
-  // (gentle stop + recovery, see _srv_stop in wheel_driver_node.py).
-  await cmd("wheel_driver_node", "stop");
+  const button = document.getElementById("estop-resume-btn");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Requesting…";
+  }
+  try {
+    const result = await cmd("wheel_driver_node", "resume");
+    if (button && result.pending) button.textContent = "Releasing…";
+  } catch (error) {
+    console.error("E-stop release request failed:", error);
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Retry resume";
+    }
+  }
 }
 
 async function switchBackend() {

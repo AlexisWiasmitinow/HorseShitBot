@@ -51,6 +51,9 @@ wheel_driver_node:
     # milliseconds; 1.5 s also covers two serial calls at the configured
     # timeout/retry limit when both wheel requests are queued.
     mks_request_timeout_sec: 1.5
+    # Keep motion inhibited unless the MKS release service confirms that both
+    # wheel controllers acknowledged disable, latch clear, zero, and re-enable.
+    estop_release_timeout_sec: 2.0
     # ODrive-specific
     odrive_port: "/dev/odrive"
     odrive_baud: 115200

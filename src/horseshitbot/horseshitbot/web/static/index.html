@@ -77,6 +77,13 @@
 <span id="sidebar-jetson-temp">Waiting for temperature</span>
 </div>
 </div>
+<div class="sidebar-status-row">
+<span class="status-glyph">#</span>
+<div>
+<strong>Dashboard UI</strong>
+<span id="sidebar-frontend-version">unversioned</span>
+</div>
+</div>
 
 <div class="sidebar-emergency-section">
 <div class="sidebar-emergency-heading">
@@ -147,7 +154,7 @@
 </div>
 </header>
 <div class="estop-banner" id="estop-banner" style="display:none">
-<span>E-STOP ACTIVE — press the gamepad button mapped to <b>stop_wheels</b> or click</span>
+<span id="estop-banner-text">E-STOP ACTIVE — press the gamepad button mapped to <b>stop_wheels</b> or click</span>
 <button id="estop-resume-btn" onclick="resumeEstop()" type="button">Resume</button>
 </div>
 <div class="page-content">
@@ -344,6 +351,8 @@
             <div><span>Accel Y</span><strong id="dash-imu-accel-y">--</strong><small>m/s²</small></div>
             <div><span>Roll</span><strong id="dash-imu-roll">--</strong><small>°</small></div>
             <div><span>Pitch</span><strong id="dash-imu-pitch">--</strong><small>°</small></div>
+            <div><span>Odom X</span><strong id="dash-odom-x">--</strong><small>m</small></div>
+            <div><span>Odom Y</span><strong id="dash-odom-y">--</strong><small>m</small></div>
           </div>
         </div>
       </article>
@@ -635,7 +644,7 @@
                 </div>
 
                 <p class="diagnostic-unavailable-note" id="diag-power-note">
-                  No dedicated battery telemetry is currently present in the WebSocket payload.
+                  Waiting for power telemetry.
                 </p>
               </section>
             </section>
