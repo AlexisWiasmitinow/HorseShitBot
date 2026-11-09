@@ -22,6 +22,7 @@ from tf2_ros import TransformBroadcaster
 
 from horseshitbot_interfaces.srv import MksSetSpeed, SwitchBackend
 
+from ..drivers.drive_transmission import DriveTransmission
 from ..drivers.wheel_backend import WheelBackend
 from ..drivers.mks_command_state import (
     MksCommandDispatcher,
@@ -81,16 +82,24 @@ class WheelDriverNode(Node):
         self.declare_parameter("odrive_current_lim", 20.0)
         self.declare_parameter("odrive_vel_ramp_rate", 20.0)
         self.declare_parameter("odrive_vel_integrator_limit", 5.0)
-        # Odometry: differential-drive geometry
-        self.declare_parameter("meters_per_motor_turn", 0.093333)
+        # Drive transmission and differential-drive geometry
+        self.declare_parameter("motor_pulley_teeth", 16)
+        self.declare_parameter("driven_pulley_teeth", 52)
+        self.declare_parameter("meters_per_wheel_turn", 0.420)
         self.declare_parameter("wheel_separation", 0.40)
         self.declare_parameter("odom_frame_id", "odom")
         self.declare_parameter("base_frame_id", "base_link")
         self.declare_parameter("publish_odom_tf", True)
 
-        self._meters_per_turn = self._p_float("meters_per_motor_turn")
-        max_speed = self._p_float("max_speed_ms")
-        self._max_rpm = (max_speed / self._meters_per_turn) * 60.0
+        self._transmission = DriveTransmission(
+            motor_pulley_teeth=self._p_int("motor_pulley_teeth"),
+            driven_pulley_teeth=self._p_int("driven_pulley_teeth"),
+            meters_per_wheel_turn=self._p_float("meters_per_wheel_turn"),
+        )
+        self._max_speed_ms = self._p_float("max_speed_ms")
+        self._max_rpm = self._transmission.linear_velocity_to_motor_rpm(
+            self._max_speed_ms
+        )
         self._update_hz = self._p_float("update_hz")
         self._accel = self._p_float("accel_rpm_s")
         self._decel = self._p_float("decel_rpm_s")
@@ -468,6 +477,8 @@ class WheelDriverNode(Node):
             "backend": self._backend_name,
             "left_rpm": round(self._actual_left, 1),
             "right_rpm": round(self._actual_right, 1),
+            "meters_per_motor_turn": self._transmission.meters_per_motor_turn,
+            "max_speed_ms": self._max_speed_ms,
             "stopping": stop_fast,
             "estopped": estopped,
             "error": self._backend_error,
@@ -522,13 +533,10 @@ class WheelDriverNode(Node):
         return False
 
     def _update_odometry(self, left_rpm: float, right_rpm: float, dt: float):
-        """Integrate wheel RPMs into odometry and publish."""
-        # RPM -> m/s via drive-train ratio (meters_per_motor_turn)
-        v_left = left_rpm * self._meters_per_turn / 60.0
-        v_right = right_rpm * self._meters_per_turn / 60.0
-
-        v_linear = (v_right + v_left) / 2.0
-        v_angular = (v_right - v_left) / self._wheel_sep
+        """Integrate commanded motor RPMs into odometry and publish."""
+        v_linear, v_angular = self._transmission.motor_rpms_to_twist(
+            left_rpm, right_rpm, self._wheel_sep
+        )
 
         self._odom_theta += v_angular * dt
         self._odom_x += v_linear * math.cos(self._odom_theta) * dt

@@ -27,8 +27,8 @@ wheel_driver_node:
     id_right: 2
     invert_left_dir: false
     invert_right_dir: true
-    # Top speed at full stick. With meters_per_motor_turn=0.084 below,
-    # 1.5 m/s ≈ 1071 RPM at the motor. Keep this comfortably below the
+    # Top speed at full stick. With the 16/52 belt ratio below,
+    # 1.5 m/s ≈ 696 RPM at the motor. Keep this comfortably below the
     # MKS hardware limit of 3000 RPM.
     max_speed_ms: 1.5              # metres/sec — converted to motor RPM internally
     # Ramp ownership — IMPORTANT:
@@ -58,12 +58,15 @@ wheel_driver_node:
     odrive_current_lim: 30.0
     odrive_vel_ramp_rate: 20.0
     odrive_vel_integrator_limit: 5.0  # max idle current from integrator windup (amps)
-    # Drive train: 18T HTD3M motor pulley → 90T HTD3M driven, then 84T
-    # 5 mm-pitch track sprocket.
-    #   1 motor turn = (18/90) × 84 × 5 mm = 84.0 mm
-    # (Was 20T motor → 93.33 mm before the swap.)
-    # Re-measure with a tape after any mechanical change and update this.
-    meters_per_motor_turn: 0.084
+    # Drive train: 16T motor pulley → 52T driven wheel pulley.
+    #   wheel RPM = motor RPM × (16/52)
+    #   motor RPM = wheel RPM × (52/16), a 3.25:1 reduction
+    motor_pulley_teeth: 16
+    driven_pulley_teeth: 52
+    # Existing 84T, 5 mm-pitch track sprocket: 84 × 5 mm = 0.420 m/turn.
+    # Therefore one motor turn travels (16/52) × 0.420 = 0.129230769 m.
+    # Re-measure actual track travel after the pulley change.
+    meters_per_wheel_turn: 0.420
     # Odometry — measure wheel_separation for your robot!
     wheel_separation: 0.40        # metres (centre-to-centre of tracks)
     odom_frame_id: "odom"
