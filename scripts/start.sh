@@ -4,8 +4,8 @@
 #
 # Usage:
 #   ./scripts/start.sh                  # launch everything
-#   ./scripts/start.sh --no-camera      # skip RealSense + bag recorder
-#   ./scripts/start.sh --no-mks         # skip MKS bus node (ODrive-only setup)
+#   ./scripts/start.sh --no-camera      # skip RealSense (recorders remain)
+#   ./scripts/start.sh --no-mks         # skip shared MKS bus (diagnostic mode)
 #   ./scripts/start.sh --no-lidar       # skip lidar node
 #   ./scripts/start.sh --no-battery     # skip shared-bus battery monitoring
 #   ./scripts/start.sh --drive-only     # just wheel driver + gamepad (no launch file)

@@ -22,7 +22,8 @@ Technical details: see `docs/training_perception_navigation.md` and `docs/slam_g
 | `bin_door_node` | Single-motor bin door actuator (motor 6) |
 | `gamepad_teleop_node` | Data Frog BT controller via evdev, publishes `/cmd_vel` + actuator commands |
 | `web_dashboard_node` | FastAPI web UI for settings, control, and live diagnostics |
-| `status_screen_node` | Renders live status on the on-robot ILI9341 2.8" TFT (SPI) |
+| `status_screen_node` | Renders robot and battery status on the on-robot ILI9341 2.8" TFT |
+| `battery_modbus_node` | Publishes voltage and indicative state of charge via the shared Modbus bus |
 | `bag_recorder_node` | Programmatic rosbag2 recording of camera topics for ML training |
 | `realsense2_camera` | Official Intel RealSense wrapper (colour + depth, D415) |
 
@@ -32,7 +33,7 @@ Technical details: see `docs/training_perception_navigation.md` and `docs/slam_g
 - **Wheels (ODrive):** ODrive dual BLDC via serial ASCII (`/dev/ttyACM0`, 115200 baud)
 - **Lift/Brush/Bin Door:** MKS SERVO57D steppers on the same Modbus bus
 - **Gamepad:** Data Frog Bluetooth controller (evdev)
-- **Status Screen:** 2.8" ILI9341 SPI TFT, 240x320 (JC2432S028 V1.2) — Raspberry Pi uses SPI0 + BCM GPIO defaults; Jetson Nano uses SPI1 on pins 19/21/23/24 with DC/RST/LED on physical pins 22/18/12 (see `test_scripts/README.md`)
+- **Status Screen:** 2.8" ILI9341 SPI TFT, rendered in 320x240 landscape (JC2432S028 V1.2) — Raspberry Pi uses SPI0 + BCM GPIO defaults; Jetson Nano uses SPI1 on pins 19/21/23/24 with DC/RST/LED on physical pins 22/18/12 (see `test_scripts/README.md`)
 - **Camera:** Intel RealSense D415 (USB 3.0, colour + depth)
 
 ## Prerequisites
@@ -63,13 +64,24 @@ Key parameters:
 
 ## Run
 
-Launch the full system:
+Start the complete robot using the existing build:
 
 ```bash
-ros2 launch horseshitbot robot_launch.py
+./scripts/start.sh
 ```
 
-The web dashboard will be available at `http://<PI_IP>:8080`.
+Build and start after changing source:
+
+```bash
+./scripts/buildstart.sh
+```
+
+Normal startup enables the TFT, battery monitoring, camera, LiDAR and shared
+MKS bus. Use `./scripts/start.sh --no-battery` to disable battery polling.
+See **[docs/robot_startup.md](docs/robot_startup.md)** for all verified options,
+shutdown, diagnostics, systemd status and safe rollback.
+
+The web dashboard is available at `http://<ROBOT_IP>:8080`.
 
 ## Test Scripts
 
