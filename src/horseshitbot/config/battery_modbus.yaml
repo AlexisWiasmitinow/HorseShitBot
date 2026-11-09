@@ -6,18 +6,26 @@ battery_modbus_node:
     read_period_sec: 1.0
     request_timeout_sec: 0.2
 
-    # Legacy, UNVERIFIED conversion placeholders. Keep battery_modbus_node
-    # disabled until the external current transducer scaling is established.
+    # Empirical affine fit measured on the robot on 2026-09-25:
+    # battery voltage = (raw + 15.2) / 49.25.
     channel_base_register: 0
-    raw_scale: 100.0
-    voltage_divider_factor: 0.5
-    voltage_offset: 0.0
+    raw_scale: 49.25
+    voltage_divider_factor: 1.0
+    voltage_offset: 0.30862944
     voltage_multiplier: 1.0
 
-    # Placeholder thresholds for the current 24 V-class battery.
+    # Safety thresholds use instantaneous voltage, not smoothed percentage.
     low_voltage: 22.0
     critical_voltage: 21.0
     critical_confirmations: 3
+
+    # Voltage-only SoC estimate from one 21.4 h discharge recording. It is
+    # indicative and depends on load, temperature and battery ageing.
+    soc_voltage_points: [26.40, 26.20, 26.05, 25.95, 25.85, 25.70, 25.55,
+                         25.40, 25.20, 24.80, 24.00, 23.00, 22.00, 20.00]
+    soc_percent_points: [100.0, 70.8, 52.1, 39.8, 32.2, 24.4, 20.2,
+                         15.5, 7.9, 5.3, 3.0, 1.5, 0.6, 0.0]
+    soc_median_window: 30
 
     # Acquisition/status only. OS shutdown is intentionally not implemented.
     shutdown_enabled: false

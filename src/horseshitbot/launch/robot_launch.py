@@ -4,7 +4,8 @@ Launch file for the complete HorseShitBot ROS 2 system.
 Arguments:
   enable_camera:=true/false   — enable/disable RealSense + bag recorder (default true)
   enable_mks:=true/false      — enable/disable MKS bus node (default true)
-  enable_battery:=true/false  — enable shared-bus battery monitor (default false)
+  enable_battery:=true/false  — shared-bus battery monitor (default false;
+                                scripts/start.sh enables it when MKS is enabled)
   enable_lidar:=true/false    — enable/disable lidar node (default true)
   enable_imu:=true/false      — enable/disable ICM-20948 IMU node (default true)
 
@@ -46,6 +47,12 @@ def _launch_setup(context):
             parameters=[params_file],
             output="screen",
         ))
+
+    if enable_battery and not enable_mks:
+        raise RuntimeError(
+            "enable_battery:=true requires enable_mks:=true because the "
+            "battery monitor uses mks_bus_node's shared Modbus service"
+        )
 
     if enable_battery:
         nodes.append(Node(
@@ -201,8 +208,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("enable_camera", default_value="true"),
         DeclareLaunchArgument("enable_mks", default_value="true"),
-        # Keep disabled until N43IC04 raw-current scaling is verified.
-        # Hardware is commissioned as ID 33 at 19200 baud.
+        # Explicit launch users opt in; scripts/start.sh enables the deployed
+        # shared-bus monitor during normal full-stack startup.
         DeclareLaunchArgument("enable_battery", default_value="false"),
         DeclareLaunchArgument("enable_lidar", default_value="true"),
         DeclareLaunchArgument("enable_imu", default_value="true"),

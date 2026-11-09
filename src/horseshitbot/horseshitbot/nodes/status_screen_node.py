@@ -15,11 +15,20 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
+from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 
 from horseshitbot_interfaces.msg import ActuatorState as ActuatorStateMsg
+from ..drivers.battery_readout import battery_readout
 from ..drivers.ili9341_display import ILI9341Display, default_display_pins
 from ..drivers.network_manager import get_ip_for_display
+from ..drivers.status_screen_render import (
+    SCREEN_H,
+    SCREEN_W,
+    ScreenSnapshot,
+    render_controls,
+    render_dashboard,
+)
 
 from PIL import Image, ImageDraw
 
@@ -70,6 +79,17 @@ FIXED_AXES = [
     ("R Stick", "--"),
 ]
 
+WHEEL_STALE_SEC = 3.0
+ACTUATOR_STALE_SEC = 3.0
+GAMEPAD_STALE_SEC = 3.0
+RECORDER_STALE_SEC = 3.0
+
+RECORDER_TOPICS = {
+    "perception_recorder": "/perception_recorder/status",
+    "mapping_recorder": "/mapping_recorder/status",
+    "bag_recorder_node": "/bag_recorder_node/status",
+}
+
 
 class StatusScreenNode(Node):
     def __init__(self):
@@ -84,6 +104,7 @@ class StatusScreenNode(Node):
         self.declare_parameter("rotation", 0)
         self.declare_parameter("refresh_hz", 5.0)
         self.declare_parameter("backlight_brightness", 1.0)
+        self.declare_parameter("battery_stale_sec", 5.0)
 
         spi_port = self.get_parameter("spi_port").get_parameter_value().integer_value
         spi_dev = self.get_parameter("spi_device").get_parameter_value().integer_value
@@ -92,6 +113,9 @@ class StatusScreenNode(Node):
         led = self.get_parameter("led_pin").get_parameter_value().integer_value
         rot = self.get_parameter("rotation").get_parameter_value().integer_value
         hz = self.get_parameter("refresh_hz").get_parameter_value().double_value
+        self._battery_stale = max(
+            1.0, float(self.get_parameter("battery_stale_sec").value)
+        )
 
         try:
             self._disp = ILI9341Display(
@@ -107,18 +131,32 @@ class StatusScreenNode(Node):
             self.get_logger().error(f"Display init failed: {e}")
             self._disp = None
 
+        if self._disp is not None:
+            size = (self._disp.width, self._disp.height)
+            if size != (SCREEN_W, SCREEN_H):
+                self.get_logger().warning(
+                    f"Display reports {size[0]}x{size[1]}; layout expects "
+                    f"{SCREEN_W}x{SCREEN_H} landscape"
+                )
+
         self._wheel = {}
+        self._wheel_ts: float | None = None
         self._mks_bus: dict = {}
         self._actuators = {"lift": {}, "brush": {}, "bin_door": {}}
-        self._bag_recorder: dict = {}
+        self._actuator_ts: dict[str, float] = {}
+        self._recorders: dict[str, dict] = {}
+        self._recorder_ts: dict[str, float] = {}
         self._gamepad: dict = {}
+        self._gamepad_ts: float | None = None
+        self._battery: dict | None = None
+        self._battery_ts: float | None = None
         self._show_controls = False
-        self._net_ifaces: list[dict] = []
+        self._net_ifaces: list[dict] | None = None
         self._net_lock = threading.Lock()
         self._poll_network()
         self.create_timer(10.0, self._poll_network)
 
-        self._thermals: list[dict] = []
+        self._thermals: list[dict] | None = None
         self._thermal_lock = threading.Lock()
         self._poll_thermals()
         self.create_timer(5.0, self._poll_thermals)
@@ -128,7 +166,15 @@ class StatusScreenNode(Node):
         self.create_subscription(ActuatorStateMsg, "/lift/state", lambda m: self._cb_act("lift", m), 10)
         self.create_subscription(ActuatorStateMsg, "/brush/state", lambda m: self._cb_act("brush", m), 10)
         self.create_subscription(ActuatorStateMsg, "/bin_door/state", lambda m: self._cb_act("bin_door", m), 10)
-        self.create_subscription(String, "/bag_recorder_node/status", self._cb_bag_recorder, 10)
+        for name, topic in RECORDER_TOPICS.items():
+            self.create_subscription(
+                String, topic, lambda message, recorder=name: self._cb_recorder(
+                    recorder, message
+                ), 10
+            )
+        self.create_subscription(
+            BatteryState, "/battery/status", self._cb_battery, 10
+        )
         self.create_subscription(String, "/gamepad/status", self._cb_gamepad, 10)
         self.create_subscription(String, "/gamepad/button", self._cb_gamepad_btn, 10)
 
@@ -141,6 +187,7 @@ class StatusScreenNode(Node):
     def _cb_wheel(self, msg: String):
         try:
             self._wheel = json.loads(msg.data)
+            self._wheel_ts = time.monotonic()
         except Exception:
             pass
 
@@ -158,12 +205,23 @@ class StatusScreenNode(Node):
             "speed_rpm": msg.speed_rpm,
             "error_message": msg.error_message,
         }
+        self._actuator_ts[name] = time.monotonic()
 
-    def _cb_bag_recorder(self, msg: String):
+    def _cb_recorder(self, name: str, msg: String):
         try:
-            self._bag_recorder = json.loads(msg.data)
+            self._recorders[name] = json.loads(msg.data)
+            self._recorder_ts[name] = time.monotonic()
         except Exception:
             pass
+
+    def _cb_battery(self, msg: BatteryState):
+        self._battery = {
+            "percentage": msg.percentage,
+            "voltage": msg.voltage,
+            "health": msg.power_supply_health,
+            "present": msg.present,
+        }
+        self._battery_ts = time.monotonic()
 
     def _cb_gamepad(self, msg: String):
         try:
@@ -204,14 +262,87 @@ class StatusScreenNode(Node):
                 self._thermals = zones
         threading.Thread(target=_bg, daemon=True).start()
 
+    @staticmethod
+    def _fresh(ts: float | None, now: float, max_age: float) -> bool:
+        return ts is not None and now - ts <= max_age
+
+    def snapshot(self) -> ScreenSnapshot:
+        now = time.monotonic()
+        wheel = (
+            dict(self._wheel)
+            if self._fresh(self._wheel_ts, now, WHEEL_STALE_SEC)
+            else None
+        )
+        actuators = {
+            name: dict(state)
+            for name, state in self._actuators.items()
+            if state
+            and self._fresh(
+                self._actuator_ts.get(name), now, ACTUATOR_STALE_SEC
+            )
+        }
+        recorders = {
+            name: dict(status)
+            for name, status in self._recorders.items()
+            if self._fresh(
+                self._recorder_ts.get(name), now, RECORDER_STALE_SEC
+            )
+        }
+        gamepad = (
+            dict(self._gamepad)
+            if self._fresh(self._gamepad_ts, now, GAMEPAD_STALE_SEC)
+            else None
+        )
+        motor_temps = {}
+        for side, label in (("left", "ODL"), ("right", "ODR")):
+            value = ((wheel or {}).get("diag") or {}).get(f"fet_temp_{side}")
+            if value is not None:
+                motor_temps[label] = value
+        with self._net_lock:
+            network = (
+                None if self._net_ifaces is None else list(self._net_ifaces)
+            )
+        with self._thermal_lock:
+            thermals = (
+                None if self._thermals is None else list(self._thermals)
+            )
+        return ScreenSnapshot(
+            clock=time.strftime("%H:%M"),
+            wheel=wheel,
+            mks_bus=dict(self._mks_bus) or None,
+            actuators=actuators,
+            battery=battery_readout(
+                self._battery,
+                self._battery_ts,
+                now,
+                self._battery_stale,
+            ),
+            thermals=thermals,
+            motor_temps=motor_temps,
+            network=network,
+            gamepad=gamepad,
+            recorders=recorders or None,
+            resume_button=self._resume_button(),
+        )
+
+    def _resume_button(self):
+        for button, action in (self._gamepad.get("button_map") or {}).items():
+            if action == "stop_wheels":
+                return button
+        return "B"
+
     def _render(self):
         if self._disp is None:
             return
 
         if self._show_controls:
-            self._render_controls()
+            result = render_controls(self._gamepad)
         else:
-            self._render_dashboard()
+            result = render_dashboard(self.snapshot())
+        image = result.image
+        if (self._disp.width, self._disp.height) == (SCREEN_H, SCREEN_W):
+            image = image.transpose(Image.ROTATE_90)
+        self._disp.draw_frame(image)
 
     # ── Controls screen ───────────────────────────────────────────
 
