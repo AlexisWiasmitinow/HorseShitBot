@@ -12,5 +12,6 @@ log/
 *.bag
 *.mcap
 rosbags/
+previews/status_screen/
 
 for_trainer_only.md
