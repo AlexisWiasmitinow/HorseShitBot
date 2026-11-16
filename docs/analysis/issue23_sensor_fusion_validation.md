@@ -28,9 +28,13 @@ left/right linear speed and integrates differential-drive motion:
 - `v = (v_right + v_left) / 2`
 - `yaw_rate = (v_right - v_left) / wheel_separation`
 
-The deployed configuration is `meters_per_motor_turn: 0.084 m` and
-`wheel_separation: 0.40 m`. Despite the variable name `_actual_*`, these values
-are command/ramp state sent to the motor controller, not measured wheel
+Current `main` uses the 16/52 reduction merged by PR #26:
+`meters_per_motor_turn = (16 / 52) * 0.420 = 0.129230769 m` and
+`wheel_separation: 0.40 m`. The historical bags analyzed below predate that
+change and were recorded under the older `0.084 m` model; the offline metrics
+therefore retain the historical configuration rather than retroactively
+reinterpreting the recordings. Despite the variable name `_actual_*`, these
+values are command/ramp state sent to the motor controller, not measured wheel
 encoder speed. `/odom` and `odom -> base_link` therefore describe predicted
 motion. Navigation consumes this `/odom` directly.
 
@@ -48,25 +52,16 @@ This ignores `wheel_separation` during command conversion and scales a
 `max_speed_ms: 1.5` and `wheel_separation: 0.40`, the resulting open-loop yaw
 rate is `7.5 rad/s`, not `1 rad/s`. This explains much of the enormous turning
 overprediction in historical `/odom`; it is separate from any traction fault.
-The issue branch replaces this mixer with SI-unit kinematics and common-factor
-wheel-speed saturation. The change is tested offline but has not been deployed
-or physically validated.
+A separate, uncommitted Issue #23 worktree prototypes SI-unit kinematics and
+common-factor wheel-speed saturation. That runtime change is not part of this
+analysis PR and has not been deployed or physically validated.
 
 The prior e-stop resume path cleared its software latch before confirming that
-the asynchronous MKS hardware-latch release succeeded. The issue branch now
-uses fail-closed `active -> releasing -> clear` state transitions. A release
-token rejects stale callbacks; failures and timeouts return to `active`;
-velocity commands remain inhibited until confirmation; and stale nonzero
-commands are cleared before release. MKS release now requires acknowledged
-disable, latch-clear, zero-speed, and re-enable writes. The dashboard and
-gamepad use a dedicated resume service rather than overloading stop.
-
-Twelve mocked tests cover successful release, failure, timeout, late response,
-concurrent e-stop, command inhibition, malformed replies, and zero-before-
-enable ordering. No physical release was attempted. The requirement that
-firmware acknowledge `REG_EMERGENCY_STOP=0` is deliberately conservative, but
-must be verified onsite because older firmware may require a different
-documented clear sequence.
+the asynchronous MKS hardware-latch release succeeded. The same uncommitted
+worktree prototypes a fail-closed state machine and mocked tests, but none of
+that production/safety code is included here. It requires a separate review
+and onsite verification because older firmware may require a different
+documented latch-clear sequence.
 
 ### IMU
 
