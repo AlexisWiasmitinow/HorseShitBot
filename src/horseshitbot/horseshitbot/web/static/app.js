@@ -2512,6 +2512,73 @@ function dashboardProgress(id, value, max = 100) {
     : "0%";
 }
 
+// Fallbacks match battery_modbus.yaml. Newer payloads may publish thresholds,
+// but the current node reports low/critical booleans instead.
+const BATTERY_LOW_V = 22.0;
+const BATTERY_CRITICAL_V = 21.0;
+const BATTERY_FULL_V = 28.0;
+
+const BATTERY_STATE_LABELS = {
+  normal: "Normal",
+  low: "Low battery",
+  critical: "Critical",
+};
+
+function batterySummary(batteryData) {
+  const source = batteryData || {};
+  const voltage = dashboardNumber(source.voltage);
+  const low = dashboardNumber(source.low_voltage);
+  const critical = dashboardNumber(source.critical_voltage);
+  const lowThreshold = low == null ? BATTERY_LOW_V : low;
+  const criticalThreshold = critical == null ? BATTERY_CRITICAL_V : critical;
+
+  let state = null;
+  if (typeof source.state === "string" && source.state) {
+    state = source.state;
+  } else if (source.critical === true) {
+    state = "critical";
+  } else if (source.low === true) {
+    state = "low";
+  } else if (voltage != null) {
+    state =
+      voltage <= criticalThreshold
+        ? "critical"
+        : voltage <= lowThreshold ? "low" : "normal";
+  }
+
+  return {
+    voltage,
+    state,
+    label: state ? BATTERY_STATE_LABELS[state] || state : null,
+    lowThreshold,
+    criticalThreshold,
+    criticalForSec: dashboardNumber(source.critical_for_sec),
+    criticalHoldSec: dashboardNumber(source.critical_hold_sec),
+    shutdownEnabled: source.shutdown_enabled === true,
+    shutdownRequested: source.shutdown_requested === true,
+    raw: dashboardNumber(source.raw),
+    // Percentage of the usable pack range, so the bar empties at the
+    // critical threshold instead of at 0 V.
+    charge:
+      voltage == null
+        ? null
+        : Math.max(
+            0,
+            Math.min(
+              100,
+              ((voltage - criticalThreshold) /
+                (BATTERY_FULL_V - criticalThreshold)) * 100
+            )
+          ),
+  };
+}
+
+function batteryStateColor(state) {
+  if (state === "critical") return "var(--red)";
+  if (state === "low") return "var(--dashboard-orange)";
+  return "";
+}
+
 function dashboardSparkline(id, history, value) {
   if (Number.isFinite(value)) {
     history.push(Math.max(0, Math.min(100, value)));
@@ -2702,6 +2769,7 @@ function updateDashboardOverview(data) {
   const storageUsed = dashboardNumber(metrics.storage_used_gb, metrics.disk_used_gb);
   const storageTotal = dashboardNumber(metrics.storage_total_gb, metrics.disk_total_gb);
   const battery = dashboardNumber(metrics.battery_percent, metrics.battery, data.battery?.percent);
+  const pack = batterySummary(data.battery);
   const driveBusVoltage = dashboardNumber(wheel.diag?.vbus);
   const latency = dashboardNumber(metrics.network_latency_ms, metrics.latency_ms);
   const uptime = dashboardNumber(metrics.uptime_sec, metrics.uptime_seconds, data.uptime_sec);
@@ -2740,7 +2808,15 @@ function updateDashboardOverview(data) {
     dashboardProgress("dash-storage-bar", null);
   }
 
-  if (battery != null) {
+  if (pack.voltage != null) {
+    dashboardText(
+      "dash-battery-value",
+      battery != null
+        ? `${pack.voltage.toFixed(2)} V · ${battery.toFixed(0)}%`
+        : `${pack.voltage.toFixed(2)} V`
+    );
+    dashboardProgress("dash-battery-bar", pack.charge);
+  } else if (battery != null) {
     dashboardText("dash-battery-value", `${battery.toFixed(0)}%`);
     dashboardProgress("dash-battery-bar", battery);
   } else if (driveBusVoltage != null) {
@@ -2749,6 +2825,11 @@ function updateDashboardOverview(data) {
   } else {
     dashboardText("dash-battery-value", "Not reported");
     dashboardProgress("dash-battery-bar", null);
+  }
+
+  const batteryValue = document.getElementById("dash-battery-value");
+  if (batteryValue) {
+    batteryValue.style.color = batteryStateColor(pack.state);
   }
 
   dashboardText(
@@ -2967,13 +3048,26 @@ function updateDashboardOverview(data) {
   );
 
   const batteryReported = battery != null;
-  const leftCurrent = dashboardNumber(w.current_left);
-  const rightCurrent = dashboardNumber(w.current_right);
+  const leftCurrent = dashboardNumber(wheel.current_left);
+  const rightCurrent = dashboardNumber(wheel.current_right);
   dashboardText(
     "dash-power-diagnostics-summary",
-    batteryReported
-      ? `${battery.toFixed(0)}% battery`
-      : vbus != null ? `${vbus.toFixed(1)} V drive bus` : "No power telemetry"
+    pack.voltage != null
+      ? `${pack.voltage.toFixed(2)} V pack · ${pack.label}`
+      : batteryReported
+        ? `${battery.toFixed(0)}% battery`
+        : vbus != null ? `${vbus.toFixed(1)} V drive bus` : "No power telemetry"
+  );
+  dashboardText(
+    "diag-power-voltage",
+    pack.voltage == null ? "Not reported" : `${pack.voltage.toFixed(3)} V`
+  );
+  dashboardText("diag-power-state", pack.label || "Not reported");
+  dashboardText(
+    "diag-power-thresholds",
+    pack.voltage == null
+      ? "Not reported"
+      : `low ${pack.lowThreshold.toFixed(1)} V · critical ${pack.criticalThreshold.toFixed(1)} V`
   );
   dashboardText(
     "diag-power-battery",
@@ -2993,12 +3087,73 @@ function updateDashboardOverview(data) {
   );
   dashboardText(
     "diag-power-note",
-    batteryReported
-      ? "Battery telemetry is available from the current WebSocket payload."
-      : "No dedicated battery percentage is present. ODrive voltage/current values are shown when available."
+    pack.voltage != null
+      ? `Pack voltage comes from battery_modbus_node. ${
+          !pack.shutdownEnabled
+            ? "Automatic low-voltage shutdown is not enabled."
+            : `The robot stops the motors and shuts down after ${
+                pack.criticalHoldSec == null
+                  ? 5
+                  : pack.criticalHoldSec.toFixed(0)
+              } s at or below ${pack.criticalThreshold.toFixed(1)} V.`
+        }`
+      : batteryReported
+        ? "Battery telemetry is available from the current WebSocket payload."
+        : "No battery voltage is being published. Start battery_modbus_node; ODrive voltage/current values are shown when available."
   );
 
+  const powerValue = document.getElementById("diag-power-voltage");
+  if (powerValue) {
+    powerValue.style.color = batteryStateColor(pack.state);
+  }
+
   const diagnosticIssues = [];
+
+  if (pack.state === "critical" || pack.state === "low") {
+    const critical = pack.state === "critical";
+    diagnosticIssues.push({
+      key: "battery-voltage",
+      severity: critical ? "critical" : "warning",
+      subsystem: "Battery",
+      title: critical ? "Critical battery voltage" : "Low battery voltage",
+      summary: `The pack is at ${pack.voltage.toFixed(2)} V.`,
+      impact: critical
+        ? pack.shutdownEnabled
+          ? "The configured safety sequence will stop the motors and request Jetson shutdown if this condition persists."
+          : "Automatic shutdown is not enabled; continued operation can over-discharge the pack."
+        : "Remaining runtime is short and the pack is approaching the shutdown threshold.",
+      recommendation: critical
+        ? "Bring the robot to its charger now, or power it down and charge the pack."
+        : "Finish the current task and put the robot on the charger.",
+      evidence: [
+        ["Pack voltage", `${pack.voltage.toFixed(3)} V`],
+        ["Raw ADC count", pack.raw == null ? "Not reported" : String(pack.raw)],
+        ["Low threshold", `${pack.lowThreshold.toFixed(1)} V`],
+        ["Critical threshold", `${pack.criticalThreshold.toFixed(1)} V`],
+        [
+          "Critical for",
+          pack.criticalForSec == null
+            ? "Not reported"
+            : `${pack.criticalForSec.toFixed(1)} s of ${
+                pack.criticalHoldSec == null
+                  ? 5
+                  : pack.criticalHoldSec.toFixed(1)
+              } s`
+        ],
+        [
+          "Automatic shutdown",
+          !pack.shutdownEnabled
+            ? "Disabled"
+            : pack.shutdownRequested
+              ? "Requested"
+              : "Armed"
+        ]
+      ],
+      actions: [
+        { label: "Power diagnostics", command: "diagnostic-power" }
+      ]
+    });
+  }
 
   if (wheel.estopped) {
     diagnosticIssues.push({
@@ -3311,6 +3466,9 @@ async function runDashboardDiagnosticAction(command) {
       break;
     case "diagnostic-thermal":
       selectDashboardDiagnostic("thermal", null, true);
+      break;
+    case "diagnostic-power":
+      selectDashboardDiagnostic("power", null, true);
       break;
     case "scan-motors":
       selectDashboardDiagnostic("motors", null, true);
