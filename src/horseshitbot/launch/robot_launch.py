@@ -160,24 +160,6 @@ def _launch_setup(context):
             output="screen",
         ))
 
-    # Bag recorders
-    nodes += [
-        Node(
-            package="horseshitbot",
-            executable="bag_recorder_node",
-            name="perception_recorder",
-            parameters=[params_file],
-            output="screen",
-        ),
-        Node(
-            package="horseshitbot",
-            executable="bag_recorder_node",
-            name="mapping_recorder",
-            parameters=[params_file],
-            output="screen",
-        ),
-    ]
-
     if enable_camera:
         from launch.actions import IncludeLaunchDescription
         rs_launch_dir = os.path.join(
