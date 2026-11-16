@@ -484,6 +484,102 @@ python3 odriveSerialTest.py -p COM22 --motor-cal-powercycle -a 0
 
 ---
 
+### `battery_discharge_log.py` — Battery discharge / BMS cutoff logging
+
+Reads one N43IC04 channel through `mks_bus_node`'s shared
+`/modbus/read_holding_register` service, converts the raw count to battery
+volts, prints every sample, and appends it to a log file. Each line is flushed
+*and* fsynced, so the log survives the instant the hardware BMS removes power.
+
+**The robot keeps running during the test.** The script never opens a serial
+port: `mks_bus_node` stays the only owner of `/dev/mksbus` and keeps arbitrating
+between the motors and the ADC, so logging cannot corrupt a motor transaction.
+When the bus owner reports that a motor transaction is in flight, the read is
+retried instead of being forced through.
+
+**This tool never shuts the robot down**, however low the voltage goes, and it
+keeps logging below 20 V — that is the point, so the BMS cutoff voltage can be
+observed. The automatic low-voltage shutdown lives in the ROS
+`battery_modbus_node`, not here.
+
+Start the normal stack first, and source the workspace so
+`horseshitbot_interfaces` is importable.
+
+**Calibration** (measured 2026-09-25, same constants as
+`horseshitbot/drivers/modbus_adc.py`):
+
+```
+voltage = (raw + 15.2) / 49.25
+```
+
+| Battery | Raw count |
+|---------|-----------|
+| 20 V | 970 |
+| 22 V | 1068 |
+| 24 V | 1167 |
+| 26 V | 1265 |
+| 28 V | 1364 |
+
+**Usage:**
+
+```bash
+# Terminal 1 — the robot, as usual
+./scripts/start.sh
+
+# Terminal 2 — defaults: slave 33, channel 1, one sample per second,
+# appending to /home/hsb/battery_logs/battery_discharge.log
+source install/setup.bash
+python3 test_scripts/battery_discharge_log.py
+
+# Faster sampling into a named log
+python3 test_scripts/battery_discharge_log.py --period 0.5 \
+  --log-file /home/hsb/battery_logs/bms_cutoff_test.log
+```
+
+**Run it in GNU screen** so it keeps sampling after the SSH session drops:
+
+```bash
+screen -S battery
+source ~/HorseShitBot/install/setup.bash
+python3 ~/HorseShitBot/test_scripts/battery_discharge_log.py
+# detach: Ctrl-A then D
+# reattach: screen -r battery
+# follow the log from another shell:
+tail -f /home/hsb/battery_logs/battery_discharge.log
+```
+
+**Output format:**
+
+```
+# session start 2026-09-25 12:34:50 service=/modbus/read_holding_register slave=33 channel=1 register=0x0000 period=1.0s
+# voltage = (raw + 15.2) / 49.25 | low <= 22.0 V | critical <= 20.0 V | automatic shutdown: DISABLED (BMS cutoff test)
+2026-09-25 12:34:56, raw=1364, voltage=28.004
+2026-09-25 12:34:57, error=shared-bus service request timed out
+# below 20.0 V at 2026-09-25 13:41:07 — this tool keeps logging until the BMS cuts power
+# session end 2026-09-25 13:58:02 samples=4986 errors=3 lowest_voltage=18.221 at 2026-09-25 13:58:01
+```
+
+**Options:**
+
+| Option | Default | Purpose |
+|--------|---------|---------|
+| `--period` | `1.0` | seconds between samples |
+| `--retries` | `3` | extra attempts per sample on a busy bus or read error |
+| `--retry-delay` | `0.1` | seconds between those attempts |
+| `--timeout` | `1.0` | seconds to wait for one service response |
+| `--service-wait` | `15.0` | seconds to wait for the service at startup |
+| `--slave` / `--channel` | `33` / `1` | ADC device and channel |
+| `--log-file` | `/home/hsb/battery_logs/battery_discharge.log` | appended log |
+
+**What to look for:**
+
+- Voltage falls smoothly; a sample that fails every retry is logged as
+  `error=` and sampling continues
+- The last logged line before the log stops is the BMS cutoff point
+- `Ctrl-C` prints a summary with the sample count and the lowest voltage seen
+
+---
+
 ### `test_realsense_bag.sh` — Intel RealSense D415 + Rosbag Recording
 
 Launches the RealSense D415 camera node via ROS 2 and records colour + aligned depth streams to an MCAP rosbag.

@@ -88,6 +88,10 @@ The web dashboard is available at `http://<ROBOT_IP>:8080`.
 Standalone scripts in `test_scripts/` for testing hardware outside of ROS:
 
 ```bash
+# Log a battery discharge / BMS cutoff test. Runs alongside the normal stack
+# through the shared Modbus service, and never shuts the robot down.
+python3 test_scripts/battery_discharge_log.py
+
 # Test the ODrive motors
 python3 test_scripts/odriveSerialTest.py -p /dev/ttyACM0
 
