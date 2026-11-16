@@ -316,14 +316,14 @@ function updateDashboard(data) {
             `<label class="motor-field">` +
               `<span>Run current</span>` +
               `<span class="motor-input-wrap">` +
-                `<input type="number" id="hw-m${id}-run" class="motor-cur-input" min="10" max="5200" step="100" oninput="_motorDirty[${id}]=true">` +
+                `<input type="number" id="hw-m${id}-run" class="motor-cur-input" min="10" max="5200" step="100" oninput="_motorEdited(${id})">` +
                 `<small>mA</small>` +
               `</span>` +
             `</label>` +
             `<label class="motor-field">` +
               `<span>Hold current</span>` +
               `<span class="motor-input-wrap">` +
-                `<input type="number" id="hw-m${id}-hold" class="motor-cur-input" min="10" max="100" step="10" oninput="_motorDirty[${id}]=true">` +
+                `<input type="number" id="hw-m${id}-hold" class="motor-cur-input" min="10" max="100" step="10" oninput="_motorEdited(${id})">` +
                 `<small>%</small>` +
               `</span>` +
             `</label>` +
@@ -338,6 +338,7 @@ function updateDashboard(data) {
       }
       const runInput = document.getElementById("hw-m" + id + "-run");
       const holdInput = document.getElementById("hw-m" + id + "-hold");
+      _settleMotorWrite(id, mi);
       if (!_motorDirty[id]) {
         if (runInput && mi.run_current_ma != null)
           runInput.value = mi.run_current_ma;
@@ -3515,6 +3516,34 @@ async function scanMotors() {
 
 const _motorDirty = {};
 
+// Outstanding current writes, keyed by motor id. /api/mks/set_current only
+// dispatches the ROS service and returns, so its reply says nothing about the
+// motor; the write is confirmed by a later /mks_bus/status frame echoing the
+// requested values back. The deadline stops a write that never lands from
+// holding the field for the rest of the session.
+const _motorPending = {};
+const MOTOR_WRITE_TIMEOUT_MS = 10000;
+
+// Bound to the current inputs' oninput: while the user is typing, incoming
+// status updates must leave the field alone.
+function _motorEdited(motorId) {
+  _motorDirty[motorId] = true;
+  delete _motorPending[motorId];
+}
+
+function _settleMotorWrite(motorId, info) {
+  const pending = _motorPending[motorId];
+  if (!pending) return;
+  // mks_bus_node only records a field it was actually asked to change, so a
+  // value we did not request must not be part of the match.
+  const runOk = pending.run == null || info.run_current_ma === pending.run;
+  const holdOk = pending.hold == null || info.hold_current_pct === pending.hold;
+  if ((runOk && holdOk) || Date.now() > pending.expiresAt) {
+    delete _motorPending[motorId];
+    _motorDirty[motorId] = false;
+  }
+}
+
 async function setMotorCurrent(motorId) {
   const runEl = document.getElementById("hw-m" + motorId + "-run");
   const holdEl = document.getElementById("hw-m" + motorId + "-hold");
@@ -3522,6 +3551,11 @@ async function setMotorCurrent(motorId) {
   const hold = holdEl ? parseInt(holdEl.value) : 0;
   if (!run && !hold) return;
   _motorDirty[motorId] = true;
+  _motorPending[motorId] = {
+    run: run > 0 ? run : null,
+    hold: hold > 0 ? hold : null,
+    expiresAt: Date.now() + MOTOR_WRITE_TIMEOUT_MS,
+  };
   try {
     await fetch("/api/mks/set_current", {
       method: "POST",
