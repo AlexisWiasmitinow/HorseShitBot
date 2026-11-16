@@ -2968,8 +2968,8 @@ function updateDashboardOverview(data) {
   );
 
   const batteryReported = battery != null;
-  const leftCurrent = dashboardNumber(wheel.current_left);
-  const rightCurrent = dashboardNumber(wheel.current_right);
+  const leftCurrent = dashboardNumber(w.current_left);
+  const rightCurrent = dashboardNumber(w.current_right);
   dashboardText(
     "dash-power-diagnostics-summary",
     batteryReported
