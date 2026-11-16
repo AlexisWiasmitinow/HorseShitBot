@@ -1,0 +1,119 @@
+# Ground-Truth Physical Room Measurements Template (October 1, 2026 Recording Session)
+#
+# Fill in `measured_m` (in meters) for any physical dimensions you have measured
+# in the room where `mapping_2026-10-01_14-36-31` (and `12-58-41`)
+# were recorded, then run:
+#
+#   python3 scripts/validate_lidar_and_map.py \
+#     --bag /home/hsb/rosbags/mapping_2026-10-01_14-36-31 \
+#     --measurements src/horseshitbot/config/room_measurements_oct1_template.yaml \
+#     --output-dir /home/hsb/hsb_analysis/lidar_validation
+#
+# Leave `measured_m: null` for any dimension you did not measure; the validator
+# will still report the LiDAR-estimated and Map-estimated values for every entry
+# and compute error statistics (abs error, % error, mean error, max error, RMSE)
+# across all entries where `measured_m` is provided.
+#
+# `uncertainty_m`, `reference_start`, and `reference_end` are optional but
+# recommended. Use stable physical descriptions such as "inside face of west
+# wall at floor level" rather than image-pixel coordinates.
+
+room_metadata:
+  recording_date: "2026-10-01"
+  primary_bag: "/home/hsb/rosbags/mapping_2026-10-01_14-36-31"
+  secondary_bags:
+    - "/home/hsb/rosbags/mapping_2026-10-01_12-58-41"
+  units: "meters"
+  notes: "Replace null values in `measured_m` with tape/laser-meter measurements in meters."
+
+measurements:
+  # 1. Primary Room Dimensions (between opposing parallel walls)
+  - id: "room_width_main"
+    category: "room_dimension"
+    description: "Main corridor/room width between the two long parallel side walls (seen across all 3 Oct 1 bags)"
+    reference_key: "room_width_parallel_walls"
+    measured_m: null
+    uncertainty_m: null
+    reference_start: ""
+    reference_end: ""
+
+  - id: "room_length_main"
+    category: "room_dimension"
+    description: "Main room length between the two opposing end walls along the primary longitudinal axis"
+    reference_key: "room_length_end_walls"
+    measured_m: null
+    uncertainty_m: null
+    reference_start: ""
+    reference_end: ""
+
+  - id: "inner_bay_span"
+    category: "wall_to_wall"
+    description: "Longitudinal distance between internal partition/bay walls along the room axis"
+    reference_key: "inner_longitudinal_span"
+    measured_m: null
+
+  # 2. Sensor-to-Wall Distances at Initial Stationary Pose of `mapping_2026-10-01_14-36-31` (t = 0..10 s)
+  - id: "bag143631_front_wall"
+    category: "sensor_to_wall"
+    description: "LiDAR distance to wall directly in front of robot (+X_base, phi=0 deg) at start of mapping_2026-10-01_14-36-31"
+    reference_key: "bag_14-36-31_front_m"
+    measured_m: null
+    uncertainty_m: null
+    reference_start: "LiDAR optical center at recording start"
+    reference_end: ""
+
+  - id: "bag143631_rear_wall"
+    category: "sensor_to_wall"
+    description: "LiDAR distance to wall directly behind robot (-X_base, phi=180 deg) at start of mapping_2026-10-01_14-36-31"
+    reference_key: "bag_14-36-31_rear_m"
+    measured_m: null
+
+  - id: "bag143631_left_wall"
+    category: "sensor_to_wall"
+    description: "LiDAR distance to wall on robot left (+Y_base, phi=270 deg CW) at start of mapping_2026-10-01_14-36-31"
+    reference_key: "bag_14-36-31_left_m"
+    measured_m: null
+
+  - id: "bag143631_right_wall"
+    category: "sensor_to_wall"
+    description: "LiDAR distance to wall on robot right (-Y_base, phi=90 deg CW) at start of mapping_2026-10-01_14-36-31"
+    reference_key: "bag_14-36-31_right_m"
+    measured_m: null
+
+  # 3. Perpendicular Wall Distances at Initial Pose of `mapping_2026-10-01_14-36-31`
+  - id: "bag143631_perp_near_wall"
+    category: "sensor_to_wall_perpendicular"
+    description: "Perpendicular distance from LiDAR to nearest side wall (right-front wall) at start of 14-36-31"
+    reference_key: "bag_14-36-31_perp_wall_pos_x"
+    measured_m: null
+
+  - id: "bag143631_perp_far_wall"
+    category: "sensor_to_wall_perpendicular"
+    description: "Perpendicular distance from LiDAR to opposite parallel side wall (rear-left wall) at start of 14-36-31"
+    reference_key: "bag_14-36-31_perp_wall_neg_x"
+    measured_m: null
+
+  # 4. Sensor-to-Wall Distances at Initial Stationary Pose of `mapping_2026-10-01_12-58-41`
+  - id: "bag125841_front_wall"
+    category: "sensor_to_wall"
+    description: "LiDAR distance to wall in front of robot (+X_base) at start of mapping_2026-10-01_12-58-41"
+    reference_key: "bag_12-58-41_front_m"
+    measured_m: null
+
+  - id: "bag125841_rear_wall"
+    category: "sensor_to_wall"
+    description: "LiDAR distance to wall behind robot (-X_base) at start of mapping_2026-10-01_12-58-41"
+    reference_key: "bag_12-58-41_rear_m"
+    measured_m: null
+
+  - id: "bag125841_left_wall"
+    category: "sensor_to_wall"
+    description: "LiDAR distance to wall on robot left (+Y_base) at start of mapping_2026-10-01_12-58-41"
+    reference_key: "bag_12-58-41_left_m"
+    measured_m: null
+
+  - id: "bag125841_right_wall"
+    category: "sensor_to_wall"
+    description: "LiDAR distance to wall on robot right (-Y_base) at start of mapping_2026-10-01_12-58-41"
+    reference_key: "bag_12-58-41_right_m"
+    measured_m: null
