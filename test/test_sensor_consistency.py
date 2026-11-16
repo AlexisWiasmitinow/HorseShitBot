@@ -25,6 +25,14 @@ class TestSensorConsistency(unittest.TestCase):
         velocity = np.array([2.0, 2.0, 2.0])
         self.assertAlmostEqual(ANALYSIS.trapezoid(time, velocity), 2.0)
 
+    def test_window_integration_interpolates_exact_boundaries(self):
+        time = np.array([0.0, 1.0, 2.0])
+        velocity = np.array([0.0, 1.0, 2.0])
+        self.assertAlmostEqual(
+            ANALYSIS.integrate_window(time, velocity, 0.5, 1.5),
+            1.0,
+        )
+
     def test_clockwise_scan_reflection_preserves_ranges(self):
         ranges = np.ones(4)
         points = ANALYSIS.corrected_scan_points(
@@ -79,6 +87,70 @@ class TestSensorConsistency(unittest.TestCase):
     def test_robust_bias_ignores_turning_outlier(self):
         values = np.concatenate((np.full(100, -0.0015), np.array([2.0])))
         self.assertAlmostEqual(ANALYSIS.robust_bias(values), -0.0015)
+
+    def test_zero_seed_does_not_use_imu(self):
+        imu = np.array(
+            [
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0],
+                [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0],
+            ]
+        )
+        self.assertEqual(
+            ANALYSIS.scan_seed_yaw(imu, 0.0, 0.1, 0.0, "zero"),
+            0.0,
+        )
+        self.assertAlmostEqual(
+            ANALYSIS.scan_seed_yaw(imu, 0.0, 0.1, 0.0, "imu"),
+            0.2,
+        )
+
+    def test_unknown_seed_mode_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unsupported ICP seed mode"):
+            ANALYSIS.scan_seed_yaw(np.zeros((0, 7)), 0.0, 0.1, 0.0, "odom")
+
+    def test_nearest_timestamp_offset_preserves_sign(self):
+        offsets = ANALYSIS._nearest_timestamp_offsets(
+            np.array([0.09, 0.31]),
+            np.array([0.0, 0.1, 0.2, 0.3]),
+        )
+        np.testing.assert_allclose(offsets, [0.01, -0.01], atol=1e-12)
+
+    def test_distribution_reports_signed_and_absolute_timing_bounds(self):
+        result = ANALYSIS._distribution(
+            np.array([-0.2, -0.1, 0.05, 0.1])
+        )
+        self.assertEqual(result["minimum"], -0.2)
+        self.assertEqual(result["maximum"], 0.1)
+        self.assertEqual(result["absolute_maximum"], 0.2)
+        self.assertGreaterEqual(result["absolute_p95"], 0.1)
+
+    def test_imu_lidar_lag_recovers_known_offset(self):
+        imu_t = np.arange(0.0, 5.0, 0.01)
+        imu = np.zeros((len(imu_t), 7))
+        imu[:, 0] = imu_t
+        imu[:, 6] = np.sin(imu_t)
+        motion = []
+        for t0 in np.arange(0.5, 4.5, 0.2):
+            t1 = t0 + 0.2
+            midpoint = (t0 + t1) / 2.0
+            motion.append(
+                {
+                    "t0": t0,
+                    "t1": t1,
+                    "dt": 0.2,
+                    "dyaw": math.sin(midpoint + 0.05) * 0.2,
+                    "rmse": 0.01,
+                    "inliers": 100,
+                }
+            )
+        result = ANALYSIS.estimate_imu_lidar_lag(
+            imu,
+            motion,
+            gyro_bias=0.0,
+            rmse_max=0.25,
+            min_inliers=20,
+        )
+        self.assertAlmostEqual(result["best_imu_sample_offset_s"], 0.05, places=3)
 
     def test_missing_topic_error_names_incomplete_streams(self):
         with self.assertRaisesRegex(
