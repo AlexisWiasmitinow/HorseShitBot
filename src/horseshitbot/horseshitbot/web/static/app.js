@@ -2512,10 +2512,10 @@ function dashboardProgress(id, value, max = 100) {
     : "0%";
 }
 
-// Fallbacks only: battery_modbus_node publishes its own thresholds so the UI
-// cannot drift away from the node that owns the shutdown decision.
+// Fallbacks match battery_modbus.yaml. Newer payloads may publish thresholds,
+// but the current node reports low/critical booleans instead.
 const BATTERY_LOW_V = 22.0;
-const BATTERY_CRITICAL_V = 20.0;
+const BATTERY_CRITICAL_V = 21.0;
 const BATTERY_FULL_V = 28.0;
 
 const BATTERY_STATE_LABELS = {
@@ -2535,6 +2535,10 @@ function batterySummary(batteryData) {
   let state = null;
   if (typeof source.state === "string" && source.state) {
     state = source.state;
+  } else if (source.critical === true) {
+    state = "critical";
+  } else if (source.low === true) {
+    state = "low";
   } else if (voltage != null) {
     state =
       voltage <= criticalThreshold
@@ -2550,11 +2554,11 @@ function batterySummary(batteryData) {
     criticalThreshold,
     criticalForSec: dashboardNumber(source.critical_for_sec),
     criticalHoldSec: dashboardNumber(source.critical_hold_sec),
-    shutdownEnabled: source.shutdown_enabled,
-    shutdownRequested: source.shutdown_requested,
+    shutdownEnabled: source.shutdown_enabled === true,
+    shutdownRequested: source.shutdown_requested === true,
     raw: dashboardNumber(source.raw),
     // Percentage of the usable pack range, so the bar empties at the
-    // shutdown threshold instead of at 0 V.
+    // critical threshold instead of at 0 V.
     charge:
       voltage == null
         ? null
@@ -3085,8 +3089,8 @@ function updateDashboardOverview(data) {
     "diag-power-note",
     pack.voltage != null
       ? `Pack voltage comes from battery_modbus_node. ${
-          pack.shutdownEnabled === false
-            ? "Automatic low-voltage shutdown is disabled."
+          !pack.shutdownEnabled
+            ? "Automatic low-voltage shutdown is not enabled."
             : `The robot stops the motors and shuts down after ${
                 pack.criticalHoldSec == null
                   ? 5
@@ -3114,7 +3118,9 @@ function updateDashboardOverview(data) {
       title: critical ? "Critical battery voltage" : "Low battery voltage",
       summary: `The pack is at ${pack.voltage.toFixed(2)} V.`,
       impact: critical
-        ? "The robot stops the motors and shuts the Jetson down once the voltage stays this low for the confirmation time."
+        ? pack.shutdownEnabled
+          ? "The configured safety sequence will stop the motors and request Jetson shutdown if this condition persists."
+          : "Automatic shutdown is not enabled; continued operation can over-discharge the pack."
         : "Remaining runtime is short and the pack is approaching the shutdown threshold.",
       recommendation: critical
         ? "Bring the robot to its charger now, or power it down and charge the pack."
@@ -3136,7 +3142,7 @@ function updateDashboardOverview(data) {
         ],
         [
           "Automatic shutdown",
-          pack.shutdownEnabled === false
+          !pack.shutdownEnabled
             ? "Disabled"
             : pack.shutdownRequested
               ? "Requested"
