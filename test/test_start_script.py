@@ -1,26 +1,30 @@
 """Regression tests for side-effect-free start.sh argument validation."""
 
+import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 START_SCRIPT = REPO_ROOT / "scripts" / "start.sh"
+BUILDSTART_SCRIPT = REPO_ROOT / "scripts" / "buildstart.sh"
 ROBOT_LAUNCH = (
     REPO_ROOT / "src" / "horseshitbot" / "launch" / "robot_launch.py"
 )
 
 
 class StartScriptArgumentTest(unittest.TestCase):
-    def run_script(self, *args):
+    def run_script(self, *args, script=START_SCRIPT, env=None):
         return subprocess.run(
-            ["/bin/bash", str(START_SCRIPT), *args],
+            ["/bin/bash", str(script), *args],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
             timeout=5,
             check=False,
+            env=env,
         )
 
     def test_unknown_argument_fails_before_launch(self):
@@ -43,6 +47,35 @@ class StartScriptArgumentTest(unittest.TestCase):
         self.assertIn("--dry-run", result.stdout)
         self.assertIn("--no-battery", result.stdout)
         self.assertNotIn("HorseShitBot —", result.stdout + result.stderr)
+
+    def test_buildstart_rejects_unknown_argument_before_build(self):
+        result = self.run_script(
+            "--definitely-unknown",
+            script=BUILDSTART_SCRIPT,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unknown argument: --definitely-unknown", result.stderr)
+        self.assertNotIn("Building workspace", result.stdout + result.stderr)
+
+    def test_startup_scripts_fail_safely_when_stack_is_running(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_pgrep = Path(temp_dir) / "pgrep"
+            fake_pgrep.write_text("#!/bin/sh\necho 4242\n")
+            fake_pgrep.chmod(0o755)
+            env = os.environ.copy()
+            env["PATH"] = f"{temp_dir}:{env['PATH']}"
+
+            for script in (START_SCRIPT, BUILDSTART_SCRIPT):
+                with self.subTest(script=script.name):
+                    result = self.run_script(script=script, env=env)
+                    self.assertEqual(result.returncode, 3)
+                    self.assertIn("already running", result.stderr)
+                    self.assertIn("Stop the existing stack safely", result.stderr)
+                    self.assertNotIn("Killing", result.stdout + result.stderr)
+                    self.assertNotIn(
+                        "Building workspace",
+                        result.stdout + result.stderr,
+                    )
 
     def test_normal_start_enables_shared_bus_battery_monitor(self):
         source = START_SCRIPT.read_text()
