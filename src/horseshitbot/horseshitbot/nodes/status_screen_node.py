@@ -299,4 +299,5 @@ def main(args=None):
         if node._disp is not None:
             node._disp.set_backlight(False)
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
