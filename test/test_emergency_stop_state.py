@@ -67,6 +67,11 @@ class EmergencyStopStateTest(unittest.TestCase):
         second = self.state.begin_release(now=10.2, timeout=1.0)
         self.assertEqual(first, second)
 
+    def test_fresh_driver_state_does_not_inhibit_velocity(self):
+        state = EmergencyStopState()
+        self.assertEqual(state.snapshot().phase, EmergencyStopPhase.CLEAR)
+        self.assertTrue(state.allows_velocity(100.0, -100.0))
+
 
 class FakeTriggerResponse:
     def __init__(self, success, message=""):

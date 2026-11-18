@@ -74,6 +74,18 @@ class TestWheelKinematics(unittest.TestCase):
         self.assertAlmostEqual(linear, -0.7)
         self.assertAlmostEqual(angular, -0.4)
 
+    def test_current_16_52_drivetrain_produces_nonzero_motor_commands(self):
+        meters_per_motor_turn = (16.0 / 52.0) * 0.420
+        speeds = twist_to_wheel_speeds(
+            1.0,
+            0.0,
+            self.SEPARATION,
+            meters_per_motor_turn,
+            self.MAX_SPEED,
+        )
+        self.assertAlmostEqual(speeds.left_rpm, 464.285714, places=5)
+        self.assertAlmostEqual(speeds.right_rpm, 464.285714, places=5)
+
     def test_invalid_geometry_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "wheel_separation_m"):
             twist_to_wheel_speeds(0.0, 0.0, 0.0, 0.084, 1.5)
