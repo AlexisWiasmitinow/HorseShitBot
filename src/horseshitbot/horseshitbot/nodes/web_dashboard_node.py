@@ -73,6 +73,7 @@ from ..web.telemetry import (
     battery_percent_from_json,
     battery_view,
     camera_status,
+    imu_orientation_available,
     telemetry_health as telemetry_health_for_value,
 )
 
@@ -657,9 +658,8 @@ class _RosBridge:
                 "y": float(msg.linear_acceleration.y),
                 "z": float(msg.linear_acceleration.z),
             },
-            "orientation_available": bool(
+            "orientation_available": imu_orientation_available(
                 msg.orientation_covariance
-                and msg.orientation_covariance[0] >= 0.0
             ),
             "_received_at": time.time(),
         }
@@ -1538,4 +1538,5 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()

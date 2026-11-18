@@ -59,6 +59,15 @@ def telemetry_health(
     }
 
 
+def imu_orientation_available(covariance) -> bool:
+    """Interpret ROS Imu's orientation sentinel for lists or NumPy arrays."""
+    try:
+        first = float(covariance[0])
+    except (IndexError, TypeError, ValueError):
+        return False
+    return math.isfinite(first) and first >= 0.0
+
+
 def camera_status(
     now: float,
     color_received_at: Optional[float],

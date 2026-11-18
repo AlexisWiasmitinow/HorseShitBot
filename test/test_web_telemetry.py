@@ -16,6 +16,7 @@ from horseshitbot.web.telemetry import (  # noqa: E402
     battery_percent_from_json,
     battery_view,
     camera_status,
+    imu_orientation_available,
     telemetry_health,
 )
 
@@ -150,6 +151,21 @@ class TelemetryHealthTest(unittest.TestCase):
             )["state"],
             "error",
         )
+
+
+class ImuOrientationAvailabilityTest(unittest.TestCase):
+    def test_ros_unknown_orientation_sentinel(self):
+        self.assertFalse(imu_orientation_available([-1.0] + [0.0] * 8))
+
+    def test_numpy_style_array_does_not_use_ambiguous_truth_value(self):
+        import numpy as np
+
+        self.assertTrue(imu_orientation_available(np.zeros(9)))
+
+    def test_empty_invalid_and_nonfinite_covariance_are_unavailable(self):
+        self.assertFalse(imu_orientation_available([]))
+        self.assertFalse(imu_orientation_available(None))
+        self.assertFalse(imu_orientation_available([math.nan]))
 
 
 if __name__ == "__main__":
