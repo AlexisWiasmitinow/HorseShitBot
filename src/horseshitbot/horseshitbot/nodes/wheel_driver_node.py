@@ -146,8 +146,8 @@ class WheelDriverNode(Node):
         # Hardware-level emergency stop on the wheel motors. Bypasses the
         # MKS acc ramp — see mks_bus.emergency_stop / REG_EMERGENCY_STOP.
         self._mks_estop_cli = self.create_client(Trigger, "/mks/emergency_stop_wheels")
-        # Clears the latch left by emergency_stop so motors accept set_speed
-        # again. Called by _srv_stop on resume.
+        # Fail-closed hardware recovery endpoint. Current MKS firmware support
+        # is unverified, so the service rejects release without register writes.
         self._mks_release_estop_cli = self.create_client(
             Trigger, "/mks/release_emergency_stop_wheels"
         )

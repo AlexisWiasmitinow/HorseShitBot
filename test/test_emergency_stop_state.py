@@ -3,7 +3,6 @@
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import patch
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "src" / "horseshitbot"
@@ -16,7 +15,8 @@ from horseshitbot.drivers.emergency_stop_state import (  # noqa: E402
 )
 from horseshitbot.drivers.mks_bus import (  # noqa: E402
     MksBus,
-    REG_EMERGENCY_STOP,
+    MksEmergencyStopReleaseUnsupported,
+    release_emergency_stops,
 )
 
 
@@ -64,8 +64,10 @@ class EmergencyStopStateTest(unittest.TestCase):
 
     def test_duplicate_release_request_reuses_current_attempt(self):
         first = self.state.begin_release(now=10.0, timeout=1.0)
+        deadline = self.state.snapshot().release_deadline
         second = self.state.begin_release(now=10.2, timeout=1.0)
         self.assertEqual(first, second)
+        self.assertEqual(self.state.snapshot().release_deadline, deadline)
 
     def test_fresh_driver_state_does_not_inhibit_velocity(self):
         state = EmergencyStopState()
@@ -118,8 +120,8 @@ class MockedMksReleaseResponseTest(unittest.TestCase):
         self.assertIn("valid success", message)
 
 
-class MksReleaseSequenceTest(unittest.TestCase):
-    def make_bus(self):
+class MksReleaseProtocolTest(unittest.TestCase):
+    def test_unverified_release_is_rejected_without_register_writes(self):
         bus = object.__new__(MksBus)
         calls = []
         bus.set_enable = lambda motor_id, enabled: calls.append(
@@ -131,40 +133,37 @@ class MksReleaseSequenceTest(unittest.TestCase):
         bus.set_speed_signed = lambda motor_id, rpm, acc=10: calls.append(
             ("speed", motor_id, rpm, acc)
         )
-        return bus, calls
-
-    @patch("horseshitbot.drivers.mks_bus.time.sleep", return_value=None)
-    def test_release_writes_zero_before_reenable(self, _sleep):
-        bus, calls = self.make_bus()
-        bus.release_emergency_stop(2)
-        self.assertEqual(
-            calls,
-            [
-                ("enable", 2, False),
-                ("write", 2, REG_EMERGENCY_STOP, 0),
-                ("speed", 2, 0.0, 0),
-                ("enable", 2, True),
-            ],
-        )
-
-    @patch("horseshitbot.drivers.mks_bus.time.sleep", return_value=None)
-    def test_release_failure_does_not_reenable_motor(self, _sleep):
-        bus, calls = self.make_bus()
-
-        def fail_release(motor_id, register, value):
-            calls.append(("write", motor_id, register, value))
-            raise RuntimeError("no acknowledgement")
-
-        bus.write_reg = fail_release
-        with self.assertRaisesRegex(RuntimeError, "no acknowledgement"):
+        with self.assertRaisesRegex(
+            MksEmergencyStopReleaseUnsupported,
+            "F7=0 is undocumented",
+        ):
             bus.release_emergency_stop(2)
-        self.assertEqual(
-            calls,
-            [
-                ("enable", 2, False),
-                ("write", 2, REG_EMERGENCY_STOP, 0),
-            ],
-        )
+        self.assertEqual(calls, [])
+
+    def test_release_aggregation_reports_success(self):
+        released = []
+
+        class FakeBus:
+            def release_emergency_stop(self, motor_id):
+                released.append(motor_id)
+
+        self.assertEqual(release_emergency_stops(FakeBus(), [1, 2]), [])
+        self.assertEqual(released, [1, 2])
+
+    def test_release_aggregation_reports_partial_failure(self):
+        class FakeBus:
+            def release_emergency_stop(self, motor_id):
+                if motor_id == 2:
+                    raise TimeoutError("acknowledgement timed out")
+
+        failures = release_emergency_stops(FakeBus(), [1, 2])
+        self.assertEqual(failures, ["2:acknowledgement timed out"])
+
+    def test_release_aggregation_preserves_unsupported_failures(self):
+        bus = object.__new__(MksBus)
+        failures = release_emergency_stops(bus, [1, 2])
+        self.assertEqual(len(failures), 2)
+        self.assertTrue(all("unsupported" in failure for failure in failures))
 
 
 if __name__ == "__main__":

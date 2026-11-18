@@ -21,6 +21,25 @@ class ModbusBusBusy(RuntimeError):
     """A low-priority read cannot start without delaying a motor transaction."""
 
 
+class MksEmergencyStopReleaseUnsupported(RuntimeError):
+    """The installed controller has no verified automatic e-stop release."""
+
+
+def release_emergency_stops(bus, motor_ids: list[int]) -> list[str]:
+    """Attempt every requested release and return per-motor failures.
+
+    This aggregation is intentionally independent of the release protocol so
+    one controller failure cannot be hidden by another controller succeeding.
+    """
+    failures = []
+    for motor_id in motor_ids:
+        try:
+            bus.release_emergency_stop(int(motor_id))
+        except Exception as exc:
+            failures.append(f"{int(motor_id)}:{exc}")
+    return failures
+
+
 REG_WORKMODE = 0x0082
 REG_RUN_CURRENT = 0x0083
 REG_MICROSTEPS = 0x0084
@@ -77,8 +96,13 @@ def validate_modbus_response(
                 f"{err_ctx}: expected {expected_registers} registers, "
                 f"received {len(registers)}"
             )
-    if expected_address is not None and getattr(response, "address", None) != expected_address:
-        raise RuntimeError(f"{err_ctx}: write response address mismatch")
+    if expected_address is not None:
+        actual_address = getattr(response, "address", None)
+        if actual_address != expected_address:
+            raise RuntimeError(
+                f"{err_ctx}: write response address mismatch "
+                f"(expected=0x{expected_address:04X}, actual={actual_address!r})"
+            )
     if expected_value is not None:
         missing = object()
         echoed_value = getattr(response, "value", missing)
@@ -90,7 +114,10 @@ def validate_modbus_response(
                 )
             echoed_value = registers[0]
         if echoed_value != expected_value:
-            raise RuntimeError(f"{err_ctx}: write response value mismatch")
+            raise RuntimeError(
+                f"{err_ctx}: write response value mismatch "
+                f"(expected={expected_value!r}, actual={echoed_value!r})"
+            )
     if (
         expected_write_count is not None
         and getattr(response, "count", None) != expected_write_count
@@ -99,7 +126,11 @@ def validate_modbus_response(
             and getattr(response, "count", None) == 0
         )
     ):
-        raise RuntimeError(f"{err_ctx}: write response count mismatch")
+        actual_count = getattr(response, "count", None)
+        raise RuntimeError(
+            f"{err_ctx}: write response count mismatch "
+            f"(expected={expected_write_count!r}, actual={actual_count!r})"
+        )
     return response
 
 
@@ -415,25 +446,26 @@ class MksBus:
         """Slam the motor to a halt instantly. Per MKS manual 8.3.1, this
         bypasses the acc ramp — the motor stops regardless of current RPM.
         The manual warns that doing this above 1000 RPM is mechanically
-        stressful, but for e-stop that's the price we pay.
-
-        IMPORTANT: writing REG_EMERGENCY_STOP=1 latches the motor in a
-        stopped state. The controller will keep ACKing Modbus writes but
-        will ignore further set_speed commands until the latch is cleared
-        — see release_emergency_stop()."""
+        stressful, but for e-stop that's the price we pay."""
         self.write_reg(unit_id, REG_EMERGENCY_STOP, 1)
 
     def release_emergency_stop(self, unit_id: int):
-        """Clear the latch without re-enabling a retained non-zero command.
+        """Refuse automatic release until the installed firmware is verified.
 
-        Every write must acknowledge. Failure leaves the motor disabled and
-        propagates to the wheel driver's fail-closed release state.
+        MKS SERVO42D/57D RS485 manuals document only ``F7=1`` for emergency
+        stop. They do not document ``F7=0`` as a latch clear. A generic
+        restart command (``0x41=1``) exists only in firmware 1.0.5 and later,
+        but is not documented as an e-stop release and does not guarantee
+        that a retained speed command cannot resume during reboot.
+
+        The safe behavior is therefore to perform no register writes and let
+        the wheel driver's fail-closed state continue to inhibit motion.
         """
-        self.set_enable(unit_id, False)
-        time.sleep(0.05)
-        self.write_reg(unit_id, REG_EMERGENCY_STOP, 0)
-        self.set_speed_signed(unit_id, 0.0, acc=0)
-        self.set_enable(unit_id, True)
+        raise MksEmergencyStopReleaseUnsupported(
+            f"motor {unit_id}: automatic MKS e-stop release is unsupported; "
+            "F7=0 is undocumented and controller firmware/restart behavior "
+            "has not been verified"
+        )
 
     def axis_zero(self, unit_id: int):
         self.write_reg(unit_id, REG_AXIS_ZERO, 1)

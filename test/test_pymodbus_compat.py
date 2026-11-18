@@ -276,7 +276,10 @@ class PymodbusCompatTest(unittest.TestCase):
             address=0x0083,
             registers=[4],
         )
-        with self.assertRaisesRegex(RuntimeError, "address mismatch"):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"address mismatch \(expected=0x0082, actual=131\)",
+        ):
             validate_modbus_response(
                 response,
                 "write",
@@ -290,7 +293,10 @@ class PymodbusCompatTest(unittest.TestCase):
             address=0x0082,
             registers=[5],
         )
-        with self.assertRaisesRegex(RuntimeError, "value mismatch"):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"value mismatch \(expected=4, actual=5\)",
+        ):
             validate_modbus_response(
                 response,
                 "write",
@@ -354,7 +360,10 @@ class PymodbusCompatTest(unittest.TestCase):
             count=0,
             registers=[],
         )
-        with self.assertRaisesRegex(RuntimeError, "count mismatch"):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"count mismatch \(expected=2, actual=0\)",
+        ):
             validate_modbus_response(
                 response,
                 "write",

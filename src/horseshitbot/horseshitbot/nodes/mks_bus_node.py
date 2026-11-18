@@ -25,7 +25,13 @@ from horseshitbot_interfaces.srv import (
 )
 from std_srvs.srv import Trigger
 
-from ..drivers.mks_bus import BusCfg, MksBus, MODE_SR_CLOSE, ModbusBusBusy
+from ..drivers.mks_bus import (
+    BusCfg,
+    MksBus,
+    MODE_SR_CLOSE,
+    ModbusBusBusy,
+    release_emergency_stops,
+)
 from ..drivers.mks_command_state import MksCommandHighWater
 
 _DEFAULTS_FILE = Path.home() / ".config" / "horseshitbot" / "motor_defaults.json"
@@ -82,9 +88,9 @@ class MksBusNode(Node):
         # an instant hardware-level halt, independent of any ROS-side ramp.
         self.create_service(Trigger, "/mks/emergency_stop_wheels",
                             self._srv_emergency_stop_wheels)
-        # Clears the latch left behind by emergency_stop_wheels — required
-        # to actually drive again after an e-stop. Wheel driver calls this
-        # on resume; can also be invoked manually for recovery.
+        # Fail-closed recovery endpoint. It reports unsupported until the
+        # installed controller firmware and a documented zero-safe release
+        # sequence have been verified; it never guesses with F7=0.
         self.create_service(Trigger, "/mks/release_emergency_stop_wheels",
                             self._srv_release_emergency_stop_wheels)
         self.create_service(
@@ -386,19 +392,19 @@ class MksBusNode(Node):
         return response
 
     def _srv_release_emergency_stop_wheels(self, request, response):
-        """Release the e-stop latch on the wheel motors so they accept
-        set_speed commands again. Without this, REG_SPEED writes are
-        silently ignored even though they return success."""
-        failed = []
+        """Attempt only the driver's verified release procedure.
+
+        With the current driver this deliberately fails without writing any
+        registers because no zero-safe protocol is verified for the installed
+        controller firmware.
+        """
         with self._motor_operation():
-            for mid in self._wheel_motor_ids:
-                try:
-                    self._bus.release_emergency_stop(mid)
-                except Exception as exc:
-                    failed.append(f"{mid}:{exc}")
+            failed = release_emergency_stops(
+                self._bus, self._wheel_motor_ids
+            )
         response.success = not failed
         response.message = (
-            "wheel e-stop released"
+            "wheel e-stop release verified"
             if not failed
             else f"wheel e-stop release partial fail: {', '.join(failed)}"
         )

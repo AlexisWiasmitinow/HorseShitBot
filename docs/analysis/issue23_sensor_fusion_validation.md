@@ -61,16 +61,18 @@ the asynchronous MKS hardware-latch release succeeded. The issue branch now
 uses fail-closed `active -> releasing -> clear` state transitions. A release
 token rejects stale callbacks; failures and timeouts return to `active`;
 velocity commands remain inhibited until confirmation; and stale nonzero
-commands are cleared before release. MKS release now requires acknowledged
-disable, latch-clear, zero-speed, and re-enable writes. The dashboard and
-gamepad use a dedicated resume service rather than overloading stop.
+commands are cleared before release. The dashboard and gamepad use a dedicated
+resume service rather than overloading stop. Because no safe MKS release
+protocol is verified, that service currently returns failure and leaves the
+software latch active without issuing recovery register writes.
 
-Twelve mocked tests cover successful release, failure, timeout, late response,
-concurrent e-stop, command inhibition, malformed replies, and zero-before-
-enable ordering. No physical release was attempted. The requirement that
-firmware acknowledge `REG_EMERGENCY_STOP=0` is deliberately conservative, but
-must be verified onsite because older firmware may require a different
-documented clear sequence.
+Mocked tests cover release-state success, failure, timeout, late response,
+concurrent e-stop, command inhibition, and malformed replies. Onsite testing
+confirmed that `REG_EMERGENCY_STOP=0` is not a supported release: the manual
+documents only `F7=1` for stopping. Firmware 1.0.5 added a generic `0x41`
+restart, but the installed firmware is unknown and the manual does not
+guarantee zero retained motion after restart. Automatic MKS release therefore
+remains fail-closed and performs no recovery register writes.
 
 ### IMU
 
