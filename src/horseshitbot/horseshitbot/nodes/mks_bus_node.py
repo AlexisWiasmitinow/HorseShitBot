@@ -50,6 +50,7 @@ class MksBusNode(Node):
         self.declare_parameter("microsteps", 16)
         self.declare_parameter("adc_timeout_sec", 0.03)
         self.declare_parameter("adc_idle_guard_sec", 0.05)
+        self.declare_parameter("allow_unvalidated_estop_release", False)
 
         port = self.get_parameter("port").get_parameter_value().string_value
         baud = self.get_parameter("baud").get_parameter_value().integer_value
@@ -68,6 +69,11 @@ class MksBusNode(Node):
             self.get_parameter(
                 "adc_idle_guard_sec"
             ).get_parameter_value().double_value,
+        )
+        self._allow_unvalidated_estop_release = (
+            self.get_parameter("allow_unvalidated_estop_release")
+            .get_parameter_value()
+            .bool_value
         )
 
         self._bus = MksBus(BusCfg(port=port, baud=baud, timeout=timeout, retries=retries))
@@ -88,9 +94,9 @@ class MksBusNode(Node):
         # an instant hardware-level halt, independent of any ROS-side ramp.
         self.create_service(Trigger, "/mks/emergency_stop_wheels",
                             self._srv_emergency_stop_wheels)
-        # Fail-closed recovery endpoint. It reports unsupported until the
-        # installed controller firmware and a documented zero-safe release
-        # sequence have been verified; it never guesses with F7=0.
+        # Fail-closed recovery endpoint. The acknowledged enable-cycle remains
+        # disabled by default until it is validated on the installed firmware;
+        # it never guesses with F7=0.
         self.create_service(Trigger, "/mks/release_emergency_stop_wheels",
                             self._srv_release_emergency_stop_wheels)
         self.create_service(
@@ -394,13 +400,24 @@ class MksBusNode(Node):
     def _srv_release_emergency_stop_wheels(self, request, response):
         """Attempt only the driver's verified release procedure.
 
-        With the current driver this deliberately fails without writing any
-        registers because no zero-safe protocol is verified for the installed
-        controller firmware.
+        Normal operation deliberately fails without writing any registers.
+        The acknowledged enable-cycle can only be selected explicitly for a
+        supervised, secured validation session.
         """
+        if not self._allow_unvalidated_estop_release:
+            response.success = False
+            response.message = (
+                "wheel e-stop release disabled: acknowledged enable-cycle "
+                "awaits supervised validation for installed MKS firmware"
+            )
+            self.get_logger().warning(response.message)
+            return response
+
         with self._motor_operation():
             failed = release_emergency_stops(
-                self._bus, self._wheel_motor_ids
+                self._bus,
+                self._wheel_motor_ids,
+                allow_unvalidated=True,
             )
         response.success = not failed
         response.message = (

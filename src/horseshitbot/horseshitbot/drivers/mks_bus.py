@@ -25,7 +25,12 @@ class MksEmergencyStopReleaseUnsupported(RuntimeError):
     """The installed controller has no verified automatic e-stop release."""
 
 
-def release_emergency_stops(bus, motor_ids: list[int]) -> list[str]:
+def release_emergency_stops(
+    bus,
+    motor_ids: list[int],
+    *,
+    allow_unvalidated: bool = False,
+) -> list[str]:
     """Attempt every requested release and return per-motor failures.
 
     This aggregation is intentionally independent of the release protocol so
@@ -34,9 +39,22 @@ def release_emergency_stops(bus, motor_ids: list[int]) -> list[str]:
     failures = []
     for motor_id in motor_ids:
         try:
-            bus.release_emergency_stop(int(motor_id))
+            bus.release_emergency_stop(
+                int(motor_id),
+                allow_unvalidated=allow_unvalidated,
+            )
         except Exception as exc:
             failures.append(f"{int(motor_id)}:{exc}")
+    if failures:
+        # A partial release must not leave one controller enabled while the
+        # other controller and the software state remain latched.
+        for motor_id in motor_ids:
+            try:
+                bus.set_enable(int(motor_id), False)
+            except Exception as exc:
+                failures.append(
+                    f"{int(motor_id)}:fail-closed disable failed: {exc}"
+                )
     return failures
 
 
@@ -44,6 +62,7 @@ REG_WORKMODE = 0x0082
 REG_RUN_CURRENT = 0x0083
 REG_MICROSTEPS = 0x0084
 REG_HOLD_CURRENT_PCT = 0x009B
+REG_MOTOR_STATUS = 0x00F1
 REG_ENABLE = 0x00F3
 REG_POS_REL = 0x00F4   # mode 2: relative move by encoder coordinate
 REG_POS_ABS = 0x00F5   # mode 3: absolute move by encoder coordinate
@@ -51,6 +70,8 @@ REG_SPEED = 0x00F6
 REG_EMERGENCY_STOP = 0x00F7  # MKS manual 8.3.1: write 1 to stop the motor instantly
 REG_AXIS_ZERO = 0x0092
 REG_RELEASE_PROTECT = 0x003D
+
+MOTOR_STATUS_STOPPED = 1
 
 MODE_SR_OPEN = 3
 MODE_SR_CLOSE = 4
@@ -449,23 +470,69 @@ class MksBus:
         stressful, but for e-stop that's the price we pay."""
         self.write_reg(unit_id, REG_EMERGENCY_STOP, 1)
 
-    def release_emergency_stop(self, unit_id: int):
-        """Refuse automatic release until the installed firmware is verified.
+    def get_motor_status(self, unit_id: int) -> int:
+        """Return the documented low-byte F1 motor status."""
+        registers = self.read_input_regs(unit_id, REG_MOTOR_STATUS, 1)
+        return int(registers[0]) & 0xFF
 
-        MKS SERVO42D/57D RS485 manuals document only ``F7=1`` for emergency
-        stop. They do not document ``F7=0`` as a latch clear. A generic
-        restart command (``0x41=1``) exists only in firmware 1.0.5 and later,
-        but is not documented as an e-stop release and does not guarantee
-        that a retained speed command cannot resume during reboot.
+    def release_emergency_stop(
+        self,
+        unit_id: int,
+        *,
+        allow_unvalidated: bool = False,
+        verify_timeout: float = 0.5,
+        poll_interval: float = 0.05,
+    ):
+        """Run the earlier enable-cycle with acknowledgements and zeroing.
 
-        The safe behavior is therefore to perform no register writes and let
-        the wheel driver's fail-closed state continue to inhibit motion.
+        MKS documents acknowledged ``F3=0/1`` motor disable/enable and
+        ``F1=1`` as "motor stop". Repository history and onsite experience
+        indicate that an enable cycle cleared the F7 stop on these motors.
+        The manual does not explicitly define this as F7 recovery, however,
+        so normal operation must leave ``allow_unvalidated`` false until a
+        supervised physical test validates the installed firmware.
+
+        No ``F7=0`` or controller restart is attempted. A zero-speed command
+        is acknowledged while disabled before re-enable. Any error or status
+        other than verified stop triggers a best-effort fail-closed disable.
         """
-        raise MksEmergencyStopReleaseUnsupported(
-            f"motor {unit_id}: automatic MKS e-stop release is unsupported; "
-            "F7=0 is undocumented and controller firmware/restart behavior "
-            "has not been verified"
-        )
+        if not allow_unvalidated:
+            raise MksEmergencyStopReleaseUnsupported(
+                f"motor {unit_id}: acknowledged enable-cycle release awaits "
+                "supervised validation for the installed MKS firmware"
+            )
+        if verify_timeout <= 0.0:
+            raise ValueError("verify_timeout must be positive")
+        if poll_interval <= 0.0:
+            raise ValueError("poll_interval must be positive")
+
+        try:
+            self.set_enable(unit_id, False)
+            time.sleep(0.05)
+            self.set_speed_signed(unit_id, 0.0, acc=0)
+            self.set_enable(unit_id, True)
+
+            deadline = time.monotonic() + verify_timeout
+            last_status = None
+            while True:
+                last_status = self.get_motor_status(unit_id)
+                if last_status == MOTOR_STATUS_STOPPED:
+                    return
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"motor {unit_id}: F1 stop verification timed out "
+                        f"(expected={MOTOR_STATUS_STOPPED}, actual={last_status})"
+                    )
+                time.sleep(poll_interval)
+        except Exception as release_error:
+            try:
+                self.set_enable(unit_id, False)
+            except Exception as disable_error:
+                raise RuntimeError(
+                    f"{release_error}; fail-closed disable failed: "
+                    f"{disable_error}"
+                ) from None
+            raise
 
     def axis_zero(self, unit_id: int):
         self.write_reg(unit_id, REG_AXIS_ZERO, 1)

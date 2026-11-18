@@ -63,16 +63,20 @@ token rejects stale callbacks; failures and timeouts return to `active`;
 velocity commands remain inhibited until confirmation; and stale nonzero
 commands are cleared before release. The dashboard and gamepad use a dedicated
 resume service rather than overloading stop. Because no safe MKS release
-protocol is verified, that service currently returns failure and leaves the
-software latch active without issuing recovery register writes.
+protocol is physically verified, normal operation returns failure and leaves
+the software latch active without issuing recovery register writes.
 
 Mocked tests cover release-state success, failure, timeout, late response,
 concurrent e-stop, command inhibition, and malformed replies. Onsite testing
 confirmed that `REG_EMERGENCY_STOP=0` is not a supported release: the manual
 documents only `F7=1` for stopping. Firmware 1.0.5 added a generic `0x41`
 restart, but the installed firmware is unknown and the manual does not
-guarantee zero retained motion after restart. Automatic MKS release therefore
-remains fail-closed and performs no recovery register writes.
+guarantee zero retained motion after restart. Repository history indicates that
+an F3 disable/enable cycle previously recovered these controllers. An opt-in
+candidate therefore performs acknowledged F3 disable, acknowledged zero-speed
+overwrite, acknowledged F3 enable, and F1 stopped-state verification on both
+wheel controllers. Any partial failure disables both. It remains disabled by
+default pending a secured, supervised hardware validation.
 
 ### IMU
 
