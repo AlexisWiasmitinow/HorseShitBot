@@ -39,6 +39,8 @@ from horseshitbot.drivers.ili9341_display import ILI9341Display  # noqa: E402
 from horseshitbot.drivers.status_screen_render import (  # noqa: E402
     COL_AMBER,
     COL_BG,
+    COL_BORDER,
+    COL_CARD,
     COL_GREEN,
     COL_MUTED,
     COL_RED,
@@ -124,6 +126,19 @@ def snapshot(**overrides):
     for key, value in overrides.items():
         setattr(snap, key, value)
     return snap
+
+
+class LightThemeRegressionTest(unittest.TestCase):
+    def test_established_white_palette_is_preserved(self):
+        self.assertEqual(COL_BG, (255, 255, 255))
+        self.assertEqual(COL_CARD, (245, 247, 250))
+        self.assertEqual(COL_BORDER, (226, 232, 240))
+        self.assertEqual(COL_TEXT, (17, 24, 39))
+
+    def test_dashboard_background_and_cards_are_light(self):
+        image = render_dashboard(snapshot()).image
+        self.assertEqual(image.getpixel((0, 0)), COL_BG)
+        self.assertEqual(image.getpixel((5, 100)), COL_CARD)
 
 
 ESTOP_WHEEL = {"backend": "mks", "left_rpm": 0.0, "right_rpm": 0.0,

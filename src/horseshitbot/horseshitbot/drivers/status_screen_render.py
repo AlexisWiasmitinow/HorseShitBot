@@ -4,10 +4,9 @@ Pure Pillow: no ROS, GPIO or SPI access. status_screen_node gathers telemetry
 into a ScreenSnapshot and blits the returned image; the preview script and the
 tests call the same functions, so previews are pixel-identical to the panel.
 
-Colours follow the dark theme of the web dashboard (style.css,
-body.dashboard-active). Every section owns a fixed Box and nothing is drawn
-outside it; each drawn element is recorded so geometry can be tested without
-hardware.
+The clean light palette comes from the physically reviewed TFT design in
+commit 51a4d41. Every section owns a fixed Box and nothing is drawn outside it;
+each drawn element is recorded so geometry can be tested without hardware.
 """
 
 from __future__ import annotations
@@ -31,22 +30,22 @@ from .battery_readout import (
 SCREEN_W = 320
 SCREEN_H = 240
 
-# ── Palette (web dashboard dark theme) ────────────────────────────────
-COL_BG = (11, 23, 41)            # --dashboard-navy #0b1729
-COL_CARD = (18, 33, 58)          # --dashboard-navy-soft #12213a
-COL_BORDER = (40, 54, 78)        # rgba(255,255,255,0.1) over the card
-COL_TRACK = (32, 47, 72)
-COL_BLUE = (23, 105, 255)        # --dashboard-blue #1769ff
-COL_BLUE_LIGHT = (111, 162, 255)  # active tab #6fa2ff
-COL_HIGHLIGHT = (22, 56, 118)    # rgba(33,104,238,0.35) over the card
-COL_TEXT = (248, 251, 255)       # #f8fbff
-COL_TEXT_2 = (174, 187, 208)     # #aebbd0
-COL_MUTED = (102, 112, 133)      # --muted #667085
-COL_GREEN = (15, 182, 90)        # --dashboard-green #0fb65a
-COL_AMBER = (239, 152, 31)       # --dashboard-orange #ef981f
-COL_RED = (229, 72, 77)          # --red #e5484d
-COL_RED_TEXT = (255, 150, 153)
-COL_RED_SOFT = (60, 30, 45)
+# ── Palette (established clean white TFT design, commit 51a4d41) ─────
+COL_BG = (255, 255, 255)       # #FFFFFF
+COL_CARD = (245, 247, 250)     # #F5F7FA
+COL_BORDER = (226, 232, 240)   # #E2E8F0
+COL_TRACK = COL_BORDER
+COL_BLUE = (37, 99, 235)
+COL_BLUE_LIGHT = (29, 78, 216)
+COL_TEXT = (17, 24, 39)        # #111827
+COL_TEXT_2 = (100, 116, 139)   # #64748B
+COL_MUTED = COL_TEXT_2
+COL_GREEN = (22, 163, 74)      # #16A34A
+COL_AMBER = (245, 158, 11)     # #F59E0B
+COL_RED = (220, 38, 38)        # #DC2626
+COL_RED_TEXT = COL_RED
+COL_RED_SOFT = (254, 226, 226)
+COL_HIGHLIGHT = (219, 234, 254)
 
 THERMAL_WARN_C = 65.0
 THERMAL_CRIT_C = 85.0
